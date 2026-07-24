@@ -164,7 +164,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_returns_200_with_components() {
-        let signaling = crate::signaling::SignalingServer::new(65536);
+        let signaling = crate::signaling::SignalingServer::new(65536, None);
         let app = monitor_router(signaling);
 
         let response = app
@@ -191,7 +191,7 @@ mod tests {
 
     #[tokio::test]
     async fn ready_returns_200_when_healthy() {
-        let signaling = crate::signaling::SignalingServer::new(65536);
+        let signaling = crate::signaling::SignalingServer::new(65536, None);
         let app = monitor_router(signaling);
 
         let response = app

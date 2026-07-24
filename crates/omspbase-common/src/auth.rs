@@ -1,10 +1,12 @@
-//! PSK (Pre-Shared Key) HMAC-SHA256 authentication.
+//! PSK (Pre-Shared Key) HMAC-SHA256 and JWT HS256 authentication.
 //!
 //! Phase 1 MVP: Simple PSK handshake. Client sends HMAC(challenge, psk),
 //! Server verifies. Used for WebSocket signaling auth.
+//! Phase 2+: JWT token auth as primary, PSK as fallback.
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use serde::{Deserialize, Serialize};
 use crate::error::CoreError;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -85,9 +87,70 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
+// ── JWT Authentication ──────────────────────────────────────────────────────
+
+/// JWT claims for signaling authentication.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JwtClaims {
+    /// Subject (peer identifier).
+    pub sub: String,
+    /// Issued at (Unix timestamp in seconds).
+    pub iat: usize,
+    /// Expiration time (Unix timestamp in seconds).
+    pub exp: usize,
+}
+
+/// JWT authenticator using HS256.
+#[derive(Clone)]
+pub struct JwtAuth {
+    secret: String,
+}
+
+impl JwtAuth {
+    /// Create from a secret string (at least 256-bit entropy recommended).
+    pub fn new(secret: impl Into<String>) -> Self {
+        Self {
+            secret: secret.into(),
+        }
+    }
+
+    /// Create a signed JWT token for the given subject.
+    pub fn sign(&self, sub: &str, ttl_secs: u64) -> Result<String, CoreError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| CoreError::Unknown(format!("clock error: {e}")))?
+            .as_secs() as usize;
+        let claims = JwtClaims {
+            sub: sub.to_string(),
+            iat: now,
+            exp: now + ttl_secs as usize,
+        };
+        let token = jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &claims,
+            &jsonwebtoken::EncodingKey::from_secret(self.secret.as_bytes()),
+        )
+        .map_err(|e| CoreError::Unknown(format!("JWT sign error: {e}")))?;
+        Ok(token)
+    }
+
+    /// Verify a JWT token and return the validated claims.
+    pub fn verify(&self, token: &str) -> Result<JwtClaims, CoreError> {
+        let token_data = jsonwebtoken::decode::<JwtClaims>(
+            token,
+            &jsonwebtoken::DecodingKey::from_secret(self.secret.as_bytes()),
+            &jsonwebtoken::Validation::default(),
+        )
+        .map_err(|e| CoreError::Unknown(format!("JWT verify error: {e}")))?;
+        Ok(token_data.claims)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── PSK tests ────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn psk_auth_success() {
@@ -103,7 +166,7 @@ mod tests {
         let auth = SimplePskAuth::new("right-key");
         let other = SimplePskAuth::new("wrong-key");
         let challenge = b"challenge";
-        let sig = other.sign(challenge); // signed with wrong key
+        let sig = other.sign(challenge);
         let result = auth.verify_challenge(challenge, &sig).await.unwrap();
         assert_eq!(result, AuthResult::Denied);
     }
@@ -114,7 +177,6 @@ mod tests {
         assert!(!constant_time_eq(b"abc", b"abd"));
         assert!(!constant_time_eq(b"abc", b"ab"));
     }
-}
 
     #[test]
     fn sign_different_inputs_different_tags() {
@@ -153,3 +215,67 @@ mod tests {
         assert_ne!(AuthResult::Success, AuthResult::Denied);
         assert_ne!(AuthResult::Denied, AuthResult::Expired);
     }
+
+    // ── JWT tests ────────────────────────────────────────────────────────
+
+    #[test]
+    fn jwt_sign_and_verify() {
+        let auth = JwtAuth::new("my-jwt-secret-256-bit-minimum-key");
+        let token = auth.sign("peer-42", 3600).unwrap();
+        let claims = auth.verify(&token).unwrap();
+        assert_eq!(claims.sub, "peer-42");
+        assert!(claims.exp > claims.iat);
+    }
+
+    #[test]
+    fn jwt_verify_wrong_secret() {
+        let auth1 = JwtAuth::new("secret-one");
+        let auth2 = JwtAuth::new("secret-two");
+        let token = auth1.sign("peer-1", 3600).unwrap();
+        let result = auth2.verify(&token);
+        assert!(result.is_err(), "verification with wrong secret should fail");
+    }
+
+    #[test]
+    fn jwt_verify_expired() {
+        let auth = JwtAuth::new("secret");
+        // ponytail: use direct claims construction for deterministic expiry test
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+        let claims = JwtClaims {
+            sub: "peer-1".into(),
+            iat: now - 7200,
+            exp: now - 3600, // expired 1 hour ago
+        };
+        let token = jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &claims,
+            &jsonwebtoken::EncodingKey::from_secret(auth.secret.as_bytes()),
+        )
+        .unwrap();
+        let result = auth.verify(&token);
+        assert!(result.is_err(), "expired token should fail verification");
+    }
+
+    #[test]
+    fn jwt_verify_tampered() {
+        let auth = JwtAuth::new("secret");
+        let mut token = auth.sign("peer-1", 3600).unwrap();
+        // Tamper with the payload by appending garbage
+        token.push('x');
+        let result = auth.verify(&token);
+        assert!(result.is_err(), "tampered token should fail verification");
+    }
+
+    #[test]
+    fn jwt_roundtrip_with_different_subjects() {
+        let auth = JwtAuth::new("shared-secret-must-be-32-bytes-or-more");
+        for sub in ["host-alpha", "remote-beta", "server-gamma"] {
+            let token = auth.sign(sub, 7200).unwrap();
+            let claims = auth.verify(&token).unwrap();
+            assert_eq!(claims.sub, sub);
+        }
+    }
+}

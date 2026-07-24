@@ -11,7 +11,7 @@ const ROOM: &str = "test-room";
 async fn integration_signaling_pipeline() {
     unsafe { std::env::set_var("OMSPBASE_PSK", PSK) };
 
-    let server = SignalingServer::new(65536);
+    let server = SignalingServer::new(65536, None);
     let app = signaling_router(server);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -216,7 +216,7 @@ fn test_sdp_frame_ice_serialization() {
 async fn test_auth_failure_integration() {
     unsafe { std::env::set_var("OMSPBASE_PSK", PSK) };
 
-    let server = SignalingServer::new(65536);
+    let server = SignalingServer::new(65536, None);
     let app = signaling_router(server);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -254,7 +254,7 @@ async fn test_auth_failure_integration() {
 async fn e2e_video_frame_relay() {
     unsafe { std::env::set_var("OMSPBASE_PSK", PSK) };
 
-    let server = SignalingServer::new(65536);
+    let server = SignalingServer::new(65536, None);
     let app = signaling_router(server);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

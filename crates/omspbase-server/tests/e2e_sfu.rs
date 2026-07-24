@@ -29,7 +29,7 @@ async fn e2e_sfu_lifecycle() {
     let initial_room_count = sfu.room_count();
 
     // Create signaling server with SFU
-    let server = SignalingServer::new(Arc::clone(&sfu));
+    let server = SignalingServer::new(Arc::clone(&sfu), 65536, None);
     let app = signaling_router(server);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -175,7 +175,7 @@ async fn e2e_sfu_cleanup_on_disconnect() {
     let sfu = Arc::new(sfu);
     let initial_count = sfu.room_count();
 
-    let server = SignalingServer::new(Arc::clone(&sfu));
+    let server = SignalingServer::new(Arc::clone(&sfu), 65536, None);
     let app = signaling_router(server);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

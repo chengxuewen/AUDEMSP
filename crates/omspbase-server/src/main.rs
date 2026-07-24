@@ -5,7 +5,7 @@ use tower_http::timeout::TimeoutLayer;
 use omspbase_server::config;
 use omspbase_server::monitor;
 use omspbase_server::signaling;
-
+use omspbase_common::auth::JwtAuth;
 /// Entry point — install panic hook, then run server with graceful shutdown.
 fn main() {
     // ── Panic boundary ───────────────────────────────────────────────────────
@@ -84,7 +84,10 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             serde_yaml::from_str(DEFAULT_SERVER_CONFIG).unwrap()
         }
     };
+    // Build JWT authenticator from config (optional)
+    let jwt_auth = config.jwt_secret.as_ref().map(|s| JwtAuth::new(s.as_str()));
 
+    // Create the signaling server (shared state for WebSocket rooms)
     // Create the signaling server (shared state for WebSocket rooms)
     #[cfg(feature = "sfu-mediasoup")]
     let signaling_server = {
@@ -94,7 +97,7 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         match sfu::SfuManager::new().await {
             Ok(m) => {
                 tracing::info!("SFU manager initialized (mediasoup)");
-                signaling::SignalingServer::new(Arc::new(m), config.ws_max_message_size)
+                signaling::SignalingServer::new(Arc::new(m), config.ws_max_message_size, jwt_auth.clone())
             }
             Err(e) => {
                 tracing::info!("SFU manager skipped: {e}");
@@ -103,7 +106,7 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     #[cfg(not(feature = "sfu-mediasoup"))]
-    let signaling_server = signaling::SignalingServer::new(config.ws_max_message_size);
+    let signaling_server = signaling::SignalingServer::new(config.ws_max_message_size, jwt_auth);
 
     // Build axum router
     let signaling_router = signaling::signaling_router(signaling_server.clone());

@@ -47,6 +47,10 @@ pub struct ServerConfig {
 
     /// PSK for signaling auth.
     pub psk: Option<String>,
+    /// JWT secret for token-based signaling auth (optional, PSK used as fallback).
+    #[serde(default)]
+    pub jwt_secret: Option<String>,
+
 
     /// Rate limit (requests per second per connection).
     #[serde(default = "default_rate_limit")]
@@ -274,6 +278,7 @@ listen:
 room_capacity: 50
 rate_limit: 200
 psk: "server-psk"
+jwt_secret: "jwt-secret-256bit-min"
 "#;
         let parsed: ServerConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(parsed.version, 1);
@@ -282,6 +287,7 @@ psk: "server-psk"
         assert_eq!(parsed.room_capacity, 50);
         assert_eq!(parsed.rate_limit, 200);
         assert_eq!(parsed.psk.as_deref(), Some("server-psk"));
+        assert_eq!(parsed.jwt_secret.as_deref(), Some("jwt-secret-256bit-min"));
 
         let re_serialized = serde_yaml::to_string(&parsed).unwrap();
         let re_parsed: ServerConfig = serde_yaml::from_str(&re_serialized).unwrap();
@@ -393,6 +399,7 @@ host: "192.168.1.1"
         assert_eq!(parsed.rate_limit, 100);
         assert_eq!(parsed.psk, None);
         assert_eq!(parsed.ws_max_message_size, 65536);
+        assert_eq!(parsed.jwt_secret, None);
         assert!(parsed.tls.is_none());
     }
 

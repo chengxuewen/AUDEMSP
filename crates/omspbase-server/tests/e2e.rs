@@ -455,7 +455,7 @@ async fn e2e_monitor_router_health_endpoint() {
     use omspbase_server::tokio::net::TcpListener;
     use omspbase_server::tokio::net::TcpStream;
 
-    let signaling = SignalingServer::new(65536);
+    let signaling = SignalingServer::new(65536, None);
     let app = monitor_router(signaling);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -491,7 +491,7 @@ async fn e2e_monitor_router_stats_endpoint() {
     use omspbase_server::tokio::net::TcpListener;
     use omspbase_server::tokio::net::TcpStream;
 
-    let signaling = SignalingServer::new(65536);
+    let signaling = SignalingServer::new(65536, None);
     let app = monitor_router(signaling);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -541,7 +541,7 @@ async fn e2e_monitor_router_metrics_endpoint() {
     use omspbase_server::tokio::net::TcpListener;
     use omspbase_server::tokio::net::TcpStream;
 
-    let signaling = SignalingServer::new(65536);
+    let signaling = SignalingServer::new(65536, None);
     let app = monitor_router(signaling);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

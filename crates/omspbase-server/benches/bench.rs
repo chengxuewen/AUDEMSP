@@ -38,7 +38,7 @@ fn main() {
 
     // 1. SignalingServer construction
     run_bench("SignalingServer::new(65536)", Duration::from_millis(200), || {
-        let _server = SignalingServer::new(65536);
+        let _server = SignalingServer::new(65536, None);
     });
 
     // 2. RoomJoin serialization
@@ -77,7 +77,7 @@ fn main() {
 
     // 6. Health endpoint request round-trip
     run_bench("/health GET round-trip", Duration::from_millis(200), || {
-        let signaling = SignalingServer::new(65536);
+        let signaling = SignalingServer::new(65536, None);
         let app = monitor_router(signaling);
         use http::Request;
         use axum::body::Body;

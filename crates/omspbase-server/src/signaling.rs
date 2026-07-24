@@ -4,12 +4,13 @@ use crate::health::{HealthChecker, HealthStatus};
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
+use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use axum::routing::get;
 #[cfg(feature = "sfu-mediasoup")]
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
-use omspbase_common::auth::SimplePskAuth;
+use omspbase_common::auth::{JwtAuth, SimplePskAuth};
 use omspbase_common::error::CoreError;
 use omspbase_common::protocol::SignalingMessage;
 use std::sync::Arc;
@@ -40,11 +41,13 @@ pub struct SignalingServer {
     /// Number of currently active WebSocket connections.
     active_connections: Arc<AtomicUsize>,
     pub ws_max_message_size: usize,
+    /// JWT authenticator (optional; PSK used as fallback).
+    pub jwt_auth: Option<JwtAuth>,
 }
 
 impl SignalingServer {
     #[cfg(feature = "sfu-mediasoup")]
-    pub fn new(_sfu: Arc<crate::sfu::SfuManager>, ws_max_message_size: usize) -> Self {
+    pub fn new(_sfu: Arc<crate::sfu::SfuManager>, ws_max_message_size: usize, jwt_auth: Option<JwtAuth>) -> Self {
         let (shutdown_tx, _) = watch::channel(false);
         Self {
             channels: Arc::new(dashmap::DashMap::new()),
@@ -53,11 +56,12 @@ impl SignalingServer {
             shutdown_tx,
             active_connections: Arc::new(AtomicUsize::new(0)),
             ws_max_message_size,
+            jwt_auth,
         }
     }
 
     #[cfg(not(feature = "sfu-mediasoup"))]
-    pub fn new(ws_max_message_size: usize) -> Self {
+    pub fn new(ws_max_message_size: usize, jwt_auth: Option<JwtAuth>) -> Self {
         let (shutdown_tx, _) = watch::channel(false);
         Self {
             channels: Arc::new(dashmap::DashMap::new()),
@@ -65,6 +69,7 @@ impl SignalingServer {
             shutdown_tx,
             active_connections: Arc::new(AtomicUsize::new(0)),
             ws_max_message_size,
+            jwt_auth,
         }
     }
 
@@ -121,10 +126,17 @@ pub fn signaling_router(server: SignalingServer) -> Router {
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
+    headers: HeaderMap,
     State(server): State<SignalingServer>,
 ) -> impl IntoResponse {
+    // Extract JWT from sec-websocket-protocol header (format: "Bearer <token>")
+    let jwt_token = headers
+        .get("sec-websocket-protocol")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|s| s.to_string());
     let max_size = server.ws_max_message_size;
-    ws.max_message_size(max_size).on_upgrade(move |socket| handle_socket(socket, server))
+    ws.max_message_size(max_size).on_upgrade(move |socket| handle_socket(socket, server, jwt_token))
 }
 
 /// Send a signaling message to this peer directly (not broadcast).
@@ -132,7 +144,7 @@ fn send_msg(msg: &SignalingMessage) -> Result<String, String> {
     serde_json::to_string(msg).map_err(|e| format!("serialize error: {e}"))
 }
 
-async fn handle_socket(socket: WebSocket, server: SignalingServer) {
+async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Option<String>) {
     // Track active connection count
     server.active_connections.fetch_add(1, Ordering::Relaxed);
 
@@ -151,26 +163,45 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
     let (ws_sender, mut receiver) = socket.split();
     let ws_sender = Arc::new(tokio::sync::Mutex::new(ws_sender));
 
-    let peer_id = uuid::Uuid::new_v4().to_string();
+    let mut peer_id = uuid::Uuid::new_v4().to_string();
     tracing::info!("New connection: peer={}", peer_id);
 
     // PSK auth — from env var for Phase 1
     let psk = std::env::var("OMSPBASE_PSK").ok();
-    let auth = psk.as_ref().map(|k| SimplePskAuth::new(k.as_bytes()));
-    let mut authenticated = auth.is_none();
+    let psk_auth = psk.as_ref().map(|k| SimplePskAuth::new(k.as_bytes()));
+    let mut authenticated = psk_auth.is_none();
     tracing::info!("Auth: psk_set={}, authenticated={}", psk.is_some(), authenticated);
 
-    // Phase 1: Authentication
+    // ── JWT auth (tried first; PSK is fallback) ───────────────────────
+    if !authenticated {
+        if let (Some(jwt_auth), Some(token)) = (&server.jwt_auth, &jwt_token) {
+            match jwt_auth.verify(token) {
+                Ok(claims) => {
+                    peer_id = claims.sub.clone();
+                    authenticated = true;
+                    tracing::info!("JWT authenticated: peer={}", peer_id);
+                    audit::log_event(AuditEvent::AuthSuccess {
+                        peer_id: peer_id.clone(),
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("JWT verification failed: {}, falling back to PSK", e);
+                }
+            }
+        }
+    }
+
+    // ── PSK auth (fallback) ───────────────────────────────────────────
     if !authenticated {
         tracing::info!("Auth: waiting for PSK...");
         match receiver.next().await {
             Some(Ok(Message::Text(text))) => {
-                if let Some(ref a) = auth
+                if let Some(ref a) = psk_auth
                     && (a.sign(peer_id.as_bytes()) == a.sign(text.as_bytes())
                         || text == psk.as_deref().unwrap_or(""))
                 {
                     authenticated = true;
-                    tracing::info!("Peer {} authenticated", peer_id);
+                    tracing::info!("Peer {} authenticated via PSK", peer_id);
                     audit::log_event(AuditEvent::AuthSuccess {
                         peer_id: peer_id.clone(),
                     });
