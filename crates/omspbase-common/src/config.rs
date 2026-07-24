@@ -56,6 +56,9 @@ pub struct ServerConfig {
     #[serde(default = "default_ws_max_message_size")]
     pub ws_max_message_size: usize,
 
+    /// TLS configuration (optional). When set, server listens on WSS/HTTPS.
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
 }
 
 /// Config for omspbase-client (pull + decode + control — cockpit/operator side).
@@ -161,6 +164,16 @@ pub struct RenderConfig {
     #[serde(default = "default_render_backend")]
     pub backend: String,
 }
+/// TLS configuration for native rustls.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TlsConfig {
+    /// Path to PEM-encoded certificate chain file.
+    pub cert_path: String,
+
+    /// Path to PEM-encoded private key file.
+    pub key_path: String,
+}
+
 
 // --- Defaults ---
 
@@ -380,5 +393,21 @@ host: "192.168.1.1"
         assert_eq!(parsed.rate_limit, 100);
         assert_eq!(parsed.psk, None);
         assert_eq!(parsed.ws_max_message_size, 65536);
+        assert!(parsed.tls.is_none());
+    }
+
+    #[test]
+    fn server_config_with_tls() {
+        let yaml = r#"
+listen:
+  port: 443
+tls:
+  cert_path: "/etc/certs/server.crt"
+  key_path: "/etc/certs/server.key"
+"#;
+        let parsed: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        let tls = parsed.tls.unwrap();
+        assert_eq!(tls.cert_path, "/etc/certs/server.crt");
+        assert_eq!(tls.key_path, "/etc/certs/server.key");
     }
 }

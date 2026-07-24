@@ -10,6 +10,7 @@ pub mod room;
 pub mod sfu;
 pub mod health;
 pub mod signaling;
+pub mod tls;
 
 // Re-export key dependencies for integration tests
 pub use axum;

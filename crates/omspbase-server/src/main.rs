@@ -128,50 +128,94 @@ let app = app.layer(GovernorLayer {
     // Timeout: hard cap request processing at 30s to prevent resource exhaustion
     let app = app.layer(TimeoutLayer::new(Duration::from_secs(30)));
 
-    // Bind address from omspbase_common config
+    // Bind address
     let bind_addr = format!("{}:{}", config.listen.host, config.listen.port);
 
-    let listener = tokio::net::TcpListener::bind(&bind_addr).await.map_err(|e| {
-        format!("Failed to bind {}: {}", bind_addr, e)
-    })?;
-
-    tracing::info!("Listening on {}", bind_addr);
-
-    // Notify systemd / process manager
-    tracing::info!("Server ready on {}", bind_addr);
-
     // Run server with graceful shutdown + connection draining
-    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
-        tokio::signal::ctrl_c().await.ok();
-        tracing::info!("Shutdown signal received, initiating graceful shutdown...");
+    if let Some(ref tls_cfg) = config.tls {
+        // ── TLS mode ──
+        let rustls_config = omspbase_server::tls::build_rustls_config(tls_cfg)
+            .await
+            .unwrap_or_else(|e| panic!("TLS setup failed: {e}"));
+        tracing::info!("Listening on {} (TLS)", bind_addr);
+        tracing::info!("Server ready on {} (TLS)", bind_addr);
 
-        // Signal all WebSocket connections to close
-        signaling_server.shutdown();
+        let handle = axum_server::Handle::new();
+        let shutdown_handle = handle.clone();
 
-        // Drain active connections with a 30-second timeout
-        let drain_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        loop {
-            let remaining = signaling_server.active_connections();
-            if remaining == 0 {
-                tracing::info!("All connections drained, shutting down");
-                break;
+        let server = axum_server::bind_rustls(bind_addr.parse().unwrap(), rustls_config)
+            .handle(handle)
+            .serve(app.into_make_service());
+
+        let shutdown_future = async move {
+            tokio::signal::ctrl_c().await.ok();
+            tracing::info!("Shutdown signal received, initiating graceful shutdown...");
+            signaling_server.shutdown();
+            shutdown_handle.shutdown();
+
+            let drain_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                let remaining = signaling_server.active_connections();
+                if remaining == 0 {
+                    tracing::info!("All connections drained, shutting down");
+                    break;
+                }
+                if tokio::time::Instant::now() >= drain_deadline {
+                    tracing::warn!(
+                        "Shutdown timeout reached (30s) with {} active connections, forcing exit",
+                        remaining
+                    );
+                    break;
+                }
+                tracing::info!("Draining: {} active connections remaining", remaining);
+                tokio::time::sleep(Duration::from_millis(250)).await;
             }
-            if tokio::time::Instant::now() >= drain_deadline {
-                tracing::warn!(
-                    "Shutdown timeout reached (30s) with {} active connections, forcing exit",
-                    remaining
-                );
-                break;
+        };
+
+        tokio::select! {
+            result = server => {
+                if let Err(e) = result {
+                    tracing::error!("Server error: {}", e);
+                }
             }
-            tracing::info!("Draining: {} active connections remaining", remaining);
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            () = shutdown_future => {}
         }
-    });
+    } else {
+        // ── Plain TCP mode ──
+        let listener = tokio::net::TcpListener::bind(&bind_addr).await.map_err(|e| {
+            format!("Failed to bind {}: {}", bind_addr, e)
+        })?;
+        tracing::info!("Listening on {}", bind_addr);
+        tracing::info!("Server ready on {}", bind_addr);
 
-    if let Err(e) = server.await {
-        tracing::error!("Server error: {}", e);
+        let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+            tokio::signal::ctrl_c().await.ok();
+            tracing::info!("Shutdown signal received, initiating graceful shutdown...");
+            signaling_server.shutdown();
+
+            let drain_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                let remaining = signaling_server.active_connections();
+                if remaining == 0 {
+                    tracing::info!("All connections drained, shutting down");
+                    break;
+                }
+                if tokio::time::Instant::now() >= drain_deadline {
+                    tracing::warn!(
+                        "Shutdown timeout reached (30s) with {} active connections, forcing exit",
+                        remaining
+                    );
+                    break;
+                }
+                tracing::info!("Draining: {} active connections remaining", remaining);
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        });
+
+        if let Err(e) = server.await {
+            tracing::error!("Server error: {}", e);
+        }
     }
-
     tracing::info!("Shutdown complete");
     Ok(())
 }

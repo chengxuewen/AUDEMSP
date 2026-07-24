@@ -42,12 +42,19 @@ tokio-stream = "0.1"
 # Shared state
 dashmap = "6"
 uuid = { version = "1", features = ["v4"] }
+# TLS (rustls, native Rust implementation)
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 
 [features]
 default = []
 webrtc = ["dep:omspbase-webrtc"]
 sfu-mediasoup = ["dep:mediasoup"]
-production = ["webrtc", "sfu-mediasoup"]
+[[bench]]
+name = "bench"
+harness = false
+path = "benches/bench.rs"
 
 [dev-dependencies]
 tempfile = "3"
@@ -55,6 +62,7 @@ tower = "0.5"
 http = "1"
 tokio-tungstenite = "0.24"
 base64 = "0.22"
+
 
 [profile.release]
 opt-level = 3
