@@ -1,0 +1,162 @@
+openapi: 3.0.3
+info:
+  title: OMSPBase Server API
+  description: |
+    Signaling relay, room management, health, and monitoring API for OMSPBase.
+    WebSocket signaling at `/ws` is not described here (handled separately).
+  version: 0.1.0
+  contact:
+    name: OMSPBase Team
+    email: team@omspbase.dev
+
+servers:
+  - url: http://localhost:9800
+    description: Default local server
+
+tags:
+  - name: Health
+    description: Liveness, readiness, and server statistics
+  - name: Metrics
+    description: Prometheus-format server metrics
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Liveness probe
+      description: Returns full health status with per-component breakdown.
+      operationId: getHealth
+      responses:
+        "200":
+          description: Server health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: One or more components are unhealthy
+
+  /ready:
+    get:
+      tags:
+        - Health
+      summary: Readiness probe
+      description: Returns 200 if all components are healthy, 503 otherwise.
+      operationId: getReady
+      responses:
+        "200":
+          description: All components are healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: At least one component is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /stats:
+    get:
+      tags:
+        - Health
+      summary: Server statistics
+      description: Returns active rooms, connected peers, and uptime.
+      operationId: getStats
+      responses:
+        "200":
+          description: Server statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsResponse"
+
+  /metrics:
+    get:
+      tags:
+        - Metrics
+      summary: Prometheus metrics
+      description: Returns server metrics in Prometheus text exposition format.
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP omspbase_active_connections Number of active WebSocket connections
+                # TYPE omspbase_active_connections gauge
+                omspbase_active_connections 12
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - overall
+        - components
+        - uptime_seconds
+      properties:
+        overall:
+          $ref: "#/components/schemas/HealthStatus"
+        components:
+          type: array
+          items:
+            $ref: "#/components/schemas/ComponentHealth"
+        uptime_seconds:
+          type: integer
+          format: int64
+          description: Seconds since server start
+
+    HealthStatus:
+      oneOf:
+        - type: object
+          properties:
+            status:
+              type: string
+              enum: [healthy]
+        - type: object
+          properties:
+            status:
+              type: string
+              enum: [degraded]
+            reason:
+              type: string
+        - type: object
+          properties:
+            status:
+              type: string
+              enum: [unhealthy]
+            reason:
+              type: string
+
+    ComponentHealth:
+      type: object
+      required:
+        - component
+      properties:
+        component:
+          type: string
+          description: Component name (e.g. "signaling")
+
+    StatsResponse:
+      type: object
+      required:
+        - active_rooms
+        - connected_peers
+        - uptime_seconds
+      properties:
+        active_rooms:
+          type: integer
+          description: Number of active rooms
+        connected_peers:
+          type: integer
+          description: Number of connected peers
+        uptime_seconds:
+          type: integer
+          format: int64
+          description: Seconds since server start
