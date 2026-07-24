@@ -3075,3 +3075,50 @@ SFU 平台: macOS cargo check only · Linux full build+test · Docker 统一开�
 - 9/9 通过: Host→Server→Client 信号中继 + DataChannel 574 bytes 转发
 
 **关联**: D184, D186
+---
+
+## D188: Phase 3 Sprint 3A — 生产就绪安全+容错
+
+**状态**: ✅
+**日期**: 2026-07-24
+
+**决策**: 完成 P0 级别生产就绪改进。
+- 优雅关闭: 30s drain timeout + panic boundary + signal handler
+- 深度健康检查: HealthChecker trait + per-component JSON
+- 限流: tower-governor middleware + ws_max_message_size
+- 审计日志: 6 结构化事件 (RoomCreate/Destroy, PeerJoin/Leave, AuthSuccess/Failure)
+- process::exit 审计: 替换为 anyhow error propagation
+- Dockerfile EXPOSE 端口修复 (8000→9800)
+
+**关联**: D186, D187
+
+---
+
+## D189: Phase 3 Sprint 3B — 日志+文档+备份
+
+**状态**: ✅
+**日期**: 2026-07-24
+
+**决策**: 完成 P1 级别生产就绪改进。
+- JSON 日志: logging.rs (TraceId, LoggingConfig, trace_span)
+- BackupManager<T>: 原子化 save/load/delete + tokio 持久化任务
+- TLS/CORS 文档: 19-tls-cors-configuration.md (517行)
+- 排障文档: troubleshooting.md (Docker/网络/STUN/缓存)
+- 请求超时: tower-http TimeoutLayer (30s)
+
+**关联**: D188
+
+---
+
+## D190: Phase 3 Sprint 3C — 高级特性
+
+**状态**: ✅
+**日期**: 2026-07-24
+
+**决策**: 完成 P2 级别高级特性。
+- JWT 认证: JwtClaims + JwtAuth (HS256) + PSK fallback
+- rustls TLS: 原生 TLS 支持 (axum_server + rustls)
+- CI 压测: 6 benchmarks (165K-1.2M it/s) + benchmark CI job
+- OpenAPI 3.0: docs/openapi.yaml (4 REST endpoints)
+
+**关联**: D189

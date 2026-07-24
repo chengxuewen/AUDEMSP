@@ -1,14 +1,14 @@
 # OMSPBase Status
 
-**生成**: 2026-07-24 | 决策: 187+ (D1-D187) | Phase: 2 完成 | 75 commits
+**生成**: 2026-07-24 | 决策: 195+ (D1-D195) | Phase: 3 完成 | 90 commits
 
-**当前**: 7 crate workspace。Phase 2 mediasoup SFU 集成全部完成 (2a-2d)。Docker/CI/DevContainer 就位，全部使用 Ubuntu 22.04 LTS (mediasoup 预构建基线)。macOS 混合开发工作流 (Host/Client 原生 + Server Docker)。P2P 管线生产就绪 (重连/ICE/STUN/房间配置)。macOS E2E 自动测试 9/9 通过 (信号中继 + SDP + DataChannel)。
+**当前**: 7 crate workspace。Phase 2 mediasoup SFU 集成完成。Phase 3 生产就绪全部完成 (3A P0 安全+容错, 3B P1 日志+文档, 3C P2 高级特性)。Docker/CI/DevContainer 就位，全部 Ubuntu 22.04 LTS。macOS 混合开发工作流 (Host/Client 原生 + Server Docker)。P2P 管线生产就绪。
 
 ## 测试
 
 | Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
-| omspbase-common | 50 | — | 含 SFU 协议测试 |
+| omspbase-common | 68 | — | +backup +logging +auth tests |
 | omspbase-media | 54 | — | |
 | omspbase-webrtc (stub) | 11 | 67+ | |
 | omspbase-webrtc (webrtc-sys) | 11 | 49 (4 ICE 预存) | |
@@ -33,10 +33,11 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 |-------|:----:|
 | 0-1 基础设施 | ✅ |
 | 2a-2d mediasoup SFU | ✅ |
-| P2P 生产就绪 (#1-5) | ✅ (#4 推迟) |
+| 3A P0 安全+容错 | ✅ |
+| 3B P1 日志+文档 | ✅ |
+| 3C P2 高级特性 | ✅ |
 | Docker/CI/DevContainer | ✅ |
 | macOS E2E 验证 | ✅ |
-| Phase 3 生产就绪 | 🔲 |
 
 ## 决策状态
 
@@ -44,4 +45,5 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 |------|------|:----:|:-----:|
 | D124-D185 | (见 decisions.md) | ✅ | 0-2 |
 | D186 | Ubuntu 22.04 统一 | ✅ | 2 |
-| D187 | macOS E2E 验证 + webrtc backend 解耦 | ✅ | 0 |
+| D187 | macOS E2E 验证 | ✅ | 0 |
+| D188-D195 | Phase 3 生产就绪 | ✅ | 3 |
