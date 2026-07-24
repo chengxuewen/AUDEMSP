@@ -99,6 +99,7 @@ impl SignalingClient {
         let join_msg = SignalingMessage::RoomJoin {
             room_id: self.room_id.clone(),
             peer_role: PeerRole::Host,
+            stream_id: None,
         };
         let join_json = serde_json::to_string(&join_msg).map_err(|e| {
             CoreError::ConfigParse(format!("serialize RoomJoin: {}", e))

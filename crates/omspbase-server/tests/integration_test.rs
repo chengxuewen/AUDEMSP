@@ -38,6 +38,7 @@ async fn integration_signaling_pipeline() {
         let join = serde_json::to_string(&SignalingMessage::RoomJoin {
             room_id: ROOM.into(),
             peer_role: PeerRole::Host,
+            stream_id: None,
         }).unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
         let joined = ws.next().await.unwrap().unwrap();
@@ -66,6 +67,7 @@ async fn integration_signaling_pipeline() {
         let join = serde_json::to_string(&SignalingMessage::RoomJoin {
             room_id: ROOM.into(),
             peer_role: PeerRole::Remote,
+            stream_id: None,
         }).unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
         let joined = ws.next().await.unwrap().unwrap();
@@ -269,7 +271,9 @@ async fn e2e_video_frame_relay() {
         ws.send(WsMsg::Text(PSK.into())).await.unwrap();
         ws.next().await.unwrap().unwrap(); // auth ack
         let join = serde_json::to_string(&SignalingMessage::RoomJoin {
-            room_id: ROOM.into(), peer_role: PeerRole::Host,
+            room_id: ROOM.into(),
+            peer_role: PeerRole::Host,
+            stream_id: None,
         }).unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
         ws.next().await.unwrap().unwrap(); // room_joined
@@ -302,7 +306,9 @@ async fn e2e_video_frame_relay() {
         ws.send(WsMsg::Text(PSK.into())).await.unwrap();
         ws.next().await.unwrap().unwrap(); // auth ack
         let join = serde_json::to_string(&SignalingMessage::RoomJoin {
-            room_id: ROOM.into(), peer_role: PeerRole::Remote,
+            room_id: ROOM.into(),
+            peer_role: PeerRole::Remote,
+            stream_id: None,
         }).unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
         ws.next().await.unwrap().unwrap(); // room_joined

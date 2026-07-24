@@ -3122,3 +3122,28 @@ SFU 平台: macOS cargo check only · Linux full build+test · Docker 统一开�
 - OpenAPI 3.0: docs/openapi.yaml (4 REST endpoints)
 
 **关联**: D189
+
+---
+
+## D196: Admin Dashboard Architecture
+
+**Decision**: React+TypeScript admin SPA embedded in server binary (rust-embed + build.rs). Phase 1 targets Remote Control scenario (DeviceStream). Room model refactored to per-stream rooms with N consumers. Zustand for frontend state. Admin JWT separate from signaling JWT.
+**Date**: 2026-07-24
+**Reason**: 
+- Operators need visual monitoring of media streams (91 commits, zero visibility)
+- Remote Control is the immediate use case (vehicles pushing camera streams)
+- Per-stream room model simplifies relay routing
+- Unified AdminEvent enum serves both audit logging and WS push
+- build.rs auto-resolves dist/ path for rust-embed
+**Supersedes**: D136/D142 (consolidated MVP admin plan — larger scope, different architecture)
+
+## D197: D87 Scope Limitation — Client GUI Only
+
+**Decision**: D87 (React + Ant Design for Server management panel) applies only to omspbase-client GUI. OMSPBase Server admin dashboard uses CSS Modules for zero-dependency lightweight panel.
+**Date**: 2026-07-24
+**Reason**:
+- D87's rationale (share components with AUDEBase Admin UI) is irrelevant for embedded server admin
+- Admin dashboard is a monitoring tool, not a user-facing application
+- CSS Modules = zero runtime, smaller bundle, no framework lock-in
+- Ponytail principle: don't add Ant Design for a few cards and a table
+**Limits**: D87 remains in effect for omspbase-client (Tauri desktop app) and any AUDEBase-shared UI

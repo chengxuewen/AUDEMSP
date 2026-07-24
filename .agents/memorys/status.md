@@ -39,11 +39,33 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | Docker/CI/DevContainer | ✅ |
 | macOS E2E 验证 | ✅ |
 
+## Phase 进度
+
+| Phase | 状态 |
+|-------|:----:|
+| 0-1 基础设施 | ✅ |
+| 2a-2d mediasoup SFU | ✅ |
+| 3A P0 安全+容错 | ✅ |
+| 3B P1 日志+文档 | ✅ |
+| 3C P2 高级特性 | ✅ |
+| Docker/CI/DevContainer | ✅ |
+| macOS E2E 验证 | ✅ |
+| Admin Dashboard (P1-P5) | ✅ |
+| Admin Dashboard (P6) | 🟡 |
+
 ## 决策状态
 
 | 决策 | 内容 | 状态 | Phase |
 |------|------|:----:|:-----:|
-| D124-D185 | (见 decisions.md) | ✅ | 0-2 |
-| D186 | Ubuntu 22.04 统一 | ✅ | 2 |
-| D187 | macOS E2E 验证 | ✅ | 0 |
-| D188-D195 | Phase 3 生产就绪 | ✅ | 3 |
+| D124-D195 | (见 decisions.md) | ✅ | 0-3 |
+| D196 | Admin Dashboard 架构 | ✅ | 4 |
+| D197 | D87 范围限定 (Client GUI only) | ✅ | 4 |
+
+## Admin Dashboard 测试
+
+| Crate | Lib Tests |
+|-------|:---------:|
+| omspbase-common | 71 (+3) |
+| omspbase-server | 32 (新增 admin) |
+| omspbase-server e2e | 25 |
+| omspbase-server integration | 5 |

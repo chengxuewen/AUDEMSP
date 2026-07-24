@@ -1,0 +1,39 @@
+.dashboard { max-width: 960px; }
+
+.stats-bar { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+
+.stats-card { flex: 1; background: #fff; border-radius: 8px; padding: 1rem 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,.06); display: flex; flex-direction: column; gap: 0.25rem; }
+.stats-card .stats-label { font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+.stats-card .stats-value { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
+.stats-card .stats-value small { font-size: 0.8rem; font-weight: 400; color: #888; margin-left: 2px; }
+
+.section-title { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: #1a1a2e; }
+.empty { color: #aaa; font-size: 0.9rem; }
+
+.device-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.device-group { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow: hidden; }
+.device-header { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; cursor: pointer; user-select: none; }
+.device-header:hover { background: #f8f9fa; }
+.device-name { font-weight: 600; flex: 1; }
+.device-stream-count { font-size: 0.8rem; color: #888; }
+
+.tree-icon { font-size: 0.7rem; color: #888; transition: transform 0.15s; display: inline-block; width: 12px; }
+.tree-icon.expanded { transform: rotate(90deg); }
+
+.stream-list { border-top: 1px solid #f0f0f0; padding: 0.5rem 1rem 0.75rem 2rem; }
+.stream-item { display: flex; align-items: center; gap: 1rem; padding: 0.5rem 0; border-bottom: 1px solid #f5f5f5; }
+.stream-item:last-child { border-bottom: none; }
+.stream-name { font-weight: 500; flex: 1; }
+.consumer-count { font-size: 0.8rem; color: #888; }
+.consumer-list { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.consumer-tag { font-size: 0.75rem; background: #eef1ff; color: #4361ee; padding: 2px 8px; border-radius: 10px; }
+
+.btn-sm { padding: 0.25rem 0.75rem; font-size: 0.75rem; border: 1px solid #e74c3c; background: none; color: #e74c3c; border-radius: 4px; cursor: pointer; }
+.btn-sm:hover { background: #e74c3c; color: #fff; }
+
+.status-badge { font-size: 0.8rem; display: flex; align-items: center; gap: 4px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+.loading, .error { padding: 2rem; text-align: center; color: #888; }
+.error { color: #e74c3c; }

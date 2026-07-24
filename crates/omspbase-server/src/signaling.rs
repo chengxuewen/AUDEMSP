@@ -266,7 +266,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
         match receiver.next().await {
             Some(Ok(Message::Text(text))) => {
                 let text_str = text.to_string();
-                if let Ok(SignalingMessage::RoomJoin { room_id, peer_role }) =
+                if let Ok(SignalingMessage::RoomJoin { room_id, peer_role, .. }) =
                     serde_json::from_str(&text_str)
                 {
                     break (room_id, peer_role);
@@ -424,6 +424,28 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     }
                 };
                 if should_relay {
+                    // ── DeviceStream filter: only relay Frame, skip SDP/ICE from consumers
+                    if server
+                        .room_manager
+                        .is_device_stream(&relay_room)
+                    {
+                        let is_frame = if let Ok(sig_msg) =
+                            serde_json::from_str::<SignalingMessage>(&text_str)
+                        {
+                            matches!(sig_msg, SignalingMessage::Frame { .. })
+                        } else if let Ok(raw) =
+                            serde_json::from_str::<serde_json::Value>(&text_str)
+                        {
+                            raw.get("type").and_then(|v| v.as_str()) == Some("frame")
+                        } else {
+                            false
+                        };
+                        if !is_frame {
+                            tracing::debug!("DeviceStream: dropping non-Frame message");
+                            continue;
+                        }
+                    }
+
                     match tx.send(text_str) {
                         Ok(n) => tracing::debug!("Forward: broadcast to {} receivers", n),
                         Err(tokio::sync::broadcast::error::SendError(_)) => {
@@ -446,12 +468,42 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
         tracing::info!("SFU: cleaned up peer {} in room {}", relay_peer_id, relay_room);
     }
 
+
+    // ── Check if leaving peer is a DeviceStream host (before leave_room removes it)
+    let is_device_stream_host = server.room_manager.is_device_stream(&relay_room)
+        && server
+            .room_manager
+            .list_rooms()
+            .iter()
+            .find(|r| r.id == relay_room)
+            .and_then(|r| r.host.as_deref())
+            == Some(&relay_peer_id);
+
     #[allow(unused_variables)]
     let room_removed = server.room_manager.leave_room(&relay_room, &relay_peer_id);
     audit::log_event(AuditEvent::PeerLeave {
         peer_id: relay_peer_id.clone(),
         room_id: relay_room.clone(),
     });
+
+    // ── DeviceStream host disconnect: drop all consumers
+    if is_device_stream_host {
+        tracing::info!("DeviceStream host {} disconnected, disconnecting consumers", relay_peer_id);
+        let consumers = server
+            .room_manager
+            .disconnect_consumers(&relay_room);
+        for consumer_id in &consumers {
+            audit::log_event(AuditEvent::PeerLeave {
+                peer_id: consumer_id.clone(),
+                room_id: relay_room.clone(),
+            });
+            tracing::info!("DeviceStream consumer {} removed (host left)", consumer_id);
+        }
+        if !consumers.is_empty() {
+            tracing::info!("Disconnected {} consumers from room {}",
+                consumers.len(), relay_room);
+        }
+    }
 
     // If room became empty, also remove it from SFU
     #[cfg(feature = "sfu-mediasoup")]

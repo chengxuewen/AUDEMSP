@@ -51,6 +51,10 @@ pub struct ServerConfig {
     #[serde(default)]
     pub jwt_secret: Option<String>,
 
+    /// JWT secret for admin API authentication (optional).
+    #[serde(default)]
+    pub admin_jwt_secret: Option<String>,
+
 
     /// Rate limit (requests per second per connection).
     #[serde(default = "default_rate_limit")]
@@ -59,6 +63,10 @@ pub struct ServerConfig {
     /// WebSocket max message size in bytes (default: 65536 = 64KB).
     #[serde(default = "default_ws_max_message_size")]
     pub ws_max_message_size: usize,
+
+    /// Limit on Consumer peers per stream (default: 50).
+    #[serde(default = "default_consumer_limit_per_stream")]
+    pub consumer_limit_per_stream: usize,
 
     /// TLS configuration (optional). When set, server listens on WSS/HTTPS.
     #[serde(default)]
@@ -214,6 +222,9 @@ fn default_rate_limit() -> u32 {
 }
 fn default_ws_max_message_size() -> usize {
     65536
+}
+fn default_consumer_limit_per_stream() -> usize {
+    50
 }
 fn default_room_id() -> String {
     "default".to_string()
@@ -400,7 +411,9 @@ host: "192.168.1.1"
         assert_eq!(parsed.psk, None);
         assert_eq!(parsed.ws_max_message_size, 65536);
         assert_eq!(parsed.jwt_secret, None);
+        assert_eq!(parsed.admin_jwt_secret, None);
         assert!(parsed.tls.is_none());
+        assert_eq!(parsed.consumer_limit_per_stream, 50);
     }
 
     #[test]
@@ -416,5 +429,22 @@ tls:
         let tls = parsed.tls.unwrap();
         assert_eq!(tls.cert_path, "/etc/certs/server.crt");
         assert_eq!(tls.key_path, "/etc/certs/server.key");
+        assert_eq!(tls.key_path, "/etc/certs/server.key");
+    }
+
+    #[test]
+    fn consumer_limit_default_and_override() {
+        // Default
+        let yaml = "listen: {}";
+        let parsed: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(parsed.consumer_limit_per_stream, 50);
+
+        // Override
+        let yaml = r#"
+listen: {}
+consumer_limit_per_stream: 100
+"#;
+        let parsed: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(parsed.consumer_limit_per_stream, 100);
     }
 }

@@ -20,6 +20,8 @@ pub enum SignalingMessage {
     RoomJoin {
         room_id: String,
         peer_role: PeerRole,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stream_id: Option<String>,
     },
 
     /// Room join acknowledged by Server.
@@ -176,6 +178,7 @@ pub struct Fingerprint {
 pub enum PeerRole {
     Host,
     Remote,
+    Consumer,
 }
 
 /// Media kind for produce/consume.
@@ -195,11 +198,37 @@ mod tests {
         let msg = SignalingMessage::RoomJoin {
             room_id: "room-1".into(),
             peer_role: PeerRole::Host,
+            stream_id: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"room_join""#));
         assert!(json.contains(r#""room_id":"room-1""#));
         assert!(json.contains(r#""peer_role":"host""#));
+        // stream_id: None is absent from JSON (serde skips None by default)
+        assert!(!json.contains("stream_id"));
+    }
+
+    #[test]
+    fn roundtrip_room_join_with_stream_id() {
+        let msg = SignalingMessage::RoomJoin {
+            room_id: "room-1".into(),
+            peer_role: PeerRole::Consumer,
+            stream_id: Some("stream-42".into()),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""type":"room_join""#));
+        assert!(json.contains(r#""peer_role":"consumer""#));
+        assert!(json.contains(r#""stream_id":"stream-42""#));
+
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            SignalingMessage::RoomJoin { room_id, peer_role, stream_id } => {
+                assert_eq!(room_id, "room-1");
+                assert_eq!(peer_role, PeerRole::Consumer);
+                assert_eq!(stream_id.as_deref(), Some("stream-42"));
+            }
+            _ => panic!("expected RoomJoin"),
+        }
     }
 
     #[test]
@@ -314,6 +343,14 @@ mod tests {
         assert_eq!(json, r#""remote""#);
         let parsed: PeerRole = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, PeerRole::Remote);
+    }
+
+    #[test]
+    fn peer_role_consumer_serde() {
+        let json = serde_json::to_string(&PeerRole::Consumer).unwrap();
+        assert_eq!(json, r#""consumer""#);
+        let parsed: PeerRole = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, PeerRole::Consumer);
     }
 
     #[test]

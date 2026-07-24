@@ -98,6 +98,10 @@ pub struct JwtClaims {
     pub iat: usize,
     /// Expiration time (Unix timestamp in seconds).
     pub exp: usize,
+
+    /// Role of the subject (e.g., "admin", "user").
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 /// JWT authenticator using HS256.
@@ -122,6 +126,7 @@ impl JwtAuth {
             .as_secs() as usize;
         let claims = JwtClaims {
             sub: sub.to_string(),
+            role: None,
             iat: now,
             exp: now + ttl_secs as usize,
         };
@@ -248,6 +253,7 @@ mod tests {
             sub: "peer-1".into(),
             iat: now - 7200,
             exp: now - 3600, // expired 1 hour ago
+            role: None,
         };
         let token = jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),

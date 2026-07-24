@@ -187,11 +187,12 @@ fn protocol_roundtrip_room_join() {
     let msg = SignalingMessage::RoomJoin {
         room_id: "room-1".into(),
         peer_role: PeerRole::Host,
+        stream_id: None,
     };
     let json = serde_json::to_string(&msg).unwrap();
     let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
     match parsed {
-        SignalingMessage::RoomJoin { room_id, peer_role } => {
+        SignalingMessage::RoomJoin { room_id, peer_role, .. } => {
             assert_eq!(room_id, "room-1");
             assert_eq!(peer_role, PeerRole::Host);
         }

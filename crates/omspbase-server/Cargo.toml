@@ -22,7 +22,7 @@ mediasoup = { version = "0.23", optional = true }
 # HTTP + WebSocket
 axum = { version = "0.7", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.5", features = ["trace", "cors", "timeout"] }
+tower-http = { version = "0.5", features = ["trace", "cors", "timeout", "fs"] }
 tower_governor = "0.3"
 
 # Config + serialization
@@ -39,6 +39,12 @@ prometheus-client = "0.22"
 futures-util = "0.3"
 tokio-stream = "0.1"
 
+# DateTime
+chrono = "0.4"
+
+# JWT
+jsonwebtoken = "9"
+
 # Shared state
 dashmap = "6"
 uuid = { version = "1", features = ["v4"] }
@@ -47,10 +53,13 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rustls-pemfile = "2"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 
+# Static file embedding (optional)
+rust-embed = { version = "8", optional = true }
 [features]
 default = []
 webrtc = ["dep:omspbase-webrtc"]
 sfu-mediasoup = ["dep:mediasoup"]
+admin-dashboard = ["dep:rust-embed"]
 [[bench]]
 name = "bench"
 harness = false

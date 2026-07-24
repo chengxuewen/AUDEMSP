@@ -7,6 +7,9 @@
 //! - `RoomCreate` / `RoomDestroy` — room lifecycle
 //! - `PeerJoin` / `PeerLeave` — peer lifecycle within a room
 //! - `AuthSuccess` / `AuthFailure` — authentication outcomes
+//! - `DeviceOnline` / `DeviceOffline` — device lifecycle
+//! - `StreamCreate` / `StreamDestroy` — stream lifecycle
+//! - `ConsumerJoin` / `ConsumerLeave` — stream consumer lifecycle
 
 /// Audit event variants covering all security-relevant server operations.
 #[derive(Debug, Clone)]
@@ -30,6 +33,18 @@ pub enum AuditEvent {
     AuthSuccess { peer_id: String },
     /// PSK authentication failed.
     AuthFailure { peer_id: String, reason: String },
+    /// A device came online.
+    DeviceOnline { device_id: String },
+    /// A device went offline.
+    DeviceOffline { device_id: String },
+    /// A media stream was created.
+    StreamCreate { stream_id: String, device_id: String },
+    /// A media stream was destroyed.
+    StreamDestroy { stream_id: String },
+    /// A peer started consuming a stream.
+    ConsumerJoin { stream_id: String, peer_id: String },
+    /// A peer stopped consuming a stream.
+    ConsumerLeave { stream_id: String, peer_id: String },
 }
 
 /// Emit an audit event as a structured `tracing` info-level log.
@@ -89,6 +104,60 @@ pub fn log_event(event: AuditEvent) {
                 peer_id = %peer_id,
                 reason = %reason,
                 "Authentication failed"
+            );
+        }
+        AuditEvent::DeviceOnline { device_id } => {
+            tracing::info!(
+                audit.event = "device_online",
+                device_id = %device_id,
+                "Device came online"
+            );
+        }
+        AuditEvent::DeviceOffline { device_id } => {
+            tracing::info!(
+                audit.event = "device_offline",
+                device_id = %device_id,
+                "Device went offline"
+            );
+        }
+        AuditEvent::StreamCreate {
+            stream_id,
+            device_id,
+        } => {
+            tracing::info!(
+                audit.event = "stream_create",
+                stream_id = %stream_id,
+                device_id = %device_id,
+                "Stream created"
+            );
+        }
+        AuditEvent::StreamDestroy { stream_id } => {
+            tracing::info!(
+                audit.event = "stream_destroy",
+                stream_id = %stream_id,
+                "Stream destroyed"
+            );
+        }
+        AuditEvent::ConsumerJoin {
+            stream_id,
+            peer_id,
+        } => {
+            tracing::info!(
+                audit.event = "consumer_join",
+                stream_id = %stream_id,
+                peer_id = %peer_id,
+                "Consumer joined stream"
+            );
+        }
+        AuditEvent::ConsumerLeave {
+            stream_id,
+            peer_id,
+        } => {
+            tracing::info!(
+                audit.event = "consumer_leave",
+                stream_id = %stream_id,
+                peer_id = %peer_id,
+                "Consumer left stream"
             );
         }
     }

@@ -5,7 +5,9 @@ use tower_http::timeout::TimeoutLayer;
 use omspbase_server::config;
 use omspbase_server::monitor;
 use omspbase_server::signaling;
+use omspbase_server::admin;
 use omspbase_common::auth::JwtAuth;
+
 /// Entry point — install panic hook, then run server with graceful shutdown.
 fn main() {
     // ── Panic boundary ───────────────────────────────────────────────────────
@@ -84,10 +86,15 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             serde_yaml::from_str(DEFAULT_SERVER_CONFIG).unwrap()
         }
     };
+
     // Build JWT authenticator from config (optional)
     let jwt_auth = config.jwt_secret.as_ref().map(|s| JwtAuth::new(s.as_str()));
 
-    // Create the signaling server (shared state for WebSocket rooms)
+    // Print admin setup token if configured
+    if let Some(ref secret) = config.admin_jwt_secret {
+        admin::print_setup_token(secret);
+    }
+
     // Create the signaling server (shared state for WebSocket rooms)
     #[cfg(feature = "sfu-mediasoup")]
     let signaling_server = {
@@ -112,9 +119,27 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let signaling_router = signaling::signaling_router(signaling_server.clone());
     let monitor_router = monitor::monitor_router(signaling_server.clone());
 
+    // ── Admin API state ────────────────────────────────────────────────────
+    let (admin_tx, _) = tokio::sync::broadcast::channel::<String>(256);
+    let admin_state = admin::AdminState {
+        event_tx: admin_tx,
+        signaling: signaling_server.clone(),
+        admin_jwt_secret: config.admin_jwt_secret.clone(),
+        listen_host: config.listen.host.clone(),
+        listen_port: config.listen.port,
+        rate_limit: config.rate_limit,
+        room_capacity: config.room_capacity,
+        consumer_limit_per_stream: config.consumer_limit_per_stream,
+    };
+
+    let admin_router = admin::admin_router(admin_state.clone());
+    let static_router = omspbase_server::static_files::admin_static_router();
+
     let app = axum::Router::new()
         .merge(signaling_router)
-        .merge(monitor_router);
+        .merge(monitor_router)
+        .merge(admin_router)
+        .merge(static_router);
 
     // Rate limiting: per-IP governor using config.rate_limit requests/sec
     let governor_conf = Box::leak(Box::new(

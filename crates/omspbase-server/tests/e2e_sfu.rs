@@ -56,6 +56,7 @@ async fn e2e_sfu_lifecycle() {
         let join = serde_json::to_string(&SignalingMessage::RoomJoin {
             room_id: ROOM.into(),
             peer_role: PeerRole::Host,
+            stream_id: None,
         })
         .unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
@@ -111,6 +112,7 @@ async fn e2e_sfu_lifecycle() {
         let join = serde_json::to_string(&SignalingMessage::RoomJoin {
             room_id: ROOM.into(),
             peer_role: PeerRole::Remote,
+            stream_id: None,
         })
         .unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
@@ -200,6 +202,7 @@ async fn e2e_sfu_cleanup_on_disconnect() {
     let join = serde_json::to_string(&SignalingMessage::RoomJoin {
         room_id: ROOM.into(),
         peer_role: PeerRole::Host,
+        stream_id: None,
     })
     .unwrap();
     ws.send(WsMsg::Text(join.into())).await.unwrap();
