@@ -1,4 +1,5 @@
-use std::process;
+use std::time::Duration;
+use tower_http::timeout::TimeoutLayer;
 mod config;
 mod control;
 mod decode;
@@ -60,7 +61,14 @@ async fn main() {
     // Phase 3: Build axum router (health + config + metrics)
     let metrics = std::sync::Arc::new(CoreMetrics::new());
     let metrics_arc = metrics.clone();
-    let app = axum::Router::new()
+let app = axum::Router::new()
+    .route("/health", axum::routing::get(health_handler))
+    .route("/config", axum::routing::get(config_handler))
+    .route("/metrics", axum::routing::get(move || {
+        let m = metrics_arc.clone();
+        async move { m.encode() }
+    }))
+    .layer(TimeoutLayer::new(Duration::from_secs(30)));
         .route("/health", axum::routing::get(health_handler))
         .route("/config", axum::routing::get(config_handler))
         .route("/metrics", axum::routing::get(move || {

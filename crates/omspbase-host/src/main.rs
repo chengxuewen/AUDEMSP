@@ -12,6 +12,8 @@
 
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tower_http::timeout::TimeoutLayer;
 
 use futures_util::StreamExt;
 use omspbase_media::engine::PipelineEngine;
@@ -104,7 +106,9 @@ async fn main() -> anyhow::Result<()> {
     let shared_metrics = std::sync::Arc::new(std::sync::RwLock::new(core_metrics));
     let metrics_router = metrics::metrics_router(shared_metrics.clone());
 
-    let app = axum::Router::new()
+let app = axum::Router::new()
+    .merge(metrics_router)
+    .layer(TimeoutLayer::new(Duration::from_secs(30)));
         .merge(metrics_router);
 
     // Determine bind address

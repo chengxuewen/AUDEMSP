@@ -1,6 +1,7 @@
 use std::time::Duration;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use futures_util::FutureExt;
+use tower_http::timeout::TimeoutLayer;
 use omspbase_server::config;
 use omspbase_server::monitor;
 use omspbase_server::signaling;
@@ -120,9 +121,12 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             .finish()
             .unwrap(),
     ));
-    let app = app.layer(GovernorLayer {
+let app = app.layer(GovernorLayer {
         config: governor_conf,
     });
+
+    // Timeout: hard cap request processing at 30s to prevent resource exhaustion
+    let app = app.layer(TimeoutLayer::new(Duration::from_secs(30)));
 
     // Bind address from omspbase_common config
     let bind_addr = format!("{}:{}", config.listen.host, config.listen.port);

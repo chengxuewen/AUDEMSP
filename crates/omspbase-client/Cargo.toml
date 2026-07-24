@@ -24,7 +24,7 @@ omspbase-webrtc = { path = "../omspbase-webrtc", default-features = false, featu
 axum = { version = "0.7", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.24", features = ["connect"] }
-tower-http = { version = "0.5", features = ["trace", "cors"] }
+tower-http = { version = "0.5", features = ["trace", "cors", "timeout"] }
 
 # Config + serialization
 serde = { version = "1", features = ["derive"] }
