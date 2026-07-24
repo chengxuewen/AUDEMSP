@@ -24,6 +24,7 @@
 15. [Component 架构](./15-component-architecture.md)
 17. [WebRTC Crate](./17-webrtc-crate.md)
 18. [Codec Crate](./18-codec-crate.md)
+19. [TLS Reverse Proxy & CORS 配置](./19-tls-cors-configuration.md)
 
 **Phase 2+**: 16-admin-dashboard, operations, security-architecture, sfu-mediasoup-integration, upgrade-migration, testing-strategy, error-model, ci-cd-pipeline (创建中)
 
