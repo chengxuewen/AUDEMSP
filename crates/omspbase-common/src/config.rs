@@ -51,6 +51,11 @@ pub struct ServerConfig {
     /// Rate limit (requests per second per connection).
     #[serde(default = "default_rate_limit")]
     pub rate_limit: u32,
+
+    /// WebSocket max message size in bytes (default: 65536 = 64KB).
+    #[serde(default = "default_ws_max_message_size")]
+    pub ws_max_message_size: usize,
+
 }
 
 /// Config for omspbase-client (pull + decode + control — cockpit/operator side).
@@ -186,8 +191,12 @@ fn default_gop() -> u32 {
 fn default_room_capacity() -> usize {
     10
 }
+#[allow(dead_code)]
 fn default_rate_limit() -> u32 {
     100
+}
+fn default_ws_max_message_size() -> usize {
+    65536
 }
 fn default_room_id() -> String {
     "default".to_string()
@@ -370,5 +379,6 @@ host: "192.168.1.1"
         assert_eq!(parsed.room_capacity, 10);
         assert_eq!(parsed.rate_limit, 100);
         assert_eq!(parsed.psk, None);
+        assert_eq!(parsed.ws_max_message_size, 65536);
     }
 }
