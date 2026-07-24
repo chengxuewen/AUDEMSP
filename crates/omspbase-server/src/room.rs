@@ -1,3 +1,4 @@
+use crate::audit::{self, AuditEvent};
 use dashmap::DashMap;
 use omspbase_common::error::CoreError;
 use omspbase_common::protocol::PeerRole;
@@ -20,7 +21,9 @@ pub struct RoomManager {
 }
 
 impl RoomManager {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
+
         Self {
             rooms: Arc::new(DashMap::new()),
         }
@@ -59,6 +62,7 @@ impl RoomManager {
                 created_at: Instant::now(),
             });
             tracing::info!("Room {} created by {:?} {}", room_id, role, peer_id);
+            audit::log_event(AuditEvent::RoomCreate { room_id: room_id.to_string() });
         }
 
         Ok(())
@@ -82,11 +86,12 @@ impl RoomManager {
         let room_gone = !self.rooms.contains_key(&id);
         if room_gone {
             tracing::info!("Room {} destroyed (last peer left)", room_id);
+            audit::log_event(AuditEvent::RoomDestroy { room_id: room_id.to_string() });
         }
         room_gone
     }
 
-    /// Get the other peer in the room (returns the peer_id to relay messages to).
+    #[allow(clippy::unnecessary_lazy_evaluations)]
     pub fn get_other_peer(&self, room_id: &str, _peer_id: &str) -> Option<String> {
         // ponytail: simple single-room pair relay; extend for multi-remote later
         // For now: if sender is host, return remote; if sender is remote, return host

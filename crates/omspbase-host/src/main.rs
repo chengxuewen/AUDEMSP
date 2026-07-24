@@ -10,7 +10,6 @@
 //! 7. Start emergency UDP listener
 //! 8. Serve until shutdown signal
 
-use std::process;
 
 use std::sync::{Arc, Mutex};
 
@@ -30,7 +29,7 @@ mod transport;
 mod webrtc_transport;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
         .json()
@@ -116,11 +115,11 @@ async fn main() {
             tracing::info!("Listening on {}", bind_addr);
             l
         }
-        Err(e) => {
-            tracing::error!("Failed to bind {}: {}", bind_addr, e);
-            process::exit(1);
-        }
-    };
+            Err(e) => {
+                tracing::error!("Failed to bind {}: {}", bind_addr, e);
+                return Err(anyhow::anyhow!("Failed to bind {bind_addr}: {e}"));
+            }
+        };
 
     tracing::info!("Host ready — session id={}", config.capture.source);
 
@@ -153,7 +152,7 @@ async fn main() {
             Some(pair) => pair,
             None => {
                 tracing::error!("Signaling connection failed after {MAX_RETRIES} attempts: {last_err:?}");
-                process::exit(1);
+                return Err(anyhow::anyhow!("Signaling connection failed after {MAX_RETRIES} attempts: {last_err:?}"));
             }
         }
     };
@@ -164,10 +163,10 @@ async fn main() {
     let (webrtc_transport, dc_events) =
         webrtc_transport::WebrtcTransport::new(ws_sender, room_id)
             .await
-            .unwrap_or_else(|e| {
+            .map_err(|e| {
                 tracing::error!("WebRTC transport creation failed: {e}");
-                process::exit(1);
-            });
+                anyhow::anyhow!("WebRTC transport creation failed: {e}")
+            })?;
 
     let webrtc = Arc::new(webrtc_transport);
 
@@ -305,6 +304,7 @@ async fn main() {
     // persist_handle runs for session lifetime, abort last
     persist_handle.abort();
 
+Ok(())
 }
 
 /// Parse "WIDTHxHEIGHT" into (width, height). Defaults to 1280x720.

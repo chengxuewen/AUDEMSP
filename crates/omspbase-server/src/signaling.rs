@@ -1,4 +1,6 @@
+use crate::audit::{self, AuditEvent};
 use crate::room::RoomManager;
+use crate::health::{HealthChecker, HealthStatus};
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
@@ -11,7 +13,9 @@ use omspbase_common::auth::SimplePskAuth;
 use omspbase_common::error::CoreError;
 use omspbase_common::protocol::SignalingMessage;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::broadcast;
+use tokio::sync::watch;
 
 struct RoomChannel {
     tx: broadcast::Sender<String>,
@@ -31,24 +35,57 @@ pub struct SignalingServer {
     /// SFU manager for mediasoup transport negotiation.
     #[cfg(feature = "sfu-mediasoup")]
     pub sfu_manager: Arc<crate::sfu::SfuManager>,
+    /// Shutdown signal — send `true` to request draining.
+    shutdown_tx: watch::Sender<bool>,
+    /// Number of currently active WebSocket connections.
+    active_connections: Arc<AtomicUsize>,
+    pub ws_max_message_size: usize,
 }
 
 impl SignalingServer {
     #[cfg(feature = "sfu-mediasoup")]
-    pub fn new(_sfu: Arc<crate::sfu::SfuManager>) -> Self {
+    pub fn new(_sfu: Arc<crate::sfu::SfuManager>, ws_max_message_size: usize) -> Self {
+        let (shutdown_tx, _) = watch::channel(false);
         Self {
             channels: Arc::new(dashmap::DashMap::new()),
             room_manager: RoomManager::new(),
             sfu_manager: _sfu,
+            shutdown_tx,
+            active_connections: Arc::new(AtomicUsize::new(0)),
+            ws_max_message_size,
         }
     }
 
     #[cfg(not(feature = "sfu-mediasoup"))]
-    pub fn new() -> Self {
+    pub fn new(ws_max_message_size: usize) -> Self {
+        let (shutdown_tx, _) = watch::channel(false);
         Self {
             channels: Arc::new(dashmap::DashMap::new()),
             room_manager: RoomManager::new(),
+            shutdown_tx,
+            active_connections: Arc::new(AtomicUsize::new(0)),
+            ws_max_message_size,
         }
+    }
+
+    /// Subscribe to the shutdown signal — cloned receivers are given to each
+    /// WebSocket handler so they can detect when draining has been requested.
+    pub fn subscribe_shutdown(&self) -> watch::Receiver<bool> {
+        self.shutdown_tx.subscribe()
+    }
+
+    /// Request graceful shutdown: all active connections should close.
+    pub fn shutdown(&self) {
+        let _ = self.shutdown_tx.send(true);
+        tracing::info!(
+            "Shutdown signal broadcast to {} active connections",
+            self.active_connections.load(Ordering::Relaxed)
+        );
+    }
+
+    /// Number of currently active WebSocket connections.
+    pub fn active_connections(&self) -> usize {
+        self.active_connections.load(Ordering::Relaxed)
     }
 
     fn get_or_create_channel(&self, room_id: &str) -> broadcast::Sender<String> {
@@ -57,6 +94,22 @@ impl SignalingServer {
             .or_insert_with(RoomChannel::new)
             .tx
             .clone()
+    }
+}
+
+// ── HealthChecker impl ────────────────────────────────────────────────────
+
+impl HealthChecker for SignalingServer {
+    fn name(&self) -> &'static str {
+        "signaling"
+    }
+
+    fn check_health(&self) -> HealthStatus {
+        let connections = self.active_connections.load(Ordering::Relaxed);
+        let rooms = self.room_manager.active_rooms();
+        tracing::debug!("Health: {connections} connections, {rooms} rooms");
+        // ponytail: always healthy while alive; add degraded thresholds if needed
+        HealthStatus::Healthy
     }
 }
 
@@ -70,7 +123,8 @@ async fn ws_handler(
     ws: WebSocketUpgrade,
     State(server): State<SignalingServer>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, server))
+    let max_size = server.ws_max_message_size;
+    ws.max_message_size(max_size).on_upgrade(move |socket| handle_socket(socket, server))
 }
 
 /// Send a signaling message to this peer directly (not broadcast).
@@ -79,6 +133,21 @@ fn send_msg(msg: &SignalingMessage) -> Result<String, String> {
 }
 
 async fn handle_socket(socket: WebSocket, server: SignalingServer) {
+    // Track active connection count
+    server.active_connections.fetch_add(1, Ordering::Relaxed);
+
+    // Decrement on every exit path
+    struct Guard(Arc<AtomicUsize>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+    let _guard = Guard(Arc::clone(&server.active_connections));
+
+    // Subscribe to shutdown signal
+    let shutdown_rx = server.subscribe_shutdown();
+
     let (ws_sender, mut receiver) = socket.split();
     let ws_sender = Arc::new(tokio::sync::Mutex::new(ws_sender));
 
@@ -96,13 +165,15 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
         tracing::info!("Auth: waiting for PSK...");
         match receiver.next().await {
             Some(Ok(Message::Text(text))) => {
-                if let Some(ref a) = auth {
-                    if a.sign(peer_id.as_bytes()) == a.sign(text.as_bytes())
-                        || text == psk.as_deref().unwrap_or("")
-                    {
-                        authenticated = true;
-                        tracing::info!("Peer {} authenticated", peer_id);
-                    }
+                if let Some(ref a) = auth
+                    && (a.sign(peer_id.as_bytes()) == a.sign(text.as_bytes())
+                        || text == psk.as_deref().unwrap_or(""))
+                {
+                    authenticated = true;
+                    tracing::info!("Peer {} authenticated", peer_id);
+                    audit::log_event(AuditEvent::AuthSuccess {
+                        peer_id: peer_id.clone(),
+                    });
                 }
                 if !authenticated {
                     let error = SignalingMessage::Error {
@@ -112,8 +183,12 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
                     let _ = ws_sender
                         .lock()
                         .await
-                        .send(Message::Text(send_msg(&error).unwrap().into()))
+                        .send(Message::Text(send_msg(&error).unwrap()))
                         .await;
+                    audit::log_event(AuditEvent::AuthFailure {
+                        peer_id: peer_id.clone(),
+                        reason: "PSK authentication failed".into(),
+                    });
                     return;
                 }
             }
@@ -125,8 +200,12 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
                 let _ = ws_sender
                     .lock()
                     .await
-                    .send(Message::Text(send_msg(&error).unwrap().into()))
+                    .send(Message::Text(send_msg(&error).unwrap()))
                     .await;
+                audit::log_event(AuditEvent::AuthFailure {
+                    peer_id: peer_id.clone(),
+                    reason: "Authentication required".into(),
+                });
                 return;
             }
         }
@@ -140,12 +219,18 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
     let _ = ws_sender
         .lock()
         .await
-        .send(Message::Text(send_msg(&ack).unwrap().into()))
+        .send(Message::Text(send_msg(&ack).unwrap()))
         .await;
     tracing::info!("Auth ack sent, entering RoomJoin phase");
 
     // Phase 2: RoomJoin
     let (room_id, role) = loop {
+        // Check for shutdown during RoomJoin
+        if *shutdown_rx.borrow() {
+            tracing::info!("Shutdown requested during RoomJoin for peer {}", peer_id);
+            return;
+        }
+
         tracing::debug!("RoomJoin: waiting for message...");
         match receiver.next().await {
             Some(Ok(Message::Text(text))) => {
@@ -163,7 +248,13 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
 
     // Join the room
     match server.room_manager.join_room(&room_id, &peer_id, &role) {
-        Ok(()) => {}
+        Ok(()) => {
+            audit::log_event(AuditEvent::PeerJoin {
+                peer_id: peer_id.clone(),
+                room_id: room_id.clone(),
+                role: format!("{:?}", role),
+            });
+        }
         Err(CoreError::RoomFull) => {
             let error = SignalingMessage::Error {
                 code: 4002,
@@ -172,7 +263,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
             let _ = ws_sender
                 .lock()
                 .await
-                .send(Message::Text(send_msg(&error).unwrap().into()))
+                .send(Message::Text(send_msg(&error).unwrap()))
                 .await;
             return;
         }
@@ -185,7 +276,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
             let _ = ws_sender
                 .lock()
                 .await
-                .send(Message::Text(send_msg(&error).unwrap().into()))
+                .send(Message::Text(send_msg(&error).unwrap()))
                 .await;
             return;
         }
@@ -199,7 +290,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
     let _ = ws_sender
         .lock()
         .await
-        .send(Message::Text(send_msg(&ack).unwrap().into()))
+        .send(Message::Text(send_msg(&ack).unwrap()))
         .await;
 
     let tx = server.get_or_create_channel(&room_id);
@@ -222,7 +313,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
                     if relay_sender
                         .lock()
                         .await
-                        .send(Message::Text(msg.into()))
+                        .send(Message::Text(msg))
                         .await
                         .is_err()
                     {
@@ -244,6 +335,18 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
     // Forward: this peer's receiver → broadcast
     tracing::info!("Entering forward loop for peer {}", relay_peer_id);
     while let Some(Ok(msg)) = receiver.next().await {
+        // Check shutdown signal before processing each message
+        if *shutdown_rx.borrow() {
+            tracing::info!("Shutdown requested, disconnecting peer {}", relay_peer_id);
+            // Notify room peers
+            let leave_msg = SignalingMessage::RoomLeave {
+                room_id: relay_room.clone(),
+                peer_id: relay_peer_id.clone(),
+            };
+            let _ = tx.send(serde_json::to_string(&leave_msg).unwrap());
+            break;
+        }
+
         match msg {
             Message::Text(text) => {
                 let text_str = text.to_string();
@@ -314,6 +417,10 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer) {
 
     #[allow(unused_variables)]
     let room_removed = server.room_manager.leave_room(&relay_room, &relay_peer_id);
+    audit::log_event(AuditEvent::PeerLeave {
+        peer_id: relay_peer_id.clone(),
+        room_id: relay_room.clone(),
+    });
 
     // If room became empty, also remove it from SFU
     #[cfg(feature = "sfu-mediasoup")]
@@ -372,7 +479,7 @@ async fn handle_sfu_message(
                     let _ = sender
                         .lock()
                         .await
-                        .send(Message::Text(send_msg(&response).unwrap().into()))
+                        .send(Message::Text(send_msg(&response).unwrap()))
                         .await;
                 }
                 Err(e) => {
@@ -383,7 +490,7 @@ async fn handle_sfu_message(
                     let _ = sender
                         .lock()
                         .await
-                        .send(Message::Text(send_msg(&error).unwrap().into()))
+                        .send(Message::Text(send_msg(&error).unwrap()))
                         .await;
                 }
             }
@@ -411,7 +518,7 @@ async fn handle_sfu_message(
             let _ = sender
                 .lock()
                 .await
-                .send(Message::Text(send_msg(&response).unwrap().into()))
+                .send(Message::Text(send_msg(&response).unwrap()))
                 .await;
             true
         }
@@ -431,7 +538,7 @@ async fn handle_sfu_message(
                 let _ = sender
                     .lock()
                     .await
-                    .send(Message::Text(send_msg(&error).unwrap().into()))
+                    .send(Message::Text(send_msg(&error).unwrap()))
                     .await;
                 return true;
             }
@@ -449,7 +556,7 @@ async fn handle_sfu_message(
                     let _ = sender
                         .lock()
                         .await
-                        .send(Message::Text(send_msg(&response).unwrap().into()))
+                        .send(Message::Text(send_msg(&response).unwrap()))
                         .await;
 
                     // Broadcast NewProducer to all peers in room
@@ -473,7 +580,7 @@ async fn handle_sfu_message(
                     let _ = sender
                         .lock()
                         .await
-                        .send(Message::Text(send_msg(&error).unwrap().into()))
+                        .send(Message::Text(send_msg(&error).unwrap()))
                         .await;
                 }
             }
@@ -500,7 +607,7 @@ async fn handle_sfu_message(
                     let _ = sender
                         .lock()
                         .await
-                        .send(Message::Text(send_msg(&response).unwrap().into()))
+                        .send(Message::Text(send_msg(&response).unwrap()))
                         .await;
                 }
                 Err(e) => {
@@ -511,7 +618,7 @@ async fn handle_sfu_message(
                     let _ = sender
                         .lock()
                         .await
-                        .send(Message::Text(send_msg(&error).unwrap().into()))
+                        .send(Message::Text(send_msg(&error).unwrap()))
                         .await;
                 }
             }

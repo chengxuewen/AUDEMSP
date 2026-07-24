@@ -32,5 +32,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 libuv1 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /workspace/target/release/omspbase-server /usr/local/bin/
-EXPOSE 8000 40000-40100/udp
+EXPOSE 9800 40000-40100/udp
 ENTRYPOINT ["omspbase-server"]

@@ -93,6 +93,7 @@ mod imp {
     pub struct Relay;
 
     impl Relay {
+        #[allow(clippy::new_without_default)]
         pub fn new() -> Self {
             tracing::info!("WebRTC relay initialized (stub — signaling-only mode)");
             Relay
