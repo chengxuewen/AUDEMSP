@@ -166,10 +166,11 @@ export class SfuConsumerClient {
         // P2P mode: handle host's SDP offer → create answer
         try {
           const sdp = typeof msg.sdp === 'string' ? JSON.parse(msg.sdp) : msg.sdp;
-          if (sdp.type === 'offer') {
-            this.pc.setRemoteDescription(sdp).then(async () => {
-              const answer = await this.pc.createAnswer();
-              await this.pc.setLocalDescription(answer);
+        if (sdp.type === 'offer' && this.pc) {
+          this.pc.setRemoteDescription(sdp).then(async () => {
+            if (!this.pc) return;
+            const answer = await this.pc.createAnswer();
+            await this.pc.setLocalDescription(answer);
               this.ws?.send(JSON.stringify({
                 type: 'sdp', room_id: this.roomId, target: null,
                 sdp: JSON.stringify(answer),
