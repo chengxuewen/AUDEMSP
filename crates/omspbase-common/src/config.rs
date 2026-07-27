@@ -27,8 +27,11 @@ pub struct HostConfig {
     pub psk: Option<String>,
 
     /// Room configuration.
-    #[serde(default)]
     pub room: RoomConfig,
+
+    /// SFU produce mode (mediasoup). When true, host pushes via SFU instead of P2P.
+    #[serde(default)]
+    pub sfu_produce: bool,
 }
 
 /// Config for omspbase-server (signaling + relay + monitoring).

@@ -15,9 +15,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tower_http::timeout::TimeoutLayer;
 
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use omspbase_media::engine::PipelineEngine;
-use omspbase_common::protocol::SignalingMessage;
+use omspbase_common::protocol::{DtlsParameters, MediaKind, SignalingMessage, TransportDirection};
+use tokio_tungstenite::tungstenite::Message;
 use signaling::SignalingClient;
 mod config;
 mod control;
@@ -109,7 +110,6 @@ async fn main() -> anyhow::Result<()> {
 let app = axum::Router::new()
     .merge(metrics_router)
     .layer(TimeoutLayer::new(Duration::from_secs(30)));
-        .merge(metrics_router);
 
     // Determine bind address
     let bind_addr = "0.0.0.0:9801"; // ponytail: separate port from server (9800)
@@ -138,7 +138,7 @@ let app = axum::Router::new()
     const MAX_RETRIES: u32 = 5;
     let mut last_err = None;
     let client = SignalingClient::new(&signaling_url, &psk, &room_id);
-    let (ws_sender, mut ws_receiver) = {
+    let (mut ws_sender, mut ws_receiver) = {
         let mut delay = std::time::Duration::from_secs(1);
         let mut result = None;
         for attempt in 1..=MAX_RETRIES {
@@ -161,6 +161,101 @@ let app = axum::Router::new()
         }
     };
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    // Phase 3b: SFU produce (mediasoup) — host pushes via SFU instead of P2P
+    if config.sfu_produce {
+        tracing::info!("SFU produce mode — negotiating mediasoup transport");
+        let peer_id = "host"; // ponytail: use config peer identity when available
+        let sfu_room = room_id.clone();
+
+        // Step 1: CreateWebRtcTransport (direction: Send)
+        let create_transport = SignalingMessage::CreateWebRtcTransport {
+            room_id: sfu_room.clone(),
+            peer_id: peer_id.to_string(),
+            direction: TransportDirection::Send,
+        };
+        let json = serde_json::to_string(&create_transport)?;
+        ws_sender
+            .send(Message::Text(json.into()))
+            .await
+            .map_err(|e| anyhow::anyhow!("SFU CreateWebRtcTransport send: {}", e))?;
+        tracing::info!("SFU: CreateWebRtcTransport sent");
+
+        // Step 2: Wait for WebRtcTransportCreated
+        match ws_receiver.next().await {
+            Some(Ok(Message::Text(text))) => {
+                let msg: SignalingMessage = serde_json::from_str(&text)
+                    .map_err(|e| anyhow::anyhow!("SFU parse response: {}", e))?;
+                match msg {
+                    SignalingMessage::WebRtcTransportCreated {
+                        transport_id,
+                        dtls_parameters,
+                        ..
+                    } => {
+                        tracing::info!("SFU: WebRtcTransportCreated id={}", transport_id);
+
+                        // Step 3: ConnectWebRtcTransport
+                        let connect = SignalingMessage::ConnectWebRtcTransport {
+                            room_id: sfu_room.clone(),
+                            peer_id: peer_id.to_string(),
+                            transport_id: transport_id.clone(),
+                            // ponytail: mirror server DTLS params with client role
+                            dtls_parameters: DtlsParameters {
+                                fingerprints: dtls_parameters.fingerprints,
+                                role: "client".to_string(),
+                            },
+                        };
+                        let json = serde_json::to_string(&connect)?;
+                        ws_sender
+                            .send(Message::Text(json.into()))
+                            .await
+                            .map_err(|e| anyhow::anyhow!("SFU ConnectWebRtcTransport send: {}", e))?;
+                        tracing::info!("SFU: ConnectWebRtcTransport sent");
+
+                        // Step 4: Produce video
+                        let produce = SignalingMessage::Produce {
+                            room_id: sfu_room,
+                            transport_direction: TransportDirection::Send,
+                            kind: MediaKind::Video,
+                            // ponytail: hardcoded H264 params; pull from encoder config when pipeline is wired
+                            rtp_parameters: serde_json::json!({
+                                "codecs": [{
+                                    "mimeType": "video/H264",
+                                    "clockRate": 90000
+                                }]
+                            }),
+                        };
+                        let json = serde_json::to_string(&produce)?;
+                        ws_sender
+                            .send(Message::Text(json.into()))
+                            .await
+                            .map_err(|e| anyhow::anyhow!("SFU Produce send: {}", e))?;
+                        tracing::info!("SFU: Produce (Video) sent");
+
+                        // ponytail: skeleton complete — exit early;
+                        // add RTCPeerConnection, media pipeline, and graceful shutdown when SFU server is ready
+                        tracing::info!("SFU produce transport {} ready — skeleton complete", transport_id);
+                        return Ok(());
+                    }
+                    SignalingMessage::Error { code, message } => {
+                        return Err(anyhow::anyhow!("SFU error [{code}]: {message}"));
+                    }
+                    other => {
+                        return Err(anyhow::anyhow!("SFU: unexpected message {:?}", other));
+                    }
+                }
+            }
+            Some(Ok(other)) => {
+                return Err(anyhow::anyhow!("SFU: unexpected WS message: {:?}", other));
+            }
+            Some(Err(e)) => {
+                return Err(anyhow::anyhow!("SFU: WS receive error: {}", e));
+            }
+            None => {
+                return Err(anyhow::anyhow!("SFU: WS closed before transport created"));
+            }
+        }
+    }
 
     // ponytail: wait for remote to join room before sending SDP offer
 
@@ -215,6 +310,11 @@ let app = axum::Router::new()
                                 }
                                 SignalingMessage::RoomLeave { .. } => {
                                     tracing::info!("Peer left room");
+                                }
+                                SignalingMessage::WebRtcTransportCreated { transport_id, .. } => {
+                                    // ponytail: logged for SFU path; SFU skeleton consumes this synchronously,
+                                    // this is a fallback for async arrival
+                                    tracing::info!("SFU: WebRtcTransportCreated id={} (async)", transport_id);
                                 }
                                 _ => {} // ponytail: ignore other variants
                             }

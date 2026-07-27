@@ -130,6 +130,8 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         rate_limit: config.rate_limit,
         room_capacity: config.room_capacity,
         consumer_limit_per_stream: config.consumer_limit_per_stream,
+        #[cfg(feature = "sfu-mediasoup")]
+        sfu_manager: std::sync::Arc::clone(&signaling_server.sfu_manager),
     };
 
     let admin_router = admin::admin_router(admin_state.clone());

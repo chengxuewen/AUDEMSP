@@ -16,6 +16,8 @@ use futures_util::{SinkExt, StreamExt};
 use omspbase_common::auth::{JwtAuth, JwtClaims};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
+#[cfg(feature = "sfu-mediasoup")]
+use std::sync::Arc;
 
 // ── State ───────────────────────────────────────────────────────────────────
 
@@ -29,6 +31,8 @@ pub struct AdminState {
     pub rate_limit: u32,
     pub room_capacity: usize,
     pub consumer_limit_per_stream: usize,
+    #[cfg(feature = "sfu-mediasoup")]
+    pub sfu_manager: Arc<crate::sfu::SfuManager>,
 }
 
 // ── Events ──────────────────────────────────────────────────────────────────
@@ -253,25 +257,157 @@ async fn ws_events(
     ws.on_upgrade(move |socket| handle_ws_events(socket, state))
 }
 
+#[cfg(feature = "sfu-mediasoup")]
+use omspbase_common::protocol::{SignalingMessage, TransportDirection};
+
 async fn handle_ws_events(socket: WebSocket, state: AdminState) {
-    let (mut ws_sender, mut _ws_receiver) = socket.split();
+    let (mut ws_sender, mut ws_receiver) = socket.split();
     let mut rx = state.event_tx.subscribe();
 
+    // SFU routing for admin WS (create transports, consume)
+    #[cfg(feature = "sfu-mediasoup")]
+    let sfu = std::sync::Arc::clone(&state.sfu_manager);
+
     loop {
-        match rx.recv().await {
-            Ok(msg) => {
-                if ws_sender.send(Message::Text(msg.into())).await.is_err() {
-                    break;
+        tokio::select! {
+            event = rx.recv() => {
+                match event {
+                    Ok(msg) => {
+                        if ws_sender.send(Message::Text(msg.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!("Admin WS: lagged behind by {} events", n);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
-            Err(broadcast::error::RecvError::Lagged(n)) => {
-                tracing::warn!("Admin WS: lagged behind by {} events", n);
+            incoming = ws_receiver.next() => {
+                match incoming {
+                    Some(Ok(Message::Text(text))) => {
+                        // Try to parse and route SFU messages
+                        #[cfg(feature = "sfu-mediasoup")]
+                        {
+                            if let Ok(sig) = serde_json::from_str::<SignalingMessage>(&text) {
+                                handle_admin_sfu(&sig, &sfu, &mut ws_sender).await;
+                                continue;
+                            }
+                        }
+                        // Non-SFU message on admin WS — ignore
+                        let _ = text;
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    _ => {}
+                }
             }
-            Err(broadcast::error::RecvError::Closed) => break,
         }
     }
 }
 
+/// Handle SFU messages from admin WebSocket — call SfuManager directly.
+#[cfg(feature = "sfu-mediasoup")]
+async fn handle_admin_sfu(
+    msg: &SignalingMessage,
+    sfu: &crate::sfu::SfuManager,
+    ws_sender: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+) -> bool {
+    match msg {
+        SignalingMessage::CreateWebRtcTransport {
+            room_id,
+            peer_id,
+            direction,
+        } => {
+            let dir_str = match direction {
+                TransportDirection::Send => "send",
+                TransportDirection::Recv => "recv",
+            };
+            tracing::info!(
+                "Admin SFU: creating {} transport for peer {} in room {}",
+                dir_str, peer_id, room_id
+            );
+            match sfu.create_webrtc_transport(room_id, peer_id, dir_str).await {
+                Ok(created) => {
+                    let response = SignalingMessage::WebRtcTransportCreated {
+                        room_id: room_id.clone(),
+                        peer_id: peer_id.clone(),
+                        transport_id: created.transport_id,
+                        ice_parameters: created.ice_parameters,
+                        dtls_parameters: created.dtls_parameters,
+                    };
+                    let _ = ws_sender
+                        .send(Message::Text(serde_json::to_string(&response).unwrap()))
+                        .await;
+                }
+                Err(e) => {
+                    let error = SignalingMessage::Error {
+                        code: 5000,
+                        message: format!("Transport creation failed: {e}"),
+                    };
+                    let _ = ws_sender
+                        .send(Message::Text(serde_json::to_string(&error).unwrap()))
+                        .await;
+                }
+            }
+            true
+        }
+        SignalingMessage::ConnectWebRtcTransport {
+            room_id,
+            peer_id,
+            transport_id,
+            ..
+        } => {
+            tracing::info!(
+                "Admin SFU: connect transport {} for peer {} in room {}",
+                transport_id, peer_id, room_id
+            );
+            // ponytail: ack the connect; full DTLS handshake deferred
+            let response = SignalingMessage::Error {
+                code: 0,
+                message: "transport_connected".into(),
+            };
+            let _ = ws_sender
+                .send(Message::Text(serde_json::to_string(&response).unwrap()))
+                .await;
+            true
+        }
+        SignalingMessage::Consume {
+            room_id,
+            producer_id,
+            rtp_capabilities,
+        } => {
+            // ponytail: admin WS has no per-connection peer_id; use "admin"
+            match sfu
+                .create_consumer(room_id, "admin", producer_id, rtp_capabilities.clone())
+                .await
+            {
+                Ok(result) => {
+                    let response = SignalingMessage::Consumed {
+                        room_id: room_id.clone(),
+                        consumer_id: result.consumer_id,
+                        producer_id: result.producer_id,
+                        kind: result.kind,
+                        rtp_parameters: result.rtp_parameters_json,
+                    };
+                    let _ = ws_sender
+                        .send(Message::Text(serde_json::to_string(&response).unwrap()))
+                        .await;
+                }
+                Err(e) => {
+                    let error = SignalingMessage::Error {
+                        code: 5000,
+                        message: format!("Consumer creation failed: {e}"),
+                    };
+                    let _ = ws_sender
+                        .send(Message::Text(serde_json::to_string(&error).unwrap()))
+                        .await;
+                }
+            }
+            true
+        }
+        _ => false,
+    }
+}
 // ── Bootstrap ───────────────────────────────────────────────────────────────
 
 /// Print a long-lived admin JWT token for initial setup (valid 1 year).

@@ -527,7 +527,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
 /// Handle SFU transport negotiation and produce/consume messages.
 /// Returns `true` if the message was handled (should not be relayed).
 #[cfg(feature = "sfu-mediasoup")]
-async fn handle_sfu_message(
+pub(crate) async fn handle_sfu_message(
     msg: &SignalingMessage,
     sfu: &crate::sfu::SfuManager,
     sender: &Arc<tokio::sync::Mutex<SplitSink<WebSocket, Message>>>,
