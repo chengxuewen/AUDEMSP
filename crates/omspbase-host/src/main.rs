@@ -17,6 +17,11 @@ use tower_http::timeout::TimeoutLayer;
 
 use futures_util::{SinkExt, StreamExt};
 use omspbase_media::engine::PipelineEngine;
+use omspbase_media::base::frame::BoxVideoFrame;
+use omspbase_media::error::MediaError;
+use omspbase_media::pipeline::generator::{ColorStrategy, PatternMode, SquaresConfig, VideoFrameGenerator};
+use omspbase_media::pipeline::source::VideoSource;
+use omspbase_media::pipeline::sink::{VideoSink, VideoSinkWants};
 use omspbase_common::protocol::{DtlsParameters, MediaKind, SignalingMessage, TransportDirection};
 use tokio_tungstenite::tungstenite::Message;
 use signaling::SignalingClient;
@@ -162,6 +167,9 @@ let app = axum::Router::new()
     };
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
+
+    // PipelineEngine: created early — only started for P2P path
+    let engine = PipelineEngine::new(tokio::runtime::Handle::current());
     // Phase 3b: SFU produce (mediasoup) — host pushes via SFU instead of P2P
     if config.sfu_produce {
         tracing::info!("SFU produce mode — negotiating mediasoup transport");
@@ -231,11 +239,43 @@ let app = axum::Router::new()
                             .await
                             .map_err(|e| anyhow::anyhow!("SFU Produce send: {}", e))?;
                         tracing::info!("SFU: Produce (Video) sent");
-
-                        // ponytail: skeleton complete — exit early;
-                        // add RTCPeerConnection, media pipeline, and graceful shutdown when SFU server is ready
-                        tracing::info!("SFU produce transport {} ready — skeleton complete", transport_id);
-                        return Ok(());
+                        // ponytail: generator running — keep host alive; actual frame forwarding via WS comes next
+                        tracing::info!("SFU produce transport {} ready — generator active", transport_id);
+                        
+                        // ── VideoFrameGenerator: squares pattern ───────
+                        struct CountingSink {
+                            count: std::sync::Arc<std::sync::Mutex<u64>>,
+                        }
+                        impl VideoSink<BoxVideoFrame> for CountingSink {
+                            fn on_frame(&self, _frame: &BoxVideoFrame) -> Result<VideoSinkWants, MediaError> {
+                                let mut c = self.count.lock().unwrap();
+                                *c += 1;
+                                if *c % 30 == 0 {
+                                    tracing::debug!("SFU: generated {} frames", *c);
+                                }
+                                Ok(VideoSinkWants::default())
+                            }
+                        }
+                        
+                        let frame_gen = std::sync::Arc::new(VideoFrameGenerator::new());
+                        let frame_count = std::sync::Arc::new(std::sync::Mutex::new(0u64));
+                        let counting_sink: Box<dyn VideoSink<BoxVideoFrame>> = Box::new(CountingSink {
+                            count: frame_count.clone(),
+                        });
+                        frame_gen.add_or_update_sink(counting_sink, VideoSinkWants::default());
+                        frame_gen.start(
+                            30,
+                            PatternMode::Squares(SquaresConfig {
+                                motion_speed: 3,
+                                color_strategy: ColorStrategy::Fixed(vec![(128, 100, 150), (200, 180, 50)]),
+                                ..Default::default()
+                            }),
+                            None,
+                            640,
+                            480,
+                        );
+                        tracing::info!("VideoFrameGenerator: 640x480@30fps squares, {} squares, motion_speed=3",
+                            SquaresConfig { motion_speed: 3, color_strategy: ColorStrategy::Fixed(vec![(128,100,150),(200,180,50)]), ..Default::default() }.count);
                     }
                     SignalingMessage::Error { code, message } => {
                         return Err(anyhow::anyhow!("SFU error [{code}]: {message}"));
@@ -255,7 +295,7 @@ let app = axum::Router::new()
                 return Err(anyhow::anyhow!("SFU: WS closed before transport created"));
             }
         }
-    }
+    } else {
 
     // ponytail: wait for remote to join room before sending SDP offer
 
@@ -354,8 +394,6 @@ let app = axum::Router::new()
     let push_webrtc = webrtc.clone();
     let shared_m = shared_metrics.clone();
 
-    let engine = PipelineEngine::new(tokio::runtime::Handle::current());
-
     engine.add_chain(
         "capture".into(),
         Box::new(engine_adapters::GstCaptureSource::new(push_pipeline.clone())),
@@ -367,6 +405,7 @@ let app = axum::Router::new()
 
     engine.start().expect("Failed to start engine");
 
+    }  // end else (P2P path)
     // Start metrics updater: sync dropped frames counter
     let dropped = frames_dropped;
     let metrics_updater = tokio::spawn(async move {
