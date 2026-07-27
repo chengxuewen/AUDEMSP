@@ -46,8 +46,8 @@ async fn main() -> anyhow::Result<()> {
     // Parse config — collect args once for bounds-safe access
     let config_path = {
         let args: Vec<String> = std::env::args().collect();
-        if args.len() > 3 && args[2] == "--config" {
-            args[3].clone()
+        if args.len() > 2 && args[1] == "--config" {
+            args[2].clone()
         } else {
             "/opt/omspbase/etc/host.conf".to_string()
         }

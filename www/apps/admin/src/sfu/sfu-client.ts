@@ -61,24 +61,40 @@ export class SfuConsumerClient {
   async connect(): Promise<void> {
     this.onStatus('connecting');
 
-    // Phase 1: P2P — connect WS, auth, join room, setup peer connection
     const protocol = this.serverUrl.startsWith('wss:') ? 'wss:' : 'ws:';
     const host = this.serverUrl.replace(/^wss?:\/\//, '');
     const wsUrl = `${protocol}//${host}/ws`;
 
     this.ws = new WebSocket(wsUrl);
-    this.ws.onerror = () => this.onStatus('error');
 
-    await new Promise<void>((resolve, reject) => {
-      this.ws!.onopen = () => resolve();
-      this.ws!.onerror = () => reject(new Error('WS connect failed'));
-      setTimeout(() => reject(new Error('WS timeout')), 10000);
+    // Auth: send PSK as raw string (not JSON)
+    const psk = this.token || 'omspbase-dev';
+    const authPromise = new Promise<void>((resolve, reject) => {
+      this.ws!.onopen = () => {
+        this.ws!.send(psk);
+      };
+      this.ws!.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.code === 0 || msg.type === 'error' && msg.code === 0) {
+            this.onStatus('connected');
+            resolve();
+          } else if (msg.code === 4003) {
+            reject(new Error('Auth failed'));
+          }
+        } catch {
+          // Non-JSON message, skip
+        }
+      };
+      this.ws!.onerror = () => reject(new Error('WS error'));
+      setTimeout(() => reject(new Error('Auth timeout')), 10000);
     });
+    await authPromise;
 
-    // Auth
-    const authMsg = JSON.stringify({ secret: this.token || 'omspbase-dev' });
-    this.ws.send(authMsg);
-    this.onStatus('connected');
+    // Set up signaling message handler (SDP/ICE relay)
+    this.ws.onmessage = (event) => {
+      this.handleMessage(event.data);
+    };
 
     // Join room
     this.ws.send(JSON.stringify({
@@ -91,27 +107,21 @@ export class SfuConsumerClient {
   async startPlay(): Promise<void> {
     if (!this.ws) throw new Error('Not connected');
 
-    // Create RTCPeerConnection
     this.pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-      ],
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
 
-    // Handle incoming tracks
     this.pc.ontrack = (event) => {
       this.onTrack(event.streams[0]);
       this.onStatus('playing');
       this.startMetrics();
     };
 
-    // Handle ICE candidates
     this.pc.onicecandidate = (event) => {
       if (event.candidate && this.ws) {
         this.ws.send(JSON.stringify({
           type: 'rtc_ice_candidate',
-          room_id: this.roomId,
-          target: null,
+          room_id: this.roomId, target: null,
           candidate: event.candidate.candidate,
           sdp_mid: event.candidate.sdpMid,
           sdp_mline_index: event.candidate.sdpMLineIndex,
@@ -119,31 +129,20 @@ export class SfuConsumerClient {
       }
     };
 
-    // Handle ICE connection state changes
     this.pc.oniceconnectionstatechange = () => {
-      const state = this.pc?.iceConnectionState;
-      if (state === 'disconnected' || state === 'failed') {
+      if (this.pc?.iceConnectionState === 'disconnected' || this.pc?.iceConnectionState === 'failed') {
         this.onStatus('disconnected');
         this.stopMetrics();
       }
     };
 
-    // Add recv-only transceivers
     this.pc.addTransceiver('video', { direction: 'recvonly' });
     this.pc.addTransceiver('audio', { direction: 'recvonly' });
 
-    // Create SDP offer
-    const offer = await this.pc.createOffer();
-    await this.pc.setLocalDescription(offer);
-
-    // Send offer to server (relay to host)
-    this.ws.send(JSON.stringify({
-      type: 'sdp',
-      room_id: this.roomId,
-      target: null,
-      sdp: JSON.stringify(offer),
-    }));
+    // ponytail: host creates offer, browser answers
+    // handleMessage will receive host's SDP offer and create answer
   }
+
 
   // WS message handler (call from parent component)
   handleMessage(data: string): void {
@@ -152,7 +151,19 @@ export class SfuConsumerClient {
       if (msg.type === 'sdp' && this.pc) {
         const sdp = typeof msg.sdp === 'string' ? msg.sdp : JSON.stringify(msg.sdp);
         const desc = JSON.parse(sdp);
-        this.pc.setRemoteDescription(desc).catch(() => {});
+        // Host sent an offer → create answer
+        if (desc.type === 'offer') {
+          this.pc.setRemoteDescription(desc).then(async () => {
+            const answer = await this.pc!.createAnswer();
+            await this.pc!.setLocalDescription(answer);
+            this.ws?.send(JSON.stringify({
+              type: 'sdp', room_id: this.roomId, target: null,
+              sdp: JSON.stringify(answer),
+            }));
+          }).catch(() => {});
+        } else {
+          this.pc.setRemoteDescription(desc).catch(() => {});
+        }
       } else if (msg.type === 'rtc_ice_candidate' && this.pc) {
         this.pc.addIceCandidate({
           candidate: msg.candidate,
@@ -161,7 +172,6 @@ export class SfuConsumerClient {
         }).catch(() => {});
       }
     } catch {
-      // Ignore parse errors for non-signaling messages
     }
   }
 
