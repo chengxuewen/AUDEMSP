@@ -69,3 +69,14 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | omspbase-server | 32 (新增 admin) |
 | omspbase-server e2e | 25 |
 | omspbase-server integration | 5 |
+
+## SFU Video Playback
+
+| Phase | 状态 |
+|-------|:----:|
+| Docker SFU Foundation | ✅ |
+| Browser SFU Client | ✅ (Server-Offer) |
+| Admin WS SFU Routing | ✅ |
+| Web UI (Video Grid + Metrics) | 🟡 |
+| Host SFU Produce | ✅ (骨架) |
+| Integration E2E | 🔲 |

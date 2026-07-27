@@ -3147,3 +3147,12 @@ SFU 平台: macOS cargo check only · Linux full build+test · Docker 统一开�
 - CSS Modules = zero runtime, smaller bundle, no framework lock-in
 - Ponytail principle: don't add Ant Design for a few cards and a table
 **Limits**: D87 remains in effect for omspbase-client (Tauri desktop app) and any AUDEBase-shared UI
+## D198: SFU Video Playback — Server-Offer Architecture
+**决策**: 浏览器视频播放使用 mediasoup 的 Server-Offer 模型（SFU 创建 transport offer，客户端创建 answer），参考 LiveKit 模式。Host 通过 SFU Produce 推流（非 P2P WebRTC）。
+**日期**: 2026-07-27
+**原因**:
+- P2P SDP 中继存在时序问题（host offer 在 viewer 加入后丢失）
+- Server-Offer 模型消除此问题 — SFU 为每个 viewer 创建新 transport
+- mediasoup transport 协议已在 sfu.rs 中实现
+- LiveKit 使用此模型，是 WebRTC SFU 的行业标准
+- Admin dashboard 复用现有 SignalingMessage 类型（CreateWebRtcTransport、Consume）用于浏览器 consumer
