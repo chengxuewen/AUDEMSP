@@ -78,6 +78,17 @@ Use named constants for meaningful thresholds, delays, and limits.
 
 Split large functions into focused pieces with clear responsibilities.
 
+## No Hardcoded Values (CRITICAL)
+
+NEVER hardcode:
+- Ports, hostnames, IPs, or URLs — use config files, environment variables, or auto-detection
+- Secrets (API keys, passwords, tokens) — use env vars or a secret manager
+- Paths, timeouts, buffer sizes — use named constants or configuration
+
+Temporary values that *must* be hardcoded for prototyping MUST be marked with a `TODO:` comment explaining what to replace them with.
+
+Any hardcoded value without a `TODO:` marker is a BLOCKER.
+
 ## Code Quality Checklist
 
 Before marking work complete:

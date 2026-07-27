@@ -37,6 +37,7 @@ export class SfuConsumerClient {
   private onTrack: StreamCallback;
   private onStatus: StatusCallback;
   private onMetrics: MetricsCallback;
+  private pendingSdp: any = null;
   private metricsTimer: ReturnType<typeof setInterval> | null = null;
   private transportId: string | null = null;
   private transportResolver: ((params: TransportCreated) => void) | null = null;
@@ -105,58 +106,38 @@ export class SfuConsumerClient {
   async startPlay(): Promise<void> {
     if (!this.ws) throw new Error('Not connected');
 
-    // 1. Request a recv transport from mediasoup via server
-    this.ws.send(JSON.stringify({
-      type: 'create_webrtc_transport',
-      room_id: this.roomId,
-      direction: 'recv',
-    }));
-
-    // 2. Wait for server to return ICE/DTLS parameters
-    const params = await new Promise<TransportCreated>((resolve) => {
-      this.transportResolver = resolve;
-    });
-
-    this.transportId = params.transport_id;
-
-    // 3. Build remote SDP offer from mediasoup parameters
-    const offerSdp = this.buildRemoteSdp(params.ice_parameters, params.dtls_parameters);
-
-    // 4. Create PeerConnection with browser ICE
+    // Create RTCPeerConnection upfront (shared for SFU and P2P)
     this.pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
-
-    this.pc.ontrack = (event) => {
-      this.onTrack(event.streams[0]);
-      this.onStatus('playing');
-      this.startMetrics();
-    };
-
+    this.pc.ontrack = (event) => { this.onTrack(event.streams[0]); this.onStatus('playing'); this.startMetrics(); };
     this.pc.oniceconnectionstatechange = () => {
       if (this.pc?.iceConnectionState === 'disconnected' || this.pc?.iceConnectionState === 'failed') {
-        this.onStatus('disconnected');
-        this.stopMetrics();
+        this.onStatus('disconnected'); this.stopMetrics();
       }
     };
-
+    this.pc.onicecandidate = (event) => {
+      if (event.candidate) this.ws?.send(JSON.stringify({ type: 'rtc_ice_candidate', room_id: this.roomId, target: null, candidate: event.candidate.candidate, sdp_mid: event.candidate.sdpMid, sdp_mline_index: event.candidate.sdpMLineIndex }));
+    };
     this.pc.addTransceiver('video', { direction: 'recvonly' });
     this.pc.addTransceiver('audio', { direction: 'recvonly' });
 
-    // 5. Apply server-side offer as remote description
-    await this.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+    // Try SFU (mediasoup) with 3s timeout. Fall back to P2P if no response.
+    this.ws.send(JSON.stringify({ type: 'create_webrtc_transport', room_id: this.roomId, direction: 'recv' }));
+    const sfuResult = await Promise.race([
+      new Promise<TransportCreated | null>(r => { this.transportResolver = r; }),
+      new Promise<null>(r => setTimeout(() => r(null), 3000)),
+    ]);
 
-    // 6. Create browser-side answer
-    const answer = await this.pc.createAnswer();
-    await this.pc.setLocalDescription(answer);
-
-    // 7. Send answer back to complete transport connection
-    this.ws.send(JSON.stringify({
-      type: 'connect_webrtc_transport',
-      room_id: this.roomId,
-      transport_id: params.transport_id,
-      sdp: answer.sdp,
-    }));
+    if (sfuResult) {
+      this.transportId = sfuResult.transport_id;
+      const offerSdp = this.buildRemoteSdp(sfuResult.ice_parameters, sfuResult.dtls_parameters);
+      await this.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+      const answer = await this.pc.createAnswer();
+      await this.pc.setLocalDescription(answer);
+      this.ws.send(JSON.stringify({ type: 'connect_webrtc_transport', room_id: this.roomId, transport_id: sfuResult.transport_id, sdp: answer.sdp }));
+    }
+    console.log("SfuClient: SFU timeout, falling back to P2P"); if (this.pendingSdp) { console.log("SfuClient: replaying pending SDP"); this.handleMessage(JSON.stringify(this.pendingSdp)); }
   }
 
   // WS message handler — routed from connect() onmessage
@@ -181,6 +162,21 @@ export class SfuConsumerClient {
         }));
       } else if (msg.type === 'consumed') {
         // ponytail: producer consumed, stream will arrive via ontrack
+      } else if (msg.type === "sdp") { console.log("SfuClient: SDP received"); if (!this.pc) { this.pendingSdp = msg; return; }
+        // P2P mode: handle host's SDP offer → create answer
+        try {
+          const sdp = typeof msg.sdp === 'string' ? JSON.parse(msg.sdp) : msg.sdp;
+          if (sdp.type === 'offer') {
+            this.pc.setRemoteDescription(sdp).then(async () => {
+              const answer = await this.pc.createAnswer();
+              await this.pc.setLocalDescription(answer);
+              this.ws?.send(JSON.stringify({
+                type: 'sdp', room_id: this.roomId, target: null,
+                sdp: JSON.stringify(answer),
+              }));
+            }).catch(() => {});
+          }
+        } catch {}
       }
     } catch {
       // ponytail: malformed messages are non-critical
