@@ -41,6 +41,9 @@ pub struct SignalingServer {
     /// Number of currently active WebSocket connections.
     active_connections: Arc<AtomicUsize>,
     pub ws_max_message_size: usize,
+    /// SDP cache — stores the last SDP offer per room for late-joiner replay.
+    pub last_offer: Arc<dashmap::DashMap<String, String>>,
+    /// JWT authenticator (optional; PSK used as fallback).
     /// JWT authenticator (optional; PSK used as fallback).
     pub jwt_auth: Option<JwtAuth>,
 }
@@ -56,6 +59,9 @@ impl SignalingServer {
             shutdown_tx,
             active_connections: Arc::new(AtomicUsize::new(0)),
             ws_max_message_size,
+            last_offer: Arc::new(dashmap::DashMap::new()),
+            jwt_auth,
+            last_offer: Arc::new(dashmap::DashMap::new()),
             jwt_auth,
         }
     }
@@ -69,6 +75,7 @@ impl SignalingServer {
             shutdown_tx,
             active_connections: Arc::new(AtomicUsize::new(0)),
             ws_max_message_size,
+            last_offer: Arc::new(dashmap::DashMap::new()),
             jwt_auth,
         }
     }
@@ -324,6 +331,14 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
         .send(Message::Text(send_msg(&ack).unwrap()))
         .await;
 
+    // ── Replay cached SDP offer for late joiners ────────────────────────
+    if let Some(cached) = server.last_offer.get(&room_id) {
+        let sender = Arc::clone(&ws_sender);
+        let msg = cached.clone();
+        let _ = sender.lock().await.send(Message::Text(msg)).await;
+        tracing::info!("Replayed cached SDP offer for room {}", room_id);
+    }
+
     let tx = server.get_or_create_channel(&room_id);
     let mut rx = tx.subscribe();
 
@@ -446,8 +461,17 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                         }
                     }
 
-                    match tx.send(text_str) {
-                        Ok(n) => tracing::debug!("Forward: broadcast to {} receivers", n),
+                    match tx.send(text_str.clone()) {
+                        Ok(n) => {
+                            tracing::debug!("Forward: broadcast to {} receivers", n);
+                            // ── Cache SDP offers for late-joiner replay
+                            if matches!(
+                                serde_json::from_str::<SignalingMessage>(&text_str),
+                                Ok(SignalingMessage::Sdp { .. })
+                            ) {
+                                server.last_offer.insert(relay_room.clone(), text_str);
+                            }
+                        }
                         Err(tokio::sync::broadcast::error::SendError(_)) => {
                             tracing::warn!("Forward: no receivers, message dropped");
                         }
