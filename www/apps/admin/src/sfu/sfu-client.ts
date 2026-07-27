@@ -1,6 +1,6 @@
-// SFU Consumer Client — WebSocket + RTCPeerConnection for mediasoup transport
-// Phase 1: P2P mode (direct WS signaling relay to Host)
-// Phase 2: SFU mode (mediasoup CreateWebRtcTransport → Connect → Consume)
+// SFU Consumer Client — mediasoup Server-Offer transport
+// Flow: CreateWebRtcTransport(recv) → WebRtcTransportCreated → buildRemoteSdp → setRemoteDescription → createAnswer → ConnectWebRtcTransport
+// After consume, ontrack delivers remote stream.
 
 interface IceParams {
   username_fragment: string;
@@ -31,10 +31,6 @@ export interface StreamMetrics {
   resolution: string;
 }
 
-// ponytail: Phase 1 uses P2P signaling (SDP relay through WS).
-// Phase 2+ will switch to mediasoup transport (CreateWebRtcTransport).
-// The SfuConsumerClient class abstracts both modes.
-
 export class SfuConsumerClient {
   private ws: WebSocket | null = null;
   private pc: RTCPeerConnection | null = null;
@@ -42,6 +38,8 @@ export class SfuConsumerClient {
   private onStatus: StatusCallback;
   private onMetrics: MetricsCallback;
   private metricsTimer: ReturnType<typeof setInterval> | null = null;
+  private transportId: string | null = null;
+  private transportResolver: ((params: TransportCreated) => void) | null = null;
 
   constructor(
     private serverUrl: string,
@@ -91,7 +89,7 @@ export class SfuConsumerClient {
     });
     await authPromise;
 
-    // Set up signaling message handler (SDP/ICE relay)
+    // Set up signaling message handler
     this.ws.onmessage = (event) => {
       this.handleMessage(event.data);
     };
@@ -107,6 +105,24 @@ export class SfuConsumerClient {
   async startPlay(): Promise<void> {
     if (!this.ws) throw new Error('Not connected');
 
+    // 1. Request a recv transport from mediasoup via server
+    this.ws.send(JSON.stringify({
+      type: 'create_webrtc_transport',
+      room_id: this.roomId,
+      direction: 'recv',
+    }));
+
+    // 2. Wait for server to return ICE/DTLS parameters
+    const params = await new Promise<TransportCreated>((resolve) => {
+      this.transportResolver = resolve;
+    });
+
+    this.transportId = params.transport_id;
+
+    // 3. Build remote SDP offer from mediasoup parameters
+    const offerSdp = this.buildRemoteSdp(params.ice_parameters, params.dtls_parameters);
+
+    // 4. Create PeerConnection with browser ICE
     this.pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
@@ -115,18 +131,6 @@ export class SfuConsumerClient {
       this.onTrack(event.streams[0]);
       this.onStatus('playing');
       this.startMetrics();
-    };
-
-    this.pc.onicecandidate = (event) => {
-      if (event.candidate && this.ws) {
-        this.ws.send(JSON.stringify({
-          type: 'rtc_ice_candidate',
-          room_id: this.roomId, target: null,
-          candidate: event.candidate.candidate,
-          sdp_mid: event.candidate.sdpMid,
-          sdp_mline_index: event.candidate.sdpMLineIndex,
-        }));
-      }
     };
 
     this.pc.oniceconnectionstatechange = () => {
@@ -139,40 +143,75 @@ export class SfuConsumerClient {
     this.pc.addTransceiver('video', { direction: 'recvonly' });
     this.pc.addTransceiver('audio', { direction: 'recvonly' });
 
-    // ponytail: host creates offer, browser answers
-    // handleMessage will receive host's SDP offer and create answer
+    // 5. Apply server-side offer as remote description
+    await this.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+
+    // 6. Create browser-side answer
+    const answer = await this.pc.createAnswer();
+    await this.pc.setLocalDescription(answer);
+
+    // 7. Send answer back to complete transport connection
+    this.ws.send(JSON.stringify({
+      type: 'connect_webrtc_transport',
+      room_id: this.roomId,
+      transport_id: params.transport_id,
+      sdp: answer.sdp,
+    }));
   }
 
-
-  // WS message handler (call from parent component)
+  // WS message handler — routed from connect() onmessage
   handleMessage(data: string): void {
     try {
       const msg = JSON.parse(data);
-      if (msg.type === 'sdp' && this.pc) {
-        const sdp = typeof msg.sdp === 'string' ? msg.sdp : JSON.stringify(msg.sdp);
-        const desc = JSON.parse(sdp);
-        // Host sent an offer → create answer
-        if (desc.type === 'offer') {
-          this.pc.setRemoteDescription(desc).then(async () => {
-            const answer = await this.pc!.createAnswer();
-            await this.pc!.setLocalDescription(answer);
-            this.ws?.send(JSON.stringify({
-              type: 'sdp', room_id: this.roomId, target: null,
-              sdp: JSON.stringify(answer),
-            }));
-          }).catch(() => {});
-        } else {
-          this.pc.setRemoteDescription(desc).catch(() => {});
-        }
-      } else if (msg.type === 'rtc_ice_candidate' && this.pc) {
-        this.pc.addIceCandidate({
-          candidate: msg.candidate,
-          sdpMid: msg.sdp_mid,
-          sdpMLineIndex: msg.sdp_mline_index,
-        }).catch(() => {});
+
+      if (msg.type === 'webrtc_transport_created' && this.transportResolver) {
+        this.transportResolver({
+          transport_id: msg.transport_id,
+          ice_parameters: msg.ice_parameters,
+          dtls_parameters: msg.dtls_parameters,
+        });
+        this.transportResolver = null;
+      } else if (msg.type === 'new_producer' && this.transportId) {
+        this.ws?.send(JSON.stringify({
+          type: 'consume',
+          room_id: this.roomId,
+          transport_id: this.transportId,
+          producer_id: msg.producer_id,
+          kind: msg.kind,
+        }));
+      } else if (msg.type === 'consumed') {
+        // ponytail: producer consumed, stream will arrive via ontrack
       }
     } catch {
+      // ponytail: malformed messages are non-critical
     }
+  }
+
+  // Build a server-side SDP offer from mediasoup ICE/DTLS parameters.
+  // The browser answers this offer to establish the server-offer transport.
+  private buildRemoteSdp(ice: IceParams, dtls: DtlsParams): string {
+    const fp = dtls.fingerprints[0];
+    return [
+      'v=0',
+      'o=- 0 0 IN IP4 0.0.0.0',
+      's=-',
+      't=0 0',
+      'a=group:BUNDLE video audio',
+      'a=ice-lite',
+      `a=ice-ufrag:${ice.username_fragment}`,
+      `a=ice-pwd:${ice.password}`,
+      `a=fingerprint:${fp.algorithm.toLowerCase()} ${fp.value}`,
+      'a=setup:active',
+      'm=video 7 UDP/TLS/RTP/SAVPF 100',
+      'c=IN IP4 127.0.0.1',
+      'a=rtcp-mux',
+      'a=mid:0',
+      'a=sendonly',
+      'a=rtpmap:100 VP8/90000',
+      'm=audio 0 UDP/TLS/RTP/SAVPF 0',
+      'a=mid:1',
+      '',
+    ].join('\r\n');
   }
 
   // startMetrics polls RTCPeerConnection.getStats() every 2s
@@ -227,5 +266,7 @@ export class SfuConsumerClient {
     this.pc = null;
     this.ws?.close();
     this.ws = null;
+    this.transportId = null;
+    this.transportResolver = null;
   }
 }
