@@ -11,7 +11,8 @@ services:
       - "40000-40100:40000-40100/udp"
     environment:
       - RUST_LOG=debug
-    command: cargo run --bin omspbase-server
+      - OMSPBASE_PSK=omspbase-dev
+    command: cargo run --bin omspbase-server --features sfu-mediasoup,admin-dashboard -- --config /workspace/config/server.docker.yaml
     deploy:
       resources:
         limits:
