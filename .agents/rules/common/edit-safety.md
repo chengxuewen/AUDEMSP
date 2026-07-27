@@ -52,3 +52,11 @@ Delegate to a `deep` category subagent when:
 - You've failed the same edit 2+ times
 
 The subagent gets a clean context, reads the files fresh, and applies all changes atomically.
+
+## Test Execution Constraint (NON-NEGOTIABLE)
+
+After claiming tests are written or features are working:
+- **ALWAYS run the tests** against the live system. Writing test files without executing them is a violation.
+- **ALWAYS report actual test output** — pass/fail counts, error messages. Never claim "tests pass" without evidence.
+- **E2E tests MUST run against the actual running service**, not mocked endpoints.
+- If tests fail, fix them in the same turn. Do not defer to "later".
