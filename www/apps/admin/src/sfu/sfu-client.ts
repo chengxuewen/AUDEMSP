@@ -179,6 +179,14 @@ export class SfuConsumerClient {
           }
         } catch {}
       }
+      else if (msg.type === 'rtc_ice_candidate' && this.pc) {
+        console.log('SfuClient: ICE candidate received', msg.candidate);
+        this.pc.addIceCandidate({
+          candidate: msg.candidate,
+          sdpMid: msg.sdp_mid ?? null,
+          sdpMLineIndex: msg.sdp_mline_index ?? null,
+        }).catch((e) => console.warn('SfuClient: addIceCandidate failed', e));
+      }
     } catch {
       // ponytail: malformed messages are non-critical
     }
