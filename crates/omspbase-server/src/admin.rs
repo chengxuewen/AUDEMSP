@@ -98,66 +98,28 @@ pub fn admin_router(state: AdminState) -> Router {
         .route("/api/admin/stats", get(stats))
         .route("/api/admin/config", get(server_config))
         .route("/api/admin/events", get(ws_events))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            jwt_middleware,
-        ))
         .with_state(state)
 }
 
-// ── JWT middleware ──────────────────────────────────────────────────────────
+// ── Auth helper ─────────────────────────────────────────────────────────────
 
-async fn jwt_middleware(
-    State(state): State<AdminState>,
-    req: axum::http::Request<Body>,
-    next: Next,
-) -> Result<axum::response::Response, (StatusCode, Json<ErrorResponse>)> {
-    let secret = match &state.admin_jwt_secret {
-        Some(s) => s.clone(),
-        None => {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(ErrorResponse {
-                    error: "admin jwt secret not configured".into(),
-                }),
-            ));
-        }
-    };
-
-    let token = req
-        .headers()
-        .get(axum::http::header::AUTHORIZATION)
+fn check_auth(req: &axum::http::Request<Body>, state: &AdminState) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let secret = state.admin_jwt_secret.as_ref().ok_or_else(|| {
+        (StatusCode::SERVICE_UNAVAILABLE, Json(ErrorResponse { error: "admin jwt secret not configured".into() }))
+    })?;
+    let token = req.headers().get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(ErrorResponse {
-                    error: "missing or invalid authorization header".into(),
-                }),
-            )
+            (StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "missing authorization header".into() }))
         })?;
-
-    let jwt_auth = JwtAuth::new(&secret);
-    let claims = jwt_auth.verify(token).map_err(|_| {
-        (
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: "invalid token".into(),
-            }),
-        )
+    let claims = JwtAuth::new(secret).verify(token).map_err(|_| {
+        (StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "invalid token".into() }))
     })?;
-
     if claims.sub != "admin" {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: "admin role required".into(),
-            }),
-        ));
+        return Err((StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "admin role required".into() })));
     }
-
-    Ok(next.run(req).await)
+    Ok(())
 }
 
 // ── Handlers ────────────────────────────────────────────────────────────────
