@@ -71,8 +71,8 @@ export default function Dashboard() {
       {playingRoom && (
         <VideoPlayer
           roomId={playingRoom}
-          serverUrl="ws://localhost:9800"
-          token="omspbase-dev"
+          serverUrl={`ws://${window.location.host}`}
+          token={localStorage.getItem('omspbase_admin_token') || ''}
           onClose={() => setPlayingRoom(null)}
         />
       )}
