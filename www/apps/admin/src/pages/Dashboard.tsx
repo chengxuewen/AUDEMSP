@@ -6,6 +6,7 @@ import { getStats, deleteRoom } from '../api/client';
 import { useState, useEffect, useCallback } from 'react';
 import type { StatsResponse, DeviceSnapshot, StreamSnapshot } from '../api/client';
 import StreamDetail from '../components/StreamDetail';
+import VideoPlayer from '../components/VideoPlayer';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -13,6 +14,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [expanded, setExpanded] = useState(new Set());
   const [selectedStream, setSelectedStream] = useState<{ deviceId: string; stream: StreamSnapshot } | null>(null);
+  const [playingRoom, setPlayingRoom] = useState<string | null>(null);
 
   const fetchStats = useCallback(async () => {
     try { setStats(await getStats()); } catch { /* ignore */ }
@@ -54,7 +56,7 @@ export default function Dashboard() {
       ) : (
         <div className="device-list">
           {devices.map((device) => (
-            <DeviceGroup key={device.device_id} device={device} expanded={expanded.has(device.device_id)} onToggle={() => toggle(device.device_id)} onSelectStream={(stream) => setSelectedStream({ deviceId: device.device_id, stream })} />
+            <DeviceGroup key={device.device_id} device={device} expanded={expanded.has(device.device_id)} onToggle={() => toggle(device.device_id)} onSelectStream={(stream) => setSelectedStream({ deviceId: device.device_id, stream })} onPlayStream={() => setPlayingRoom(device.device_id)} />
           ))}
         </div>
       )}
@@ -66,11 +68,19 @@ export default function Dashboard() {
           onClose={() => setSelectedStream(null)}
         />
       )}
+      {playingRoom && (
+        <VideoPlayer
+          roomId={playingRoom}
+          serverUrl="ws://localhost:9800"
+          token="omspbase-dev"
+          onClose={() => setPlayingRoom(null)}
+        />
+      )}
     </div>
   );
 }
 
-function DeviceGroup({ device, expanded, onToggle, onSelectStream }: { device: DeviceSnapshot; expanded: boolean; onToggle: () => void; onSelectStream: (stream: StreamSnapshot) => void }) {
+function DeviceGroup({ device, expanded, onToggle, onSelectStream, onPlayStream }: { device: DeviceSnapshot; expanded: boolean; onToggle: () => void; onSelectStream: (stream: StreamSnapshot) => void; onPlayStream: () => void }) {
   const status = device.streams.length > 0 ? 'online' : 'offline';
 
   return (
@@ -80,6 +90,7 @@ function DeviceGroup({ device, expanded, onToggle, onSelectStream }: { device: D
         <span className="device-name">{device.device_id}</span>
         <StatusBadge status={status} />
         <span className="device-stream-count">{device.streams.length} streams</span>
+        <button className="btn-play" onClick={(e) => { e.stopPropagation(); onPlayStream(); }}>▶ Play</button>
       </div>
       {expanded && (
         <div className="stream-list">

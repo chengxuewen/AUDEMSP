@@ -37,3 +37,4 @@
 
 .loading, .error { padding: 2rem; text-align: center; color: #888; }
 .error { color: #e74c3c; }
+.btn-play { padding: .25rem .5rem; font-size: .75rem; background: #e74c3c; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin-left: auto; } .btn-play:hover { background: #c0392b; }
