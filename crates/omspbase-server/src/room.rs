@@ -277,9 +277,29 @@ impl RoomManager {
                         consumers: r.consumers.clone(),
                     });
                 }
-            }
         }
-        device_map.into_values().collect()
+
+        // Include P2P rooms as pseudo-devices
+            if r.device_id.is_none() {
+                let pid = r.host.as_deref().unwrap_or("unknown");
+                let short = if pid.len() > 8 { &pid[..8] } else { pid };
+                device_map
+                    .entry(r.id.clone())
+                    .or_insert_with(|| DeviceSnapshot {
+                        device_id: r.id.clone(),
+                        online_since: r.created_at,
+                        streams: Vec::new(),
+                    });
+                let entry = device_map.get_mut(&r.id).unwrap();
+                let label = format!("host: {short}");
+                entry.streams.push(StreamSnapshot {
+                    stream_id: label,
+                    consumers: r.consumers.clone(),
+                });
+            }
+            }
+
+            device_map.into_values().collect()
     }
 
     /// Clear all consumers from a room and return their peer_ids.
