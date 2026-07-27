@@ -123,7 +123,7 @@ export class SfuConsumerClient {
     this.pc.addTransceiver('audio', { direction: 'recvonly' });
 
     // Try SFU (mediasoup) with 3s timeout. Fall back to P2P if no response.
-    this.ws.send(JSON.stringify({ type: 'create_webrtc_transport', room_id: this.roomId, direction: 'recv' }));
+    this.ws.send(JSON.stringify({ type: 'create_web_rtc_transport', room_id: this.roomId, direction: 'recv' }));
     const sfuResult = await Promise.race([
       new Promise<TransportCreated | null>(r => { this.transportResolver = r; }),
       new Promise<null>(r => setTimeout(() => r(null), 3000)),
@@ -135,7 +135,7 @@ export class SfuConsumerClient {
       await this.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
       const answer = await this.pc.createAnswer();
       await this.pc.setLocalDescription(answer);
-      this.ws.send(JSON.stringify({ type: 'connect_webrtc_transport', room_id: this.roomId, transport_id: sfuResult.transport_id, sdp: answer.sdp }));
+      this.ws.send(JSON.stringify({ type: 'connect_web_rtc_transport', room_id: this.roomId, transport_id: sfuResult.transport_id, sdp: answer.sdp }));
     }
     console.log("SfuClient: SFU timeout, falling back to P2P"); if (this.pendingSdp) { console.log("SfuClient: replaying pending SDP"); this.handleMessage(JSON.stringify(this.pendingSdp)); }
   }
@@ -145,7 +145,7 @@ export class SfuConsumerClient {
     try {
       const msg = JSON.parse(data);
 
-      if (msg.type === 'webrtc_transport_created' && this.transportResolver) {
+      if (msg.type === 'web_rtc_transport_created' && this.transportResolver) {
         this.transportResolver({
           transport_id: msg.transport_id,
           ice_parameters: msg.ice_parameters,

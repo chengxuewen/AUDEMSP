@@ -407,7 +407,9 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                 // Check for SFU transport messages (server-side handling)
                 #[cfg(feature = "sfu-mediasoup")]
                 {
+                    tracing::debug!("SFU check: parsing message");
                     if let Ok(sig_msg) = serde_json::from_str::<SignalingMessage>(&text_str) {
+                        tracing::debug!("SFU check: parsed OK, calling handle_sfu_message");
                         if handle_sfu_message(
                             &sig_msg,
                             &server.sfu_manager,
@@ -419,6 +421,8 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                         {
                             continue; // Handled by SFU, don't relay
                         }
+                    } else {
+                        tracing::debug!("SFU check: parse FAILED for: {}", &text_str[..text_str.len().min(100)]);
                     }
                 }
 
