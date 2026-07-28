@@ -3148,6 +3148,51 @@ SFU 平台: macOS cargo check only · Linux full build+test · Docker 统一开�
 - Ponytail principle: don't add Ant Design for a few cards and a table
 **Limits**: D87 remains in effect for omspbase-client (Tauri desktop app) and any AUDEBase-shared UI
 ## D198: SFU Video Playback — Server-Offer Architecture
+
+## D199: OpenCode Instructions 精简化
+
+**决策**: 将 instructions 数组从 23 个文件精简为 17 个，移除中英文重复（zh/）、无关语言规则（TS/CPP）、参考文档（agent-guide/model-tiers）。
+**日期**: 2026-07-28
+**原因**:
+- zh/ 10 个文件是 common/ 的完整中文翻译，约占 1,950 tokens — 纯冗余
+- TypeScript/CPP coding-style 对 Rust 项目无关 — 约 1,200+800 tokens 浪费
+- agent-guide.md 和 agent-model-tiers.md 是工具参考文档，非每轮必需 — 约 1,900 tokens
+- constraints.md 和 edit-safety.md 已存在但未加载 — 比 agent-guide 更重要
+- Rust 专属规则（coding-style + hooks）未在 instructions 中
+- 3 个小的 memorys 文件（status/conventions/pitfalls）加入 instructions
+**效果**: ~11,700 → ~8,500 tokens（节省 27%，且加载了更相关的规则）
+
+## D200: OMO Agent 模型分配优化
+
+**决策**: metis 和 momus 从 fast 升级到 premium；explore 温度从 0.0 调整到 0.1。
+**日期**: 2026-07-28
+**原因**:
+- metis（预规划顾问）需要强推理能力来发现需求歧义和 AI 失败点，fast 层会橡皮图章
+- momus（计划批评家）是质量门禁，对抗性审查需要深度推理
+- 温度：metis 0.1（逻辑为主），momus 0.3（创造性批评），explore 0.1（代码探索需要轻微多样性）
+- 参考 AUDEBase 实践：质量门禁型 agent 必须 premium 以上
+**新增**: teams.dev 预定义（implementer + test-writer + reviewer），staleTimeoutMs 300000→600000
+
+## D201: Pre-commit Hook — Rust 质量门禁
+
+**决策**: 创建 `.git/hooks/pre-commit`，对暂存 `.rs` 文件运行 `cargo fmt --check` + `cargo clippy -- -D warnings`。
+**日期**: 2026-07-28
+**原因**:
+- 规则会被遗忘，hook 不会。pre-commit 是最后一道防线
+- `grep` 无匹配时用 `{ grep ... || true; }` 包装，避免 `set -euo pipefail` 下误中断
+- 仅 .rs 文件暂存时触发，不阻塞非 Rust 提交
+
+## D202: Global Provider Config — lite 上下文修复 + Reasoning 启用
+
+**决策**:
+1. lite 模型的 context limit 从 40,960 修正为 131,072
+2. deepseek-v4-pro 和 deepseek-v4-flash 的 supportsReasoning 设为 true
+**日期**: 2026-07-28
+**原因**:
+- lite 路由到 Qwen3-32B，实际支持 128K+ context，40,960 是配置错误（参考 lite-1 Qwen3-8B 也有 131K）
+- DeepSeek V4 系列支持 reasoning API，设为 true 使 opencode 可使用 reasoning 特性
+- Fallback 上下文窗口经别名映射验证全部正确：premium-max-1(256K)=Kimi K2.6, premium-2(205K)=GLM-5.1, fast-1(131K)=Qwen3.6 Flash 等
+- apiKey 硬编码未修改（用户选择保持现状为内网环境）
 **决策**: 浏览器视频播放使用 mediasoup 的 Server-Offer 模型（SFU 创建 transport offer，客户端创建 answer），参考 LiveKit 模式。Host 通过 SFU Produce 推流（非 P2P WebRTC）。
 **日期**: 2026-07-27
 **原因**:

@@ -86,3 +86,13 @@ compile_error!("Only one backend can be enabled at a time.");
 **根因**: 用户明确要求 SFU 架构，Agent 不应私自做架构决策。
 
 **解法**: 已写入 `.agents/rules/common/edit-safety.md`：任何架构变更（包括回退）必须经用户明确同意。
+
+## PIT-10: 全局配置中的硬编码 API Key 存在泄露风险 (2026-07-28)
+
+**症状**: `~/.config/opencode/opencode.jsonc` 第 10 行 apiKey 为明文 `sk-...`。屏幕共享、配置文件分享、git 操作不当均可导致泄露。
+
+**根因**: OpenCode 全局 config 中 provider 的 apiKey 字段直接填入了明文密钥。
+
+**解法**: 使用 OpenCode 环境变量插值语法 `"apiKey": "{env:NEW_API_KEY}"`，密钥存入 `~/.bashrc` 或密钥管理器。
+
+**注意**: 当前用户选择保持现状（内网环境），但如需外部部署/代码分享时必须迁移。

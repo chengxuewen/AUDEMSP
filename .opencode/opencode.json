@@ -1,7 +1,7 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "new-api/deepseek-v4-pro",
-  "compaction": { "auto": false },
+  "compaction": { "auto": true },
   "enabled_providers": ["new-api", "deepseek"],
   "plugin": [
     "superpowers@git+https://github.com/obra/superpowers.git",
@@ -10,9 +10,11 @@
     "context-mode"
   ],
   "instructions": [
+    ".agents/memorys/status.md",
+    ".agents/memorys/conventions.md",
+    ".agents/memorys/pitfalls.md",
     ".agents/rules/common/security.md",
     ".agents/rules/common/coding-style.md",
-    ".agents/rules/typescript/coding-style.md",
     ".agents/rules/common/agents.md",
     ".agents/rules/common/code-review.md",
     ".agents/rules/common/development-workflow.md",
@@ -21,23 +23,10 @@
     ".agents/rules/common/patterns.md",
     ".agents/rules/common/performance.md",
     ".agents/rules/common/testing.md",
-    ".agents/rules/cpp/coding-style.md",
-    ".agents/rules/cpp/hooks.md",
-    ".agents/rules/cpp/patterns.md",
-    ".agents/rules/cpp/security.md",
-    ".agents/rules/cpp/testing.md",
-    ".agents/rules/zh/agents.md",
-    ".agents/rules/zh/code-review.md",
-    ".agents/rules/zh/coding-style.md",
-    ".agents/rules/zh/development-workflow.md",
-    ".agents/rules/zh/git-workflow.md",
-    ".agents/rules/zh/hooks.md",
-    ".agents/rules/zh/patterns.md",
-    ".agents/rules/zh/performance.md",
-    ".agents/rules/zh/security.md",
-    ".agents/rules/zh/testing.md",
-    "agent-guide.md",
-    "agent-model-tiers.md"
+    ".agents/rules/common/constraints.md",
+    ".agents/rules/common/edit-safety.md",
+    ".agents/rules/rust/coding-style.md",
+    ".agents/rules/rust/hooks.md"
   ],
   "mcp": {
     "local-codegraph": {
@@ -47,7 +36,7 @@
     },
     "local-playwright": {
       "type": "local",
-      "enabled": true,
+      "enabled": false,
       "command": ["node", ".opencode/init-mcp-playwright.mjs"]
     },
     "local-github": {
@@ -70,37 +59,17 @@
     }
   },
   "lsp": {
-    "typescript-language-server": {
-      "command": ["node", ".opencode/init-lsp-wrap.mjs", "typescript-language-server", "--stdio"],
-      "extensions": ["ts", "tsx", "js", "jsx"]
-    },
-    "pyright": {
-      "command": ["node", ".opencode/init-lsp-wrap.mjs", "pyright-langserver", "--stdio"],
-      "extensions": ["py"]
+    "rust-analyzer": {
+      "command": ["node", ".opencode/init-lsp-wrap.mjs", "rust-analyzer"],
+      "extensions": ["rs"]
     },
     "bash-language-server": {
       "command": ["node", ".opencode/init-lsp-wrap.mjs", "bash-language-server", "start"],
       "extensions": ["sh", "bash"]
     },
-    "rust-analyzer": {
-      "command": ["node", ".opencode/init-lsp-wrap.mjs", "rust-analyzer"],
-      "extensions": ["rs"]
-    },
-    "html-language-server": {
-      "command": ["node", ".opencode/init-lsp-wrap.mjs", "vscode-html-language-server", "--stdio"],
-      "extensions": ["html", "htm"]
-    },
     "remark-language-server": {
       "command": ["node", ".opencode/init-lsp-wrap.mjs", "remark-language-server", "--stdio"],
       "extensions": ["md", "markdown"]
-    },
-    "gopls": {
-      "command": ["node", ".opencode/init-lsp-wrap.mjs", "gopls"],
-      "extensions": ["go"]
-    },
-    "clangd": {
-      "command": ["node", ".opencode/init-lsp-wrap.mjs", "clangd", "--background"],
-      "extensions": ["c", "cpp", "cc", "cxx", "h", "hpp"]
     }
   }
 }

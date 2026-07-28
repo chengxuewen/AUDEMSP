@@ -1,6 +1,8 @@
 # OMSPBase Status
 
-**生成**: 2026-07-24 | 决策: 195+ (D1-D195) | Phase: 3 完成 | 90 commits
+**生成**: 2026-07-28 | 决策: 195+ (D1-D202) | Phase: 3 完成 | 91 commits
+
+**当前**: 7 crate workspace。Phase 2 mediasoup SFU 集成完成。Phase 3 生产就绪全部完成。Docker/CI/DevContainer 就位。macOS 混合开发工作流。P2P 管线生产就绪。**OpenCode 配置优化完成** (D199-D202)。
 
 **当前**: 7 crate workspace。Phase 2 mediasoup SFU 集成完成。Phase 3 生产就绪全部完成 (3A P0 安全+容错, 3B P1 日志+文档, 3C P2 高级特性)。Docker/CI/DevContainer 就位，全部 Ubuntu 22.04 LTS。macOS 混合开发工作流 (Host/Client 原生 + Server Docker)。P2P 管线生产就绪。
 
@@ -27,20 +29,6 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 9/9 tests pass: Server health → Build → Host connect → Client connect → SDP → DC → Relay
 ```
 
-## Phase 进度
-
-| Phase | 状态 |
-|-------|:----:|
-| 0-1 基础设施 | ✅ |
-| 2a-2d mediasoup SFU | ✅ |
-| 3A P0 安全+容错 | ✅ |
-| 3B P1 日志+文档 | ✅ |
-| 3C P2 高级特性 | ✅ |
-| Docker/CI/DevContainer | ✅ |
-| macOS E2E 验证 | ✅ |
-
-## Phase 进度
-
 | Phase | 状态 |
 |-------|:----:|
 | 0-1 基础设施 | ✅ |
@@ -52,6 +40,7 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | macOS E2E 验证 | ✅ |
 | Admin Dashboard (P1-P5) | ✅ |
 | Admin Dashboard (P6) | 🟡 |
+| OpenCode 配置优化 | ✅ |
 
 ## 决策状态
 
@@ -60,6 +49,11 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | D124-D195 | (见 decisions.md) | ✅ | 0-3 |
 | D196 | Admin Dashboard 架构 | ✅ | 4 |
 | D197 | D87 范围限定 (Client GUI only) | ✅ | 4 |
+| D198 | SFU Server-Offer 架构 | ✅ | 4 |
+| D199 | Instructions 精简化 | ✅ | Config |
+| D200 | OMO Agent 模型分配优化 | ✅ | Config |
+| D201 | Pre-commit Hook | ✅ | Config |
+| D202 | Global Provider Config 修复 | ✅ | Config |
 
 ## Admin Dashboard 测试
 

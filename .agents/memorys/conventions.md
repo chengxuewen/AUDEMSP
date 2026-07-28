@@ -98,3 +98,69 @@ webrtc-sys (C++, libwebrtc)
 其他 crate (core, media, server, remote-*) 使用 bare names，无前缀。
 
 **来源**: D166, D167, D168 (2026-07-22)
+
+
+
+## C7: OpenCode Instructions 内容策略
+
+**约束**：instructions 数组只放每轮必需加载的文件。参考性文档保留在磁盘，按需读取。
+
+**纳入 instructions 的文件类型**：
+- 项目记忆（status, conventions, pitfalls）
+- 编码规则（security, coding-style, testing 等）
+- 项目语言专属规则（Rust）
+- 编辑安全约束（edit-safety, constraints）
+
+**不纳入 instructions 的文件类型**：
+- 工具自身参考文档（agent-guide, model-tiers）
+- 非项目语言规则（TS/CPP/Go/Web 等对 Rust 项目无关）
+- 多语言重复翻译（zh/ 是 common/ 的中文副本，不重复加载）
+- 大型归档决策（decisions.md 按需读取，仅在精简后考虑加入）
+
+**原则**：instructions 总量控制在 ~8,500 tokens（< 30K 目标）。每新增一个文件，评估是否可移除一个。
+
+**来源**：D199 (2026-07-28)
+
+---
+
+## C8: 质量门禁 Agent 模型分配
+
+**约束**：预规划/审查类 agent 必须使用 premium 以上模型，不允许 fast 层。
+
+| Agent | 层级 | 原因 |
+|-------|------|------|
+| metis（预规划顾问） | premium | 需要强推理发现需求歧义和 AI 失败点 |
+| momus（计划批评家） | premium | 对抗性审查需要深度推理，temp 0.3 |
+| oracle | premium-max | 最复杂架构决策 |
+
+执行型 agent（explore/librarian/sisyphus-junior）使用 fast 层即可。
+
+**来源**：D200 (2026-07-28), AUDEBase 配置实践
+
+---
+
+## C9: 经验教训自动沉淀
+
+**约束**：开发过程中发现的问题、教训、经验必须在当轮会话中自动更新到相应记忆文档。
+
+**触发条件**：识别到以下情况时，主动更新：
+
+| 情况 | → 更新文件 | 示例 |
+|------|-----------|------|
+| 发现 bug / 踩坑 | `pitfalls.md` | 症状 → 根因 → 解法 |
+| 用户纠正 AI 行为 | `conventions.md` | 新约束 / 新规范 |
+| 架构/配置决策 | `decisions.md` | 决策编号 → 原因 → 影响 |
+| 项目状态变化 | `status.md` | Phase 完成、测试数变化 |
+| 编码模式/反模式 | `rules/common/coding-style.md` | 禁止模式 / 推荐模式 |
+| 安全相关教训 | `rules/common/security.md` | 新增安全规则 |
+| 编辑工具使用教训 | `rules/common/edit-safety.md` | 新增编辑约束 |
+
+**格式要求**：
+- `pitfalls.md`：症状 + 根因 + 解法，三要素缺一不可
+- `conventions.md`：C{n} 编号，「约束」/「原则」开头，注明来源
+- `decisions.md`：D{n} 编号，决策 + 日期 + 原因 + 影响
+- `status.md`：更新生成日期、commit 数、Phase 状态
+
+**原则**：不等用户要求。识别到可沉淀的经验即主动更新。宁可多记，不可遗漏。
+
+**来源**：用户显式要求（2026-07-28）

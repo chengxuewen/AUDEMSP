@@ -22,6 +22,18 @@
     "max_parallel_members": 4
   },
 
+  // Teams (高频工作流预定义)
+  "teams": {
+    "dev": {
+      "description": "通用开发团队：实现 + 测试 + 审查",
+      "members": [
+        { "name": "implementer", "category": "deep" },
+        { "name": "test-writer", "category": "deep" },
+        { "name": "reviewer", "category": "unspecified-high" }
+      ]
+    }
+  },
+
   // ============================================================
   //  Agents: 五层模型体系
   //  premium-max: deepseek-v4-pro-max -> kimi-k2.6 -> minimax-m3
@@ -75,19 +87,19 @@
     "explore": {
       "model": "new-api/fast",
       "fallback_models": ["new-api/fast-1", "new-api/fast-2"],
-      "temperature": 0.0
+      "temperature": 0.1
     },
 
     "metis": {
-      "model": "new-api/fast",
-      "fallback_models": ["new-api/fast-1", "new-api/fast-2"],
-      "temperature": 0.0
+      "model": "new-api/premium",
+      "fallback_models": ["new-api/premium-1", "new-api/premium-2"],
+      "temperature": 0.1
     },
 
     "momus": {
-      "model": "new-api/fast",
-      "fallback_models": ["new-api/fast-1", "new-api/fast-2"],
-      "temperature": 0.0
+      "model": "new-api/premium",
+      "fallback_models": ["new-api/premium-1", "new-api/premium-2"],
+      "temperature": 0.3
     },
 
     "sisyphus-junior": {
@@ -166,7 +178,7 @@
   // Background Tasks
   "background_task": {
     "defaultConcurrency": 8,
-    "staleTimeoutMs": 300000
+    "staleTimeoutMs": 600000
   },
 
   // Runtime Fallback (disabled, using agent-level fallback_models)
@@ -181,7 +193,7 @@
 
   // Experimental
   "experimental": {
-    "aggressive_truncation": false,  // false+DCP: skip blind truncation, rely on ACP smart pruning; compaction.auto=false in opencode.json
+    "aggressive_truncation": false,  // false: smart pruning; compaction.auto=true in opencode.json
     "task_system": true
   },
 
