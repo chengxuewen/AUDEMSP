@@ -53,6 +53,16 @@ Delegate to a `deep` category subagent when:
 
 The subagent gets a clean context, reads the files fresh, and applies all changes atomically.
 
+## Architectural Decision Gate (NON-NEGOTIABLE)
+
+Before implementing ANY architectural change (protocol, data flow, transport mode, API contract):
+- **ALWAYS ask the user first** using the `question` tool with explicit options
+- **NEVER fall back to an alternative architecture** without user approval
+- **NEVER silently switch** from the agreed architecture (e.g., SFU → P2P) even if it seems "easier"
+- **NEVER implement a workaround** that changes the system's design without explicit user consent
+
+If the agreed approach fails, report the failure and ask: "方案 X 失败，原因是 Y。建议改用 Z，是否同意？"
+
 ## Test Execution Constraint (NON-NEGOTIABLE)
 
 After claiming tests are written or features are working:
@@ -60,3 +70,25 @@ After claiming tests are written or features are working:
 - **ALWAYS report actual test output** — pass/fail counts, error messages. Never claim "tests pass" without evidence.
 - **E2E tests MUST run against the actual running service**, not mocked endpoints.
 - If tests fail, fix them in the same turn. Do not defer to "later".
+
+## Verification Honesty (NON-NEGOTIABLE)
+
+- **NEVER claim a feature works based on a partial test.** A Python WS test passing does NOT mean the browser flow works.
+- **ALWAYS verify at the actual user-facing layer.** If the feature is browser-based, test in the browser. If it's API-based, test with curl.
+- **ALWAYS report exactly what was tested and what was NOT tested.** Example: "Python WS test passed. Browser flow NOT yet verified."
+- **NEVER present a component test as end-to-end proof.** Each layer must be verified independently.
+- **If you cannot verify at the user-facing layer, say so explicitly.** Do not imply success.
+
+## Feature Flag Discipline
+
+- **ALL required features MUST be in `default` features** in Cargo.toml — never require manual `--features` for core functionality
+- **Build commands in docs MUST include all features** — never document `cargo build` without required features
+- **Before running server, ALWAYS verify**: `cargo build -p omspbase-server` (with defaults) produces working binary
+- **If a feature is optional, it must be explicitly opt-out** (disable with `--no-default-features`)
+
+## Self-Verification Requirement (NON-NEGOTIABLE)
+
+- **ALWAYS verify browser-based features yourself using Playwright MCP tools** (`local-playwright_browser_navigate`, `local-playwright_browser_evaluate`, etc.)
+- **NEVER ask the user to test what you can test yourself.** If Playwright is available, use it.
+- **After fixing a browser bug, ALWAYS re-test in the browser** before reporting the fix.
+- **Report the actual browser console output** as evidence of verification.

@@ -189,112 +189,112 @@ let app = axum::Router::new()
             .map_err(|e| anyhow::anyhow!("SFU CreateWebRtcTransport send: {}", e))?;
         tracing::info!("SFU: CreateWebRtcTransport sent");
 
-        // Step 2: Wait for WebRtcTransportCreated
-        match ws_receiver.next().await {
-            Some(Ok(Message::Text(text))) => {
-                let msg: SignalingMessage = serde_json::from_str(&text)
-                    .map_err(|e| anyhow::anyhow!("SFU parse response: {}", e))?;
-                match msg {
-                    SignalingMessage::WebRtcTransportCreated {
-                        transport_id,
-                        dtls_parameters,
-                        ..
-                    } => {
-                        tracing::info!("SFU: WebRtcTransportCreated id={}", transport_id);
-
-                        // Step 3: ConnectWebRtcTransport
-                        let connect = SignalingMessage::ConnectWebRtcTransport {
-                            room_id: sfu_room.clone(),
-                            peer_id: peer_id.to_string(),
-                            transport_id: transport_id.clone(),
-                            // ponytail: mirror server DTLS params with client role
-                            dtls_parameters: DtlsParameters {
-                                fingerprints: dtls_parameters.fingerprints,
-                                role: "client".to_string(),
-                            },
-                        };
-                        let json = serde_json::to_string(&connect)?;
-                        ws_sender
-                            .send(Message::Text(json.into()))
-                            .await
-                            .map_err(|e| anyhow::anyhow!("SFU ConnectWebRtcTransport send: {}", e))?;
-                        tracing::info!("SFU: ConnectWebRtcTransport sent");
-
-                        // Step 4: Produce video
-                        let produce = SignalingMessage::Produce {
-                            room_id: sfu_room,
-                            transport_direction: TransportDirection::Send,
-                            kind: MediaKind::Video,
-                            // ponytail: hardcoded H264 params; pull from encoder config when pipeline is wired
-                            rtp_parameters: serde_json::json!({
-                                "codecs": [{
-                                    "mimeType": "video/H264",
-                                    "clockRate": 90000
-                                }]
-                            }),
-                        };
-                        let json = serde_json::to_string(&produce)?;
-                        ws_sender
-                            .send(Message::Text(json.into()))
-                            .await
-                            .map_err(|e| anyhow::anyhow!("SFU Produce send: {}", e))?;
-                        tracing::info!("SFU: Produce (Video) sent");
-                        // ponytail: generator running — keep host alive; actual frame forwarding via WS comes next
-                        tracing::info!("SFU produce transport {} ready — generator active", transport_id);
-                        
-                        // ── VideoFrameGenerator: squares pattern ───────
-                        struct CountingSink {
-                            count: std::sync::Arc<std::sync::Mutex<u64>>,
+        // Step 2: Wait for WebRtcTransportCreated (skip P2P SDP/ICE)
+        let (transport_id, dtls_parameters) = loop {
+            match ws_receiver.next().await {
+                Some(Ok(Message::Text(text))) => {
+                    let msg: SignalingMessage = serde_json::from_str(&text)
+                        .map_err(|e| anyhow::anyhow!("SFU parse: {}", e))?;
+                    match msg {
+                        SignalingMessage::WebRtcTransportCreated {
+                            transport_id,
+                            dtls_parameters,
+                            ..
+                        } => break (transport_id, dtls_parameters),
+                        SignalingMessage::Sdp { .. } | SignalingMessage::RTCIceCandidate { .. } => {
+                            tracing::debug!("SFU: skipping P2P message");
                         }
-                        impl VideoSink<BoxVideoFrame> for CountingSink {
-                            fn on_frame(&self, _frame: &BoxVideoFrame) -> Result<VideoSinkWants, MediaError> {
-                                let mut c = self.count.lock().unwrap();
-                                *c += 1;
-                                if *c % 30 == 0 {
-                                    tracing::debug!("SFU: generated {} frames", *c);
-                                }
-                                Ok(VideoSinkWants::default())
-                            }
+                        SignalingMessage::Error { code, message } => {
+                            return Err(anyhow::anyhow!("SFU error [{code}]: {message}"));
                         }
-                        
-                        let frame_gen = std::sync::Arc::new(VideoFrameGenerator::new());
-                        let frame_count = std::sync::Arc::new(std::sync::Mutex::new(0u64));
-                        let counting_sink: Box<dyn VideoSink<BoxVideoFrame>> = Box::new(CountingSink {
-                            count: frame_count.clone(),
-                        });
-                        frame_gen.add_or_update_sink(counting_sink, VideoSinkWants::default());
-                        frame_gen.start(
-                            30,
-                            PatternMode::Squares(SquaresConfig {
-                                motion_speed: 3,
-                                color_strategy: ColorStrategy::Fixed(vec![(128, 100, 150), (200, 180, 50)]),
-                                ..Default::default()
-                            }),
-                            None,
-                            640,
-                            480,
-                        );
-                        tracing::info!("VideoFrameGenerator: 640x480@30fps squares, {} squares, motion_speed=3",
-                            SquaresConfig { motion_speed: 3, color_strategy: ColorStrategy::Fixed(vec![(128,100,150),(200,180,50)]), ..Default::default() }.count);
-                    }
-                    SignalingMessage::Error { code, message } => {
-                        return Err(anyhow::anyhow!("SFU error [{code}]: {message}"));
-                    }
-                    other => {
-                        return Err(anyhow::anyhow!("SFU: unexpected message {:?}", other));
+                        other => {
+                            return Err(anyhow::anyhow!("SFU: unexpected {:?}", other));
+                        }
                     }
                 }
+                Some(Ok(other)) => {
+                    return Err(anyhow::anyhow!("SFU: unexpected WS: {:?}", other));
+                }
+                Some(Err(e)) => {
+                    return Err(anyhow::anyhow!("SFU: WS error: {}", e));
+                }
+                None => {
+                    return Err(anyhow::anyhow!("SFU: WS closed"));
+                }
             }
-            Some(Ok(other)) => {
-                return Err(anyhow::anyhow!("SFU: unexpected WS message: {:?}", other));
-            }
-            Some(Err(e)) => {
-                return Err(anyhow::anyhow!("SFU: WS receive error: {}", e));
-            }
-            None => {
-                return Err(anyhow::anyhow!("SFU: WS closed before transport created"));
+        };
+        tracing::info!("SFU: WebRtcTransportCreated id={}", transport_id);
+
+        // Step 3: ConnectWebRtcTransport
+        let connect = SignalingMessage::ConnectWebRtcTransport {
+            room_id: sfu_room.clone(),
+            peer_id: peer_id.to_string(),
+            transport_id: transport_id.clone(),
+            dtls_parameters: DtlsParameters {
+                fingerprints: dtls_parameters.fingerprints,
+                role: "client".to_string(),
+            },
+        };
+        let json = serde_json::to_string(&connect)?;
+        ws_sender
+            .send(Message::Text(json.into()))
+            .await
+            .map_err(|e| anyhow::anyhow!("SFU ConnectWebRtcTransport: {}", e))?;
+        tracing::info!("SFU: ConnectWebRtcTransport sent");
+
+        // Step 4: Produce video
+        let produce = SignalingMessage::Produce {
+            room_id: sfu_room,
+            transport_direction: TransportDirection::Send,
+            kind: MediaKind::Video,
+            rtp_parameters: serde_json::json!({
+                "codecs": [{
+                    "mimeType": "video/H264",
+                    "clockRate": 90000
+                }]
+            }),
+        };
+        let json = serde_json::to_string(&produce)?;
+        ws_sender
+            .send(Message::Text(json.into()))
+            .await
+            .map_err(|e| anyhow::anyhow!("SFU Produce: {}", e))?;
+        tracing::info!("SFU: Produce (Video) sent");
+        tracing::info!("SFU produce transport {} ready", transport_id);
+
+        // ── VideoFrameGenerator: squares pattern ───────
+        struct CountingSink {
+            count: std::sync::Arc<std::sync::Mutex<u64>>,
+        }
+        impl VideoSink<BoxVideoFrame> for CountingSink {
+            fn on_frame(&self, _frame: &BoxVideoFrame) -> Result<VideoSinkWants, MediaError> {
+                let mut c = self.count.lock().unwrap();
+                *c += 1;
+                if *c % 30 == 0 {
+                    tracing::debug!("SFU: generated {} frames", *c);
+                }
+                Ok(VideoSinkWants::default())
             }
         }
+
+        let frame_gen = std::sync::Arc::new(VideoFrameGenerator::new());
+        let frame_count = std::sync::Arc::new(std::sync::Mutex::new(0u64));
+        let counting_sink: Box<dyn VideoSink<BoxVideoFrame>> = Box::new(CountingSink {
+            count: frame_count.clone(),
+        });
+        frame_gen.add_or_update_sink(counting_sink, VideoSinkWants::default());
+        frame_gen.start(
+            30,
+            PatternMode::Squares(SquaresConfig {
+                motion_speed: 3,
+                color_strategy: ColorStrategy::Fixed(vec![(128, 100, 150), (200, 180, 50)]),
+                ..Default::default()
+            }),
+            None,
+            640,
+            480,
+        );
+        tracing::info!("VideoFrameGenerator: 640x480@30fps squares");
     } else {
 
     // ponytail: wait for remote to join room before sending SDP offer

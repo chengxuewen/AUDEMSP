@@ -54,3 +54,35 @@ compile_error!("Only one backend can be enabled at a time.");
 **症状**: `backend-webrtc-sys` feature 下 egui 示例需要 eframe/egui 完整编译（40+ crates, ~10 分钟）。
 
 **解法**: 接受首次编译时间。后续增量编译仅需 1-2 分钟。
+
+## PIT-06: SFU 消息字段名必须 snake_case (2026-07-28)
+
+**症状**: 浏览器 SFU client 发送 `CreateWebRtcTransport` 后 server 无响应或返回错误。
+
+**根因**: Rust serde 默认使用 snake_case 序列化。浏览器发送 camelCase (`createWebRtcTransport`) 不匹配。
+
+**解法**: 浏览器端所有 SFU 消息 type 使用 snake_case：`create_web_rtc_transport`, `connect_web_rtc_transport`, `produce`, `consume`。
+
+## PIT-07: SFU ConnectWebRtcTransport 必须实际调用 mediasoup API (2026-07-28)
+
+**症状**: 浏览器 SFU transport 创建成功，但 WebRTC 连接失败（"Signal Lost"），video readyState=0。
+
+**根因**: `handle_sfu_message` 中 ConnectWebRtcTransport 只记录日志返回 "transport_connected"，未调用 mediasoup 的 `transport.connect(dtls_parameters)` API。DTLS/ICE 实际连接未完成。
+
+**解法**: ConnectWebRtcTransport 处理中必须调用 `sfu.connect_transport(room_id, peer_id, transport_id, dtls_params)` 执行真正的 mediasoup transport 连接。
+
+## PIT-08: SFU 消息必须包含 peer_id 字段 (2026-07-28)
+
+**症状**: Server 收到 SFU 消息但无法路由到正确的 transport。
+
+**根因**: 浏览器 sfu-client 发送消息时缺少 `peer_id` 字段，server 端用 peer_id 做 transport 查找。
+
+**解法**: 所有 SFU 消息必须包含 `peer_id` 字段，格式为 `{room_id}-{role}`（如 `test-room-consumer`）。
+
+## PIT-09: 不允许未经用户同意的架构回退 (2026-07-28)
+
+**症状**: Agent 在 SFU 实现遇到困难时自行回退到 P2P 方案。
+
+**根因**: 用户明确要求 SFU 架构，Agent 不应私自做架构决策。
+
+**解法**: 已写入 `.agents/rules/common/edit-safety.md`：任何架构变更（包括回退）必须经用户明确同意。

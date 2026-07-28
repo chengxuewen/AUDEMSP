@@ -78,5 +78,18 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | Browser SFU Client | ✅ (Server-Offer) |
 | Admin WS SFU Routing | ✅ |
 | Web UI (Video Grid + Metrics) | 🟡 |
-| Host SFU Produce | ✅ (骨架) |
-| Integration E2E | 🔲 |
+| Host SFU Produce | ✅ (VideoFrameGenerator squares) |
+| Integration E2E | 🟡 (transport connect deferred) |
+
+### SFU 当前阻塞
+
+mediasoup transport connect 是 deferred 的：`handle_sfu_message` 中 ConnectWebRtcTransport
+只记录日志返回 "transport_connected"，未调用 mediasoup 实际 `transport.connect()` API。
+浏览器 RTCPeerConnection 无法与 mediasoup transport 建立 DTLS/ICE 连接。
+
+### 下一步
+
+1. 修复 ConnectWebRtcTransport：调用 `sfu.connect_transport()` 实际连接
+2. 实现 Consume 消息处理：创建 mediasoup consumer → 返回 RTP params
+3. 浏览器 ontrack → video.srcObject → 视频帧渲染
+4. Playwright 端到端验证
