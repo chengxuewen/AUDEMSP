@@ -17,7 +17,7 @@ omspbase-common = { path = "../omspbase-common" }
 omspbase-webrtc = { path = "../omspbase-webrtc", optional = true }
 
 # mediasoup SFU (optional, Linux only)
-mediasoup = { version = "0.23", optional = true }
+mediasoup = { version = "0.24", optional = true }
 
 # HTTP + WebSocket
 axum = { version = "0.7", features = ["ws"] }

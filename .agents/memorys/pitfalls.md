@@ -155,6 +155,66 @@ compile_error!("Only one backend can be enabled at a time.");
 4. 下载的 tarball 缓存到 `.pixi-cache/downloads/` 复用
 **注意**: 当前用户选择保持现状（内网环境），但如需外部部署/代码分享时必须迁移。
 
+## PIT-16: pixi tasks 不认 `bash scripts/...` 或 `./scripts/...` 语法 (2026-07-29)
+
+**症状**: pixi.toml tasks 中 `check = "bash scripts/cargo-sfu.sh ..."` 报 `expected a version specifier`，`./scripts/cargo-sfu.sh` 报 `it seems you're trying to add a path dependency`。
+
+**根因**: pixi 解析 task value 时，`bash` 被识别为包名（dependency），`./` 被识别为路径依赖（path key）。两者都不被识别为命令。
+
+**解法**: 脚本不可用 `bash` 前缀或 `./` 前缀。使用 `sh -c 'scripts/...'` 语法或让脚本可执行后直接调用。
+
+**验证**: `pixi run check` 无 `expected a version specifier` 错误。
+
+## PIT-17: conda-forge `clang` 包不提供 `libclang.so` (2026-07-29)
+
+**症状**: `bindgen` 报 `Unable to find libclang: couldn't find any valid shared libraries matching: ['libclang.so']`。
+
+**根因**: conda-forge 的 `clang` 包只提供编译器和 `libclang-cpp.so`（C++ API），`libclang.so`（C API）需要单独安装 `libclang` 包。
+
+**解法**: pixi.toml 添加 `libclang = ">=15,<20"` 依赖。如仍有问题，`ln -sf libclang.so.N .pixi/envs/default/lib/libclang.so`。
+
+**验证**: `find .pixi/envs/default -name libclang.so -type f` 存在。
+
+## PIT-18: mediasoup tasks.py 覆盖 NINJA 环境变量 (2026-07-29)
+
+**症状**: 设了 `NINJA` 环境变量指向 pixi 的 ninja，但 meson 仍报 `Could not detect Ninja v1.8.2 or newer`。
+
+**根因**: tasks.py 第 82 行 `os.environ["NINJA"] = f"{PIP_MESON_NINJA_DIR}/bin/ninja"` 硬覆盖 NINJA，指向 pip 安装的路径（不存在）。
+
+**解法**: cargo-sfu.sh 中用 `sed` 替换 NINJA 赋值为 pixi 路径。
+
+**验证**: meson 日志中 ninja 路径应为 `.pixi/envs/default/bin/ninja`。
+
+## PIT-19: sandbox 网络限制 — GitHub/OpenSSL 不可达 (2026-07-29)
+
+**症状**: `curl https://github.com` 超时，`curl https://openssl.org` 超时。mediasoup meson 构建需下载 openssl 源码。
+
+**根因**: OpenCode 沙箱只允许 npm registry 端口，GitHub 和其他站点被阻断。
+
+**解法**: 读取 `~/.bashrc` 中的代理设置 (`http_proxy/https_proxy`)，在 pixi-shell.sh 中自动加载。
+
+**验证**: `curl -I https://github.com` 在 pixi 环境中返回 200。
+
+## PIT-20: 代理配置不应硬编码 (2026-07-29)
+
+**症状**: pixi.toml activation 中硬编码 `http_proxy = "http://192.168.100.47:7897"`。
+
+**根因**: 代理地址在不同环境不同（公司/家庭/CI），硬编码会导致跨环境失败。
+
+**解法**: pixi-shell.sh 运行时从 `~/.bashrc` 读取 `export http_proxy=` 行，`eval` 注入。
+
+**验证**: 重启 shell 后 `echo $http_proxy` 应有值。
+
+## PIT-21: 不应修改依赖库源码 (2026-07-29)
+
+**症状**: 尝试用 `sed` 修改 `~/.cargo/registry/src/.../mediasoup-sys-*/tasks.py` 和 `meson.build`。
+
+**根因**: 用户明确要求不要修改依赖库源码/配置。tasks.py 的 patch 属于可接受的构建 wrapper，但 meson.build 不可。
+
+**解法**: 只通过构建 wrapper 脚本（cargo-sfu.sh）修补 tasks.py，不触碰 meson.build。
+
+**验证**: 无 meson.build 修改痕迹。
+
 ---
 
 ## 参见

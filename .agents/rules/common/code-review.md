@@ -31,7 +31,7 @@ Before marking code complete:
 - [ ] Files &lt;800 lines: verify with `wc -l` on changed files
 - [ ] No deep nesting (&gt;4 levels): check indent depth in diff
 - [ ] Errors handled explicitly: `grep -c 'unwrap()'` must be 0 in changed .rs
-- [ ] No hardcoded secrets: run `scripts/scan-hardcode.sh`
+- [ ] No hardcoded secrets: run `scripts/scan-hardcode.sh` or `/security-hardening`
 - [ ] No dbg!/console.log: `grep -r 'dbg!(' crates/` must return 0
 - [ ] Tests exist: `cargo test --workspace`
 - [ ] Coverage &gt;=80%: `cargo tarpaulin --workspace`

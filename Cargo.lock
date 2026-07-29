@@ -2070,7 +2070,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3821,9 +3821,9 @@ dependencies = [
 
 [[package]]
 name = "mediasoup"
-version = "0.23.0"
+version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f253e59f964608e00bb65809fddffa73cb635a7b083546defd795e9773a331d2"
+checksum = "fb79332ef82c96fc44ed2ebca7a4125165e0423397d324c31689171ca9713dd9"
 dependencies = [
  "async-channel 1.9.0",
  "async-executor",
@@ -3854,9 +3854,9 @@ dependencies = [
 
 [[package]]
 name = "mediasoup-sys"
-version = "0.13.0"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ac3dbf04213a5a41ba6305b8344538fc8571a26f96fa29f4558922173d890ce"
+checksum = "01766aa7133c7842c7f09507642a667c90003c93a8e4c6270f6d51d7c0156554"
 dependencies = [
  "planus",
  "planus-codegen",
@@ -4140,7 +4140,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5317,7 +5317,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.5",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5863,7 +5863,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6566,7 +6566,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7908,7 +7908,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 # OMSPBase Status
 
-**生成**: 2026-07-29 | 决策: 200+ (D1-D205) | Phase: 3 完成 | 202 commits | 22 skills
+**生成**: 2026-07-29 | 决策: 200+ (D1-D205) | Phase: 3 完成 | 202 commits | 22 skills | mediasoup 0.24.1
 
 **当前**: 7 crate workspace。Phase 3 全部完成。Docker/CI/DevContainer 就位。macOS 混合开发工作流。P2P 管线生产就绪。SFU transport connect 已实现。**OpenCode 配置优化完成** (D199-D205)。
 
