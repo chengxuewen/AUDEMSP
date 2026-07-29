@@ -80,6 +80,7 @@ OMSPBase/
 | **优化 Agent 体系** | `ecosystem-scan` | 审计 .agents/、找新技能 |
 | **会话结束** | `lesson-review` | 总结经验教训 |
 | **行动前** | `think-before-act` | 任何非平凡操作前（自动触发） |
+| **不确定用什么技能** | `skill-router` | 意图模糊或需要组合推荐时 |
 | **文档审计** | `doc-audit` | 检查文档/决策/agent 体系一致性 |
 | **批量验证** | `openspec-propose` | 提出标准化变更方案 |
 | **实施变更** | `openspec-apply-change` | 按方案逐步实施 |

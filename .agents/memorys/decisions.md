@@ -112,3 +112,13 @@
 - 社区先例：autoskills、agent-skill-discovery、skill-update-team、agent-self-audit
 - doc-audit 从 AUDESYS 直搬未适配，需改写
 **影响**: 21 个技能，ecosystem-scan + doc-audit + 9 个从社区移植的技能
+
+## D205: skill-router 技能创建
+
+**决策**: 创建 skill-router 技能，用于意图模糊时自动分析并推荐最佳技能组合。
+**日期**: 2026-07-29
+**原因**:
+- 21 个技能导致用户不知道何时用哪个
+- context-engineering 路由表处理关键词匹配，skill-router 处理模糊意图
+- 与 context-engineering 互补：规则文件处理明确场景，技能处理模糊意图
+**影响**: 22 个技能，AGENTS.md 目录表已更新
