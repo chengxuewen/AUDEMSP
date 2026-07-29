@@ -164,3 +164,19 @@ webrtc-sys (C++, libwebrtc)
 **原则**：不等用户要求。识别到可沉淀的经验即主动更新。宁可多记，不可遗漏。
 
 **来源**：用户显式要求（2026-07-28）
+
+---
+
+## C10: OMO 插件版本监控
+
+**约束**：每次 OMO 插件版本升级前，应检查 changelog 和与当前配置的兼容性。
+
+**检查步骤**：
+1. `npm view oh-my-opencode version` — 对比本地版本
+2. 检查 breaking changes（主要版本升级）vs patch（直接升级）
+3. 检查 oh-my-openagent.jsonc schema 是否变更
+4. 重启 opencode 后验证 agent/技能加载正常
+
+**当前状态**：v4.19.2（npm 最新 4.19.3，待升级）
+
+**来源**：ecosystem-scan 审计（2026-07-29）

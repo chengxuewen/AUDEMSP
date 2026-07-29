@@ -1,6 +1,6 @@
 # OMSPBase Status
 
-**生成**: 2026-07-28 | 决策: 195+ (D1-D202) | Phase: 3 完成 | 91 commits
+**生成**: 2026-07-29 | 决策: 200+ (D1-D203) (D1-D202) | Phase: 3 完成 | 91 commits
 
 **当前**: 7 crate workspace。Phase 2 mediasoup SFU 集成完成。Phase 3 生产就绪全部完成。Docker/CI/DevContainer 就位。macOS 混合开发工作流。P2P 管线生产就绪。**OpenCode 配置优化完成** (D199-D202)。
 
@@ -41,6 +41,8 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | Admin Dashboard (P1-P5) | ✅ |
 | Admin Dashboard (P6) | 🟡 |
 | OpenCode 配置优化 | ✅ |
+| Doc-Audit 完整审计 | ✅ |
+| OMO 插件版本审计 | ✅ (4.19.2→4.19.3 patch) |
 
 ## 决策状态
 

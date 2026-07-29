@@ -92,3 +92,23 @@
 - mediasoup transport 协议已在 sfu.rs 中实现
 - LiveKit 使用此模型，是 WebRTC SFU 的行业标准
 - Admin dashboard 复用现有 SignalingMessage 类型（CreateWebRtcTransport、Consume）用于浏览器 consumer
+
+## D203: Agent 模型层级最终确认
+
+**决策**: prometheus 从 premium 升级到 premium-max；metis 保持 fast（非 premium）。
+**日期**: 2026-07-29
+**原因**:
+- prometheus（计划生成）是最高杠杆 agent — 计划错误 = 下游全部返工
+- metis（度量分析）本质是 pattern matching，复杂度低，调用频率高 → fast 足够
+- 参考 OMSPBase+AUDEBase 联合评估：oracle + prometheus 为 premium-max 双高杠杆
+**影响**: oh-my-openagent.jsonc 已更新，agent-model-tiers.md 已同步
+
+## D204: ecosystem-scan 技能体系
+
+**决策**: 创建 ecosystem-scan 技能（双层 Quick/Full + 社区对比 + 安全门禁），同时创建 doc-audit OMSPBase 适配版。
+**日期**: 2026-07-29
+**原因**:
+- .agents/ 体系需要定期审计和外部对标
+- 社区先例：autoskills、agent-skill-discovery、skill-update-team、agent-self-audit
+- doc-audit 从 AUDESYS 直搬未适配，需改写
+**影响**: 21 个技能，ecosystem-scan + doc-audit + 9 个从社区移植的技能
