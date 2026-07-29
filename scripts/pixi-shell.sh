@@ -3,16 +3,15 @@
 # Source this file: source scripts/pixi-shell.sh
 # Do NOT run as a subshell (./pixi-shell.sh) — env vars would be lost.
 
-set -euo pipefail
+set -eo pipefail
 
 SCRIPT_DIR_PSHELL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "${SCRIPT_DIR_PSHELL}/_common.sh"
 
 echo "Activating OMSPBase pixi environment..."
-# ponytail: conda completion scripts reference ZSH_VERSION etc. — disable nounset during eval
-set +u
+# Pre-set vars that conda completion scripts reference without defaults
+export ZSH_VERSION="${ZSH_VERSION:-}"
 eval "$("${PIXI_BIN}" shell-hook --manifest-path "${PROJECT_ROOT}/pixi.toml" --shell bash)"
-set -u
 
 echo ""
 echo "OMSPBase environment active."
@@ -23,5 +22,20 @@ echo "  pixi run check     — cargo check"
 echo ""
 echo "Deactivate with: exit  (or close this shell)"
 
+# Import proxy from ~/.bashrc if not already set
+if [ -z "${http_proxy:-}" ] && [ -f "${HOME}/.bashrc" ]; then
+  proxy_line=$(grep -m1 'export http_proxy=' ~/.bashrc 2>/dev/null || true)
+  if [ -n "$proxy_line" ]; then
+    eval "$proxy_line"
+    eval "$(grep -m1 'export https_proxy=' ~/.bashrc 2>/dev/null || true)"
+    echo "Proxy loaded from ~/.bashrc"
+  fi
+fi
+
 # Set DYLD_LIBRARY_PATH for GStreamer runtime linking on macOS
-export DYLD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${DYLD_LIBRARY_PATH:-}"
+if [ -n "${CONDA_PREFIX:-}" ]; then
+  export DYLD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${DYLD_LIBRARY_PATH:-}"
+fi
+if [ -n "${CONDA_PREFIX:-}" ]; then
+  export DYLD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${DYLD_LIBRARY_PATH:-}"
+fi

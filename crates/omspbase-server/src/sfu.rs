@@ -361,7 +361,7 @@ mod imp {
                     format!("Transport {transport_id} not found for peer {peer_id}")
                 })?;
 
-            transport.connect(ms_dtls).await
+            transport.connect(mediasoup::prelude::WebRtcTransportRemoteParameters { dtls_parameters: ms_dtls }).await
                 .map_err(|e| format!("Failed to connect transport: {e}"))?;
 
             tracing::info!(

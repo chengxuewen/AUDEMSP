@@ -26,15 +26,20 @@ lld = ">=18.0,<19"
 gst-plugins-ugly = ">=1.24.0,<2"
 gst-libav = ">=1.24.0,<2"
 compilers = ">=1.0,<2"
-meson = ">=0.63,<1.0"
+clang = ">=15,<20"
+llvm = ">=15,<20"
+libclang = ">=15,<20"
+meson = ">=1.1.0,<2"
 ninja = ">=1.11,<2"
+openssl = ">=3,<4"
 
-# === Cargo wrapper (handles mediasoup-sys build quirks) ===
-check = "bash scripts/cargo-sfu.sh check --workspace"
-build = "bash scripts/cargo-sfu.sh build --workspace"
-lint = { cmd = "bash scripts/cargo-sfu.sh clippy --workspace --all-targets -- -D warnings", "depends-on" = ["build"] }
-test = "bash scripts/cargo-sfu.sh test --workspace"
-test-sfu = "bash scripts/cargo-sfu.sh test -p omspbase-server --features sfu-mediasoup"
+[feature.dev.tasks]
+# === Cargo tasks — mediasoup-sys wrapper patches tasks.py for meson buildtype conflict ===
+check = "sh -c 'scripts/cargo-sfu.sh check --workspace'"
+build = "sh -c 'scripts/cargo-sfu.sh build --workspace'"
+lint = "cargo clippy --workspace --all-targets -- -D warnings"
+test = "sh -c 'scripts/cargo-sfu.sh test --workspace'"
+test-sfu = "sh -c 'scripts/cargo-sfu.sh test -p omspbase-server --features sfu-mediasoup'"
 
 # === Vanilla tasks (no mediasoup-sys wrapper) ===
 check-fast = "cargo check --workspace --no-default-features"
@@ -42,8 +47,15 @@ build-fast = "cargo build --workspace --no-default-features"
 format = "cargo fmt --all -- --check"
 format-fix = "cargo fmt --all"
 audit = "cargo deny check"
+
+# Testing tools
+[feature.test.dependencies]
+
+[feature.test.tasks]
+test = "cargo test --workspace"
 coverage = "cargo tarpaulin --workspace --out Html --out Lcov"
 test-gstreamer = "LD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$LD_LIBRARY_PATH DYLD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$DYLD_LIBRARY_PATH cargo test -p omspbase-codec --features backend-gstreamer"
+test-sfu = "cargo test -p omspbase-server --features sfu-mediasoup"
 
 # CI tools (lightweight CI stages)
 [feature.ci.dependencies]
@@ -52,6 +64,10 @@ test-gstreamer = "LD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$LD_LIBR
 ci-check = "cargo check --workspace"
 ci-lint = "cargo clippy --workspace --all-targets -- -D warnings"
 ci-test = "cargo test --workspace"
+
+# Activation — set MESON for mediasoup-sys (avoids pip-installed meson)
+[activation]
+env = { MESON = "$CONDA_PREFIX/bin/meson", NINJA = "$CONDA_PREFIX/bin/ninja", LIBCLANG_PATH = "$CONDA_PREFIX/lib", PKG_CONFIG_PATH = "$CONDA_PREFIX/lib/pkgconfig", PATH = "$CONDA_PREFIX/bin:$PATH" }
 
 # Environments — composable feature groups
 [environments]

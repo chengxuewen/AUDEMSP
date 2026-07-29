@@ -357,7 +357,7 @@ async fn handle_admin_sfu(
             transport_id,
             dtls_parameters,
         } => {
-            match sfu.connect_transport(&room_id, &peer_id, &transport_id, dtls_parameters).await {
+            match sfu.connect_transport(&room_id, &peer_id, &transport_id, dtls_parameters.clone()).await {
                 Ok(()) => {
                     tracing::info!(
                         "Admin SFU: transport {transport_id} connected for peer {peer_id}"

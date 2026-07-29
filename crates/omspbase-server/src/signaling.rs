@@ -618,7 +618,7 @@ pub(crate) async fn handle_sfu_message(
             transport_id,
             dtls_parameters,
         } => {
-            match sfu.connect_transport(&room_id, &peer_id, &transport_id, dtls_parameters).await {
+            match sfu.connect_transport(&room_id, &peer_id, &transport_id, dtls_parameters.clone()).await {
                 Ok(()) => {
                     tracing::info!(
                         "SFU: transport {transport_id} connected for peer {peer_id}"
