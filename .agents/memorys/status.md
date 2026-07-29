@@ -1,10 +1,8 @@
 # OMSPBase Status
 
-**生成**: 2026-07-29 | 决策: 200+ (D1-D203) (D1-D202) | Phase: 3 完成 | 91 commits
+**生成**: 2026-07-29 | 决策: 200+ (D1-D205) | Phase: 3 完成 | 202 commits | 22 skills
 
-**当前**: 7 crate workspace。Phase 2 mediasoup SFU 集成完成。Phase 3 生产就绪全部完成。Docker/CI/DevContainer 就位。macOS 混合开发工作流。P2P 管线生产就绪。**OpenCode 配置优化完成** (D199-D202)。
-
-**当前**: 7 crate workspace。Phase 2 mediasoup SFU 集成完成。Phase 3 生产就绪全部完成 (3A P0 安全+容错, 3B P1 日志+文档, 3C P2 高级特性)。Docker/CI/DevContainer 就位，全部 Ubuntu 22.04 LTS。macOS 混合开发工作流 (Host/Client 原生 + Server Docker)。P2P 管线生产就绪。
+**当前**: 7 crate workspace。Phase 3 全部完成。Docker/CI/DevContainer 就位。macOS 混合开发工作流。P2P 管线生产就绪。SFU transport connect 已实现。**OpenCode 配置优化完成** (D199-D205)。
 
 ## 测试
 
