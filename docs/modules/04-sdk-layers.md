@@ -1,6 +1,6 @@
 # SDK 分层与 API 参考
 
-> OMSPBase SDK 采用分层架构，基于 omspbase-core 微内核构建领域特定 SDK。
+> OMSPBase SDK 采用分层架构，基于 omspbase-common 微内核构建领域特定 SDK。
 > 关联决策: D65-D69 (SDK命名+Facade), D82 (crate清单)
 
 ---
@@ -11,7 +11,7 @@ Phase 1 MVP 核心：双 SDK facade 模型
 
 ```
                     ┌─────────────────┐
-                    │  omspbase-core │  ← 微内核（所有场景共享）
+                    │  omspbase-common │  ← 微内核（所有场景共享）
                     │  PluginManager  │
                     │  LicenseManager │
                     │  PipelineEngine │
@@ -41,7 +41,7 @@ Phase 2+: omspbase-streaming, omspbase-conference, omspbase-surveillance
 
 ---
 
-## 一、omspbase-core — 微内核
+## 一、omspbase-common — 微内核
 
 所有场景共享的核心引擎，提供：
 
@@ -132,7 +132,7 @@ Tauri v2 + React 桌面应用 (D76)
 
 ```
 crates/
-├── omspbase-core/          微内核 (PluginManager, PipelineEngine)
+├── omspbase-common/          微内核 (PluginManager, PipelineEngine)
 ├── omspbase-transport/     传输层 (RTP/SRT/WebRTC, D31-D33)
 ├── omspbase-signaling/     信令客户端 (D51-D54)
 ├── omspbase-codec/         编解码 (D43-D48)

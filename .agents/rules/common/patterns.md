@@ -29,3 +29,10 @@ Use a consistent envelope for all API responses:
 - Include the data payload (nullable on error)
 - Include an error message field (nullable on success)
 - Include metadata for paginated responses (total, page, limit)
+
+## 可执行检查
+
+```bash
+# 验证：无大文件
+find crates/ -name "*.rs" -exec wc -l {} + | awk "$1>800{print}"
+```

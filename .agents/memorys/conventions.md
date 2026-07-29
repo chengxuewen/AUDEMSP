@@ -125,17 +125,17 @@ webrtc-sys (C++, libwebrtc)
 
 ## C8: 质量门禁 Agent 模型分配
 
-**约束**：预规划/审查类 agent 必须使用 premium 以上模型，不允许 fast 层。
+**约束**：Agent 模型分配必须符合层级映射表，高杠杆任务用最强模型。
 
 | Agent | 层级 | 原因 |
 |-------|------|------|
-| metis（预规划顾问） | premium | 需要强推理发现需求歧义和 AI 失败点 |
-| momus（计划批评家） | premium | 对抗性审查需要深度推理，temp 0.3 |
 | oracle | premium-max | 最复杂架构决策 |
+| prometheus | premium-max | 高杠杆计划生成，错误代价最大 |
+| momus（计划批评家） | premium | 对抗性审查需要深度推理，temp 0.3 |
 
-执行型 agent（explore/librarian/sisyphus-junior）使用 fast 层即可。
+执行型 agent（explore/librarian/metis/sisyphus-junior）使用 fast 层。
 
-**来源**：D200 (2026-07-28), AUDEBase 配置实践
+**来源**：D200 (2026-07-28), D203 (2026-07-29), AUDEBase 配置实践
 
 ---
 

@@ -143,6 +143,15 @@ Before submitting work touching multiple crates:
 | "优化 agent/审计/技能" | `ecosystem-scan` | Agent 体系 |
 | "总结/记录/教训/经验" | `lesson-review` | 会话结束 |
 | 任何非平凡操作前 | `think-before-act` | 自动 |
+| "审计/一致性/文档矛盾" | `doc-audit` | 文档审计 |
+| "方案/提案/标准化变更" | `openspec-propose` | 架构变更 |
+| "实施/按方案/逐步" | `openspec-apply-change` | 方案执行 |
+| "归档/完成变更" | `openspec-archive-change` | 变更归档 |
+| "探索/调研/思路" | `openspec-explore` | 方案调研 |
+| "生成测试/测试骨架" | `test-harness` | 测试框架 |
+| "硬编码/密钥/端口扫描" | `review-hardcode` | 安全扫描 |
+| "文档转技能/书籍" | `book-to-skill` | 文档转换 |
+| "同步规格/delta" | `openspec-sync-specs` | 规格同步 |
 
 ## 主动建议机制
 

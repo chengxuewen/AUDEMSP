@@ -7,7 +7,7 @@
 ## 一、微内核架构
 
 ```
-omspbase-core (微内核)
+omspbase-common (微内核)
 ├── PluginManager     — 插件注册、发现、生命周期
 ├── LicenseManager    — 权限校验、配额控制
 ├── ProtocolBroker    — 内部协议路由 (FlatBuffers)

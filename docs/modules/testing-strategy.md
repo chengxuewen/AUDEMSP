@@ -53,7 +53,7 @@ Layer 4: E2E          → Host→Server→Remote 全链路
 | omspbase-host | 60% | 80% | 80% |
 | omspbase-client | 50% | 75% | 75% |
 | omspbase-server | 60% | 80% | 80% |
-| omspbase-core (Phase 2) | 70% | 85% | 85% |
+| omspbase-common (Phase 2) | 70% | 85% | 85% |
 
 工具：`cargo tarpaulin --workspace --out xml`
 

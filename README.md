@@ -30,7 +30,7 @@ OMSPBase — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一�
 
 - **Client**：桌面 GUI 全功能应用（Tauri v2），可控制他人也可被控制
 - **Host**：无 GUI 守护进程，适合边缘设备/服务器/车端，纯产出媒体流
-- **微内核 + 插件**：omspbase-core 微内核，领域功能以插件形式加载
+- **微内核 + 插件**：omspbase-common 微内核，领域功能以插件形式加载
 - **Auth 双模式**：独立部署自带账户系统；作为 AUDEBase 模块时委托平台 RBAC/LDAP
 
 详见 [`docs/architecture.md`](docs/architecture.md)。
@@ -45,7 +45,7 @@ OMSPBase — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一�
 
 ## 开发状态
 
-当前处于 Phase 0-1 交错阶段。5 crate workspace (remote-host/remote-client/server/core/webrtc)，webrtc-sys triple-backend 编译通过，147 tests 全部通过，consolidated MVP 实施进行中。
+当前处于 Phase 3 完成阶段。7 crate workspace，webrtc triple-backend，codec 三后端 (stub+FFmpeg+GStreamer)，400+ tests 全部通过，Docker/CI/DevContainer 就位。
 
 ## 许可
 

@@ -45,7 +45,7 @@ AUDESYS (工业控制) ──┐              ┌── AUDEBase (企业应用)
 | 原则 | 说明 | 关联决策 |
 |------|------|---------|
 | **多后端编译期分发** | WebRTC 多后端 (webrtc-sys/webrtc-rs/stub, str0m Phase 2+) 通过 `#[cfg(feature)]` 编译期 dispatch，无运行时 dyn trait 开销。借鉴 webrtc-kit trait 抽象模式 | D144-D151 |
-| **零 WebRTC 依赖内核** | omspbase-core 不依赖任何 WebRTC crate，MediaTransport trait 为纯抽象接口 | D150 |
+| **零 WebRTC 依赖内核** | omspbase-common 不依赖任何 WebRTC crate，MediaTransport trait 为纯抽象接口 | D150 |
 | **Component 服务层** | 服务级 Component 与管线级 Plugin 分离，三层抽象模型 | D126 |
 ## 2. 三层架构
 
@@ -92,8 +92,8 @@ OMSPBase 采用控制面与数据面分离的三层架构：后台服务集中�
 | 层 | 职责 | 技术 |
 |---|---|---|
 | **后台服务** | 控制面：用户、设备、权限、License、信令 | Rust (axum/tonic) |
-| **Client** | 桌面 GUI，全功能操作端 | Tauri v2 + omspbase-core |
-| **Host** | Headless 远端，纯产出媒体流 | omspbase-core (无 GUI 依赖) |
+| **Client** | 桌面 GUI，全功能操作端 | Tauri v2 + omspbase-common |
+| **Host** | Headless 远端，纯产出媒体流 | omspbase-common (无 GUI 依赖) |
 | **SDK** | 核心管线 + 领域插件 | Rust crate 体系 |
 
 ### 2.1 Client vs Host
@@ -196,7 +196,7 @@ interface Permission {
 
 > 📄 详见 [modules/06-plugin-system.md](/docs/modules/06-plugin-system.md)
 
-微内核 omspbase-core 承载 PluginManager、LicenseManager、ProtocolBroker、PipelineEngine、AuthProvider 五大核心组件。插件按领域分为生产类（Host 采集/编码/推流）、消费类（Client 解码/渲染/拉流）、协议类（RTMP/HLS/SRT/RTSP/WebRTC）和中继类（STUN/TURN/SFU）。三层 trait 层次（Plugin → MediaSource/Processor/Sink → 具体实现）提供清晰的扩展边界。
+微内核 omspbase-common 承载 PluginManager、LicenseManager、ProtocolBroker、PipelineEngine、AuthProvider 五大核心组件。插件按领域分为生产类（Host 采集/编码/推流）、消费类（Client 解码/渲染/拉流）、协议类（RTMP/HLS/SRT/RTSP/WebRTC）和中继类（STUN/TURN/SFU）。三层 trait 层次（Plugin → MediaSource/Processor/Sink → 具体实现）提供清晰的扩展边界。
 
 ### 4.0 Component 服务层 (D126-D134)
 
@@ -227,7 +227,7 @@ Component trait 位于独立 crate `omspbase-component` (D127)，采用 init→r
 ### 4.1 微内核架构
 
 ```
-omspbase-core (微内核)
+omspbase-common (微内核)
 ├── PluginManager     — 插件注册、生命周期
 ├── LicenseManager    — 权限校验、配额控制
 ├── ProtocolBroker    — 内部协议路由 (FlatBuffers)
@@ -300,8 +300,8 @@ trait MediaSink: Plugin {
 }
 ```
 
-/// 多后端传输抽象（ponytail: omspbase-core 定义此 trait，omspbase-webrtc 的 RTCPeerConnection 作为实现层。Phase 2+ 迁入 omspbase-core 的 MediaTransport trait 与 webrtc crate 解耦。详见 docs/modules/17-webrtc-crate.md）
-/// omspbase-core 不依赖任何 WebRTC crate，保证独立编译测试
+/// 多后端传输抽象（ponytail: omspbase-common 定义此 trait，omspbase-webrtc 的 RTCPeerConnection 作为实现层。Phase 2+ 迁入 omspbase-common 的 MediaTransport trait 与 webrtc crate 解耦。详见 docs/modules/17-webrtc-crate.md）
+/// omspbase-common 不依赖任何 WebRTC crate，保证独立编译测试
 #[async_trait]
 pub trait MediaTransport: Send + Sync {
     async fn create_video_track(&self, source_id: &str) -> Result<TrackLocal, TransportError>;
@@ -311,7 +311,7 @@ pub trait MediaTransport: Send + Sync {
 
 # ponytail: MediaTransport trait — Phase 0 webrtc-sys 为主力后端，webrtc-rs 已有 struct 骨架，str0m Phase 2+。完整多后端 trait 体系 Phase 2+。
 
-# omspbase-core 零 WebRTC 依赖 (D150)。
+# omspbase-common 零 WebRTC 依赖 (D150)。
 
 ### 4.3 插件加载方式
 
@@ -411,11 +411,11 @@ Phase 2+: 支持 Simulcast/SVC 多层编码 — 单一输入源产出多个质�
 
 > 📄 详见 [modules/04-sdk-layers.md](/docs/modules/04-sdk-layers.md)
 
-Phase 1 MVP 核心为 field/remote 双 SDK 模型 (D65-D69, D82)，分别对应车端（采集+编码+推流）和座舱（拉流+解码+控制）。omspbase-core 微内核作为公共基础，Phase 2+ 扩展 streaming、conference、surveillance 等领域 SDK。
+Phase 1 MVP 核心为 field/remote 双 SDK 模型 (D65-D69, D82)，分别对应车端（采集+编码+推流）和座舱（拉流+解码+控制）。omspbase-common 微内核作为公共基础，Phase 2+ 扩展 streaming、conference、surveillance 等领域 SDK。
 
 ```
                     ┌─────────────────┐
-                    │  omspbase-core │  ← 微内核（所有场景共享）
+                    │  omspbase-common │  ← 微内核（所有场景共享）
                     │  PluginManager  │
                     │  LicenseManager │
                     │  PipelineEngine │
@@ -480,17 +480,19 @@ if (permissions.surveillance) modules.push(SurveillanceModule); // 监控 tab
 
 ## 9. Cargo Workspace 结构
 
-当前 workspace 含 5 个 Cargo member crate（D126-D155 增量）：omspbase-core (微内核), omspbase-host, omspbase-client, omspbase-server, omspbase-webrtc (D137 新增, RTP track API)。Phase 2+ 逐步扩展 component、transport、signaling、codec、pipeline 等领域 crate。
+当前 workspace 含 7 个 Cargo member crate（D126-D155 增量）：omspbase-common (微内核), omspbase-host, omspbase-client, omspbase-server, omspbase-webrtc (D137 新增, RTP track API), omspbase-media (媒体管线引擎), omspbase-codec (编解码三后端: stub+FFmpeg+GStreamer)。
 
 ```
 crates/
-├── omspbase-core/         微内核 (PluginManager, LicenseManager, PipelineEngine, AuthProvider trait)
+├── omspbase-common/         微内核 (PluginManager, LicenseManager, PipelineEngine, AuthProvider trait)
 ├── omspbase-host/         Host 应用 (headless, 采集+编码+推流+信令+配置, 单体架构 D155)
 ├── omspbase-client/       Remote 应用 (拉流+解码+渲染+控制)
 ├── omspbase-server/       Server 应用 (信令 relay+监控+会话管理, mediasoup SFU)
-└── omspbase-webrtc/       WebRTC 封装 (RTP track API, webrtc-sys 默认后端, 多后端 feature gate)
+├── omspbase-webrtc/       WebRTC 封装 (RTP track API, webrtc-sys 默认后端, 多后端 feature gate)
+├── omspbase-media/        媒体管线 (PipelineEngine, BroadcastEngine, Transform 接口)
+└── omspbase-codec/        编解码 (stub + FFmpeg 静态链接 + GStreamer pixi)
   
-Phase 2+ 计划 crates: omspbase-component, omspbase-transport, omspbase-signaling, omspbase-codec, omspbase-pipeline, omspbase-auth, omspbase-field, omspbase-field-c, omspbase-client-c, omspbase-napi
+Phase 2+ 计划 crates: omspbase-component, omspbase-transport, omspbase-signaling, omspbase-pipeline, omspbase-auth, omspbase-field, omspbase-field-c, omspbase-client-c, omspbase-napi
 ```
 
 ## 10. 技术选型
@@ -525,7 +527,7 @@ Phase 2+ 计划 crates: omspbase-component, omspbase-transport, omspbase-signali
 |---|------|------|
 | 1 | 插件加载方式 — 编译期 inventory + 运行时 dlopen | ✅ D13, D29 |
 | 2 | 信令服务 — 单 axum HTTP+WS 同进程 | ✅ D12, D52 |
-| 3 | Cargo workspace 组织结构 — 5 crates (当前) → 10+ crates (Phase 2+) | ✅ D16, D82, D127, D142 |
+| 3 | Cargo workspace 组织结构 — 7 crates (当前) → 10+ crates (Phase 2+) | ✅ D16, D82, D127, D142 |
 | 4 | 插件间通信协议 — FlatBuffers schema 设计 | ✅ D10 |
 | 5 | 录制/回放能力 — fMP4 + splitmuxsink, Phase 2+ 作为一级管线路径 (D34-D40) | ✅ D34-D40 |
 | 6 | Host 打包发布 — tarball + cargo-c SDK tarball + CMake | ✅ D102-D106 |

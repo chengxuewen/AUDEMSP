@@ -11,14 +11,27 @@ description: "审计 .agents/ 体系并扫描社区生态寻找可引入的技�
 ## 触发条件
 
 - 用户说"优化 agents"/"审计 .agents"/"扫描生态"/"找新技能"
-- `/ecosystem-scan` 命令（默认 Quick）
+- `/ecosystem-scan` — 弹出模式选择菜单
+- `/ecosystem-scan quick` — 快速扫描（默认）
 - `/ecosystem-scan full` — 深度扫描（首次或 >5 次 Quick 后自动升级）
+- `/ecosystem-scan report` — 查看上次扫描报告
+
+## 入口菜单
+
+无参数时弹出：
+
+```
+[1] Quick Scan — 8 项快速审计 (< 30s)
+[2] Full Scan — 15 项深度审计 + 社区同步 + 安全门禁 (3-5min)
+[3] View Report — 查看上次扫描结果
+[4] Quick Fix — 自动修复 LOW/MEDIUM 问题（不交互）
+```
 
 ## 双层模式
 
 | 特性 | Quick | Full |
 |------|:-----:|:----:|
-| 本地审计 | 6 项快速检查 | 所有 13 项 |
+| 本地审计 | 8 项快速检查 | 15 项深度检查 |
 | 外部扫描 | 已知 3-5 个高星仓库 | 全面 websearch + GitHub 搜索 |
 | 评分 | 3 维快速 | 5 维完整评分 |
 | 安全审计 | 无 | 6 项安全检查 |

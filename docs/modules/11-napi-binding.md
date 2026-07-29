@@ -25,7 +25,7 @@ AUDEBase (Node.js)
 │  napi-rs FFI
 │
 ▼
-omspbase-core (Rust)
+omspbase-common (Rust)
 ├─ SessionManager        ← 新建 thin wrapper
 ├─ MediaTransport        ← 现有
 ├─ PluginManager         ← 现有
@@ -180,7 +180,7 @@ session.control.requestKeyframe();
 ## 11.4 Rust 侧实现
 
 ```rust
-// omspbase-core/src/session.rs (新建)
+// omspbase-common/src/session.rs (新建)
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;

@@ -1,6 +1,6 @@
 ---
 name: security-hardening
-description: "OMSPBase security audit and hardening. OWASP Top 10 checks, PSK/JWT auth flow review, WebSocket security, secrets management (PIT-10 lesson), mediasoup SFU transport security. Use before release, after auth changes, or when onboarding new PSK keys."
+description: "OMSPBase security audit and hardening. OWASP Top 10 checks, hardcoded secrets/ports/URLs scan (merged review-hardcode), PSK/JWT auth flow review, WebSocket security, secrets management (PIT-10 lesson), mediasoup SFU transport security. Use before release, after auth changes, or when onboarding new PSK keys. Also accessible via /review-hardcode."
 ---
 
 # security-hardening — 安全加固
@@ -172,6 +172,22 @@ grep -rn 'apiKey\|api_key\|API_KEY' .opencode/ --include='*.json' --include='*.j
 | env var 插值 | `grep -rn '{env:' .opencode/` | 所有 apiKey 使用插值 |
 | .gitignore 覆盖 | `grep '\.env' .gitignore` | 包含 .env, .env.local |
 | 示例文件占位 | `grep 'EXAMPLE_KEY\|your-key-here' .env.example` | 无真实密钥 |
+
+### 硬编码值严重性（原 review-hardcode）
+
+本技能吸收了 `review-hardcode` 的完整扫描能力。`/review-hardcode` 命令指向此处。
+
+| 模式 | 严重性 | 说明 |
+|------|--------|------|
+| `token="..."` / `password="..."` / `secret="..."` / `api_key="..."` | 🔴 CRITICAL | 硬编码密钥/令牌 |
+| `:9800` 等硬编码端口 | 🟠 HIGH | 生产端口不应硬编码 |
+| `localhost:PORT` / `127.0.0.1:PORT` | 🟠 HIGH | 地址+端口应配置化 |
+| `http://IP` 硬编码 IP URL | 🟡 MEDIUM | 应使用配置或 DNS |
+
+### 排除规则
+
+扫描自动排除: `target/`, `node_modules/`, `.git/`, `.pixi-cache/`。
+标记 `TODO:` 的硬编码值（允许临时存在）应手动审核后决定是否忽略。
 
 ## Phase 2: Auth 流审计
 

@@ -65,9 +65,10 @@
     },
 
     "prometheus": {
-      "model": "new-api/premium",
-      "fallback_models": ["new-api/premium-1", "new-api/premium-2"],
+      "model": "new-api/premium-max",
+      "fallback_models": ["new-api/premium-max-1", "new-api/premium-max-2"],
       "prompt_append": "Leverage deep & quick agents heavily, always in parallel.",
+      "reasoningEffort": "high",
       "temperature": 0.2
     },
 
@@ -91,8 +92,8 @@
     },
 
     "metis": {
-      "model": "new-api/premium",
-      "fallback_models": ["new-api/premium-1", "new-api/premium-2"],
+      "model": "new-api/fast",
+      "fallback_models": ["new-api/fast-1", "new-api/fast-2"],
       "temperature": 0.1
     },
 

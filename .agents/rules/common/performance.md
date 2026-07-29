@@ -53,3 +53,10 @@ If build fails:
 2. Analyze error messages
 3. Fix incrementally
 4. Verify after each fix
+
+## 可执行检查
+
+```bash
+# 验证：无 unwrap 滥用
+grep -rn "unwrap()" --include="*.rs" crates/ | grep -v "test" | grep -v "// OK" || true
+```

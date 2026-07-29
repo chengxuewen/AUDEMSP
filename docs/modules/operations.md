@@ -110,6 +110,50 @@ MemoryMax=1G
 CPUQuota=200%
 TasksMax=512
 ```
+```ini
+[Service]
+MemoryMax=1G
+CPUQuota=200%
+TasksMax=512
+```
+
+## 日志聚合
+
+### 格式
+
+```json
+{"timestamp":"2026-07-29T12:00:00Z","level":"info","msg":"transport connected","peer_id":"test-consumer","room_id":"room-1","transport_id":"t-abc"}
+```
+- 结构化 JSON，字段：timestamp/level/msg + 业务字段
+- 使用 `tracing-subscriber` JSON formatter（Phase 2 已集成）
+
+### 导出
+
+| 阶段 | 方案 | 说明 |
+|------|------|------|
+| Phase 1 | 文件 + stdout | `tracing-subscriber` JSON 到文件，Docker stdout 到 `docker logs` |
+| Phase 2 | OpenTelemetry OTLP | `opentelemetry-otlp` crate，导出到 OTel Collector |
+| Phase 3 | Loki/Promtail | 轻量，与现有 Prometheus 栈集成 |
+
+### 保留策略
+
+| 日志类型 | 保留时间 | 说明 |
+|----------|---------|------|
+| 应用日志 | 30 天 | 含 SFU 操作、信令、错误 |
+| 访问日志 | 90 天 | API 请求审计 |
+| 告警日志 | 180 天 | 事故追溯 |
+| 系统日志 | 7 天 | systemd/journald 自动轮转 |
+
+### 关键日志点
+
+| 事件 | 级别 | 字段 |
+|------|------|------|
+| transport.connect() | info | peer_id, room_id, transport_id |
+| transport.connect() 失败 | error | error_code, reason |
+| producer/consumer 创建 | info | kind, producer_id/consumer_id |
+| Worker 崩溃 | critical | worker_id, uptime |
+| 认证失败 | warn | client_addr, reason |
+
 ## Phase 依赖
 
 - Phase 3 Component 框架: /metrics endpoint, tracing span 集成

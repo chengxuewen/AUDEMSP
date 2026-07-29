@@ -55,3 +55,12 @@ test('returns empty array when no markets match query', () => {})
 test('throws error when API key is missing', () => {})
 test('falls back to substring search when Redis is unavailable', () => {})
 ```
+
+## 可执行检查
+
+```bash
+# 验证：测试通过
+cargo test --workspace
+# 验证：覆盖率
+cargo tarpaulin --workspace 2>/dev/null || echo "tarpaulin not installed"
+```

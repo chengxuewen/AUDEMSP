@@ -69,11 +69,58 @@ Phase 切换策略：flag 默认关闭 2 个 release → beta 默认开启 → s
 
 ## 运行时状态迁移
 
+### 零停机部署
+
+#### 蓝绿部署（单实例）
+
+```
+当前实例 (blue)                    新实例 (green)
+├── 健康检查: OK                   ├── 启动完成
+├── 活跃连接: 50 peers             ├── 健康检查: OK
+│                                  ├── 开始接收新连接
+├── 收到 SIGTERM                   │
+├── 停止接受新连接                 ├── 活跃连接: 12 peers
+├── Drain: 等待现有连接结束        │
+├── 活跃连接: 0 → 进程退出         │
+└── blue 实例移除                  └── green 接管全部流量
+```
+
+#### Connection Draining
+
+| 阶段 | 时间 | 动作 |
+|------|------|------|
+| SIGTERM 收到 | 0s | 停止接受新 WS 连接，健康检查返回 503 |
+| Drain 中 | 0-30s | 现有连接继续，Host 重新协商到新实例 |
+| 超时 | 30s | 强制关闭所有连接，进程退出 |
+| 失败回滚 | 60s | 新实例健康检查失败 → systemd 回滚到旧版本 |
+
+#### SFU 状态迁移
+
+| 组件 | 迁移方式 |
+|------|---------|
+| mediasoup Router | 新实例重新创建（不迁移） |
+| 活跃 transport | Drain 期间保持，Host 重新连接到新实例 |
+| 生产者/消费者 | 不迁移，Host 重新 produce，浏览器重新 consume |
+| 会话状态 | JSON 文件持久化，新实例加载 |
+
+#### Rolling Update（多实例）
+
+```
+实例 1: blue → green (drain 30s)
+实例 2: blue → green (等实例 1 green 就绪后启动)
+实例 3: blue → green (等实例 2 green 就绪后启动)
+```
+
+- 并行度：最多 1 个实例同时升级（确保最小容量）
+- 健康检查：新实例必须通过 `/health` 后才升级下一个
+- 回滚：任一实例健康检查失败 → 停止 rolling，回滚当前实例
+
 ### Graceful Drain
 - SIGTERM → 停止接受新连接 → 等待现有连接自然结束 (max 30s) → 超时后强制关闭。
 
 ### WebRTC 连接
 - Drain 期间保持活跃，通过 ICE consent freshness 检测对端存活。
+
 
 ### 自动回滚 (Phase 2)
 - 新二进制启动后 60s 内健康检查失败 → systemd 回滚到旧版本。

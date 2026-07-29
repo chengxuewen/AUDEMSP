@@ -2,7 +2,7 @@
 
 **Generated:** 2026-07-23
 
-OMSPBase — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入等能力。当前状态: Phase 0-1 收尾，7 crate workspace，webrtc triple-backend (webrtc-rs 视频管线完整对齐)，omspbase-codec 三后端 (stub+FFmpeg+GStreamer)，44 commits on main。
+OMSPBase — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入等能力。当前状态: Phase 3 完成，7 crate workspace，webrtc triple-backend (webrtc-rs 视频管线完整对齐)，omspbase-codec 三后端 (stub+FFmpeg+GStreamer)，44 commits on main。
 
 ## STRUCTURE
 
@@ -80,6 +80,19 @@ OMSPBase/
 | **优化 Agent 体系** | `ecosystem-scan` | 审计 .agents/、找新技能 |
 | **会话结束** | `lesson-review` | 总结经验教训 |
 | **行动前** | `think-before-act` | 任何非平凡操作前（自动触发） |
+| **文档审计** | `doc-audit` | 检查文档/决策/agent 体系一致性 |
+| **批量验证** | `openspec-propose` | 提出标准化变更方案 |
+| **实施变更** | `openspec-apply-change` | 按方案逐步实施 |
+| **归档变更** | `openspec-archive-change` | 完成后归档 |
+| **探索方案** | `openspec-explore` | 调研阶段探索思路 |
+| **测试工具** | `test-harness` | 生成测试骨架 |
+| **硬编码扫描** | `review-hardcode` | 检查密钥/端口/URL 硬编码 |
+| **文档转技能** | `book-to-skill` | 将文档/书籍转为 AI 技能 |
+| **同步规格** | `openspec-sync-specs` | delta specs 同步到主 specs |
+| **文档转技能** | `book-to-skill` | 将文档/书籍转为 AI 技能 |
+
+## CODE MAP
+| **行动前** | `think-before-act` | 任何非平凡操作前（自动触发） |
 
 ## CODE MAP
 
@@ -135,6 +148,6 @@ _项目已进入代码实施阶段。以下为当前状态：_
 
 ## NOTES
 
-- **Phase 0-1 收尾** — webrtc-rs 视频管线完整对齐，codec 三后端完成，44 commits on main
+- **Phase 3 完成** — Docker/CI/DevContainer 就位，SFU connect_transport 已实现，91 commits on main
 - **骨架代码已创建** — `crates/omspbase-{host,remote,server}` 三个 crate 含模块骨架
 - **AUDE 生态共享依赖** — AUDESYS 引用 Rust crate，AUDEBase 通过 napi 绑定

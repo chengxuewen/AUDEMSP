@@ -114,12 +114,12 @@ lite-1            → qwen3-8b                   # Fallback
 | oracle | premium-max | 架构咨询、技术决策 |
 | sisyphus | premium | 主协调 Agent |
 | hephaestus | premium | 构建管理 |
-| prometheus | premium | 计划生成 |
+| prometheus | premium-max | 计划生成 |
 | atlas | premium | 实施执行 |
 | librarian | fast | 库/文档搜索 |
 | explore | fast | 代码探索 |
 | metis | fast | 度量和数据分析 |
-| momus | fast | 审查和批评 |
+| momus | premium | 审查和批评 |
 | sisyphus-junior | fast | 简单执行 |
 | multimodal-looker | vision | 视觉分析 |
 

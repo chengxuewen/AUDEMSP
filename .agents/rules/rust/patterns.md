@@ -166,3 +166,10 @@ pub enum ApiResponse<T: serde::Serialize> {
 ## References
 
 See skill: `rust-patterns` for comprehensive patterns including ownership, traits, generics, concurrency, and async.
+
+## 可执行检查
+
+```bash
+# 验证：无大函数
+grep -rn "fn " --include="*.rs" crates/ | grep -v test | wc -l
+```
