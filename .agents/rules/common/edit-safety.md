@@ -92,3 +92,10 @@ After claiming tests are written or features are working:
 - **NEVER ask the user to test what you can test yourself.** If Playwright is available, use it.
 - **After fixing a browser bug, ALWAYS re-test in the browser** before reporting the fix.
 - **Report the actual browser console output** as evidence of verification.
+
+## User Confirmation Before Edit (NON-NEGOTIABLE)
+
+- **NEVER start editing files without explicit user approval.** Describing a plan ≠ approval to execute.
+- **When user asks 'what can be done' or 'is it possible to...', they are asking a question, not giving an instruction to edit.** Answer the question. Do NOT edit files.
+- **Before editing, present the plan AND use the `question` tool to confirm.** Wait for affirmative response before touching files.
+- **Silence / '继续' / timeout ≠ approval.** Only explicit 'yes' / 'do it' / '执行' counts.

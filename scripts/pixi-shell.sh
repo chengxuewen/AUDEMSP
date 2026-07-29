@@ -9,7 +9,10 @@ SCRIPT_DIR_PSHELL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "${SCRIPT_DIR_PSHELL}/_common.sh"
 
 echo "Activating OMSPBase pixi environment..."
+# ponytail: conda completion scripts reference ZSH_VERSION etc. — disable nounset during eval
+set +u
 eval "$("${PIXI_BIN}" shell-hook --manifest-path "${PROJECT_ROOT}/pixi.toml" --shell bash)"
+set -u
 
 echo ""
 echo "OMSPBase environment active."

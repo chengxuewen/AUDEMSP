@@ -327,6 +327,48 @@ mod imp {
                 rtp_parameters_json,
             })
         }
+
+        /// Connect a WebRTC transport with DTLS parameters from the client.
+        pub async fn connect_transport(
+            &self,
+            room_id: &str,
+            peer_id: &str,
+            transport_id: &str,
+            dtls_parameters: protocol::DtlsParameters,
+        ) -> Result<(), String> {
+            // Convert protocol::DtlsParameters → mediasoup DtlsParameters via serde round-trip
+            // ponytail: serde round-trip for type conversion; hand-write converters if perf matters.
+            let ms_dtls: mediasoup::prelude::DtlsParameters = {
+                let json = serde_json::to_value(&dtls_parameters)
+                    .map_err(|e| format!("serialize DtlsParameters: {e}"))?;
+                serde_json::from_value(json)
+                    .map_err(|e| format!("deserialize DtlsParameters: {e}"))?
+            };
+
+            let room = self.rooms.get_mut(room_id)
+                .ok_or_else(|| format!("Room {room_id} not found for connect"))?;
+            let peer = room.peers.get_mut(peer_id)
+                .ok_or_else(|| format!("Peer {peer_id} not found in room {room_id}"))?;
+
+            // Find the transport by ID in send or recv transport
+            let transport = peer.send_transport.as_ref()
+                .filter(|t| t.id().to_string() == transport_id)
+                .or_else(|| {
+                    peer.recv_transport.as_ref()
+                        .filter(|t| t.id().to_string() == transport_id)
+                })
+                .ok_or_else(|| {
+                    format!("Transport {transport_id} not found for peer {peer_id}")
+                })?;
+
+            transport.connect(ms_dtls).await
+                .map_err(|e| format!("Failed to connect transport: {e}"))?;
+
+            tracing::info!(
+                "SFU: transport {transport_id} connected for peer {peer_id} in room {room_id}"
+            );
+            Ok(())
+        }
     }
 }
 
@@ -374,6 +416,11 @@ mod imp {
             _producer_id: &str,
             _rtp_capabilities_json: serde_json::Value,
         ) -> Result<ConsumeResult, String> {
+            Err("sfu-mediasoup feature not enabled".into())
+        }
+
+        /// Stub — returns error in non-SFU builds.
+        pub async fn connect_transport(&self, _room_id: &str, _peer_id: &str, _transport_id: &str, _dtls_params: protocol::DtlsParameters) -> Result<(), String> {
             Err("sfu-mediasoup feature not enabled".into())
         }
 

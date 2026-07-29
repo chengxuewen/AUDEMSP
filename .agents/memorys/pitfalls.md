@@ -94,5 +94,71 @@ compile_error!("Only one backend can be enabled at a time.");
 **根因**: OpenCode 全局 config 中 provider 的 apiKey 字段直接填入了明文密钥。
 
 **解法**: 使用 OpenCode 环境变量插值语法 `"apiKey": "{env:NEW_API_KEY}"`，密钥存入 `~/.bashrc` 或密钥管理器。
-
 **注意**: 当前用户选择保持现状（内网环境），但如需外部部署/代码分享时必须迁移。
+
+## PIT-11: mediasoup-sys 0.13.0 与 meson >=0.64 buildtype 参数冲突 (2026-07-28)
+
+**症状**: `cargo check -p omspbase-server --features sfu-mediasoup` 失败：
+`ERROR: Got argument buildtype as both -Dbuildtype and --buildtype. Pick one.`
+
+**根因**: mediasoup-sys 0.13.0 的 `tasks.py` 在 meson setup 命令中同时传入 `--buildtype debug`（命令行参数），而 `meson.build` 的 `default_options` 也设置了 `buildtype=release`。meson >=0.64 拒绝重复的 buildtype 参数。
+
+**解法**: 项目级 `scripts/cargo-sfu.sh` wrapper 脚本，在每次 cargo 调用前自动：
+1. 设置 `MESON` 环境变量指向 pixi 环境的 meson（避免 tasks.py pip-install 自己的 meson）
+2. `sed -i` 移除 tasks.py 中的 `--buildtype` 参数（幂等操作）
+3. 清除 mediasoup-sys 的构建缓存
+
+**验证**: `pixi run check` 或 `bash check.sh` 不应再报 buildtype 错误。
+
+## PIT-12: MESON 环境变量必须指定绝对路径 (2026-07-28)
+
+**症状**: 设置 `MESON=meson` 后，mediasoup-sys 仍使用自己 pip 装的 meson。
+
+**根因**: `tasks.py` 第 118 行 `if os.path.isfile(MESON): return` 检查 meson 文件是否存在。相对路径 `meson` 在 os.path.isfile() 中可能解析失败（工作目录不在 PATH 可解析的范围）。
+
+**解法**: 必须用绝对路径：`MESON="$(pixi run -- which meson)"` 或 `MESON=$CONDA_PREFIX/bin/meson`。
+
+**验证**: gradle tasks.py 输出中 meson 路径应为 `.../.pixi/envs/default/bin/meson`，而非 `.../pip_meson_ninja/bin/meson`。
+
+## PIT-13: cargo clean -p 不清除构建脚本的 OUT_DIR (2026-07-28)
+
+**症状**: `cargo clean -p mediasoup-sys` 后重新编译，构建脚本 hash 不变，仍使用缓存输出。
+
+**根因**: `cargo clean -p` 只清除包的 target 产物，不删除 `target/debug/build/<pkg>-*/`（构建脚本的 OUT_DIR）。构建脚本的 stdout/stderr 被 cargo 缓存，跳过重新执行。
+
+**解法**: 修改 build.rs 或改变环境变量后，需手动清除构建脚本缓存：
+`rm -rf target/debug/build/mediasoup-sys-*`
+
+**验证**: 清除后重新编译，构建脚本 hash 应改变。
+
+## PIT-14: GitHub 在国内网络下 HTTP/2 被干扰 + 直连超时 (2026-07-28)
+
+**症状**: `curl` 下载 GitHub release 报 `HTTP/2 stream 0 was not closed cleanly: PROTOCOL_ERROR (err 1)` 和 `SSL connection timeout (err 28)`。
+
+**根因**: GitHub 的 HTTP/2 协议在某些网络环境下被中间设备干扰；直连 GitHub 延迟高、不稳定。
+
+**解法**:
+1. `curl --http1.1` 强制 HTTP/1.1，绕过 HTTP/2 干扰
+2. GitHub 镜像回落：`mirror.ghproxy.com` 或 `ghproxy.net`
+3. 代理：`export HTTPS_PROXY=http://127.0.0.1:7890`
+
+## PIT-15: pixi 版本不应硬编码，Gitee 私人镜像不可靠 (2026-07-28)
+
+**症状**: `bootstrap.sh` 卡在 "Installing pixi 0.67.2..."，Gitee 镜像 `gitee.com/chengxuewen-github/pixi` 下载失败。
+
+**根因**: 旧版 PIXI_VERSION=0.67.2 可能已从 GitHub releases 清理；私人 Gitee 镜像仓库可能失效或不存在。
+
+**解法**:
+1. 默认 `PIXI_VERSION=latest`，使用官方 `pixi.sh/install.sh`
+2. 指定版本时用 `PIXI_VERSION=x.y.z` 环境变量覆盖
+3. 不用私人镜像，用 `mirror.ghproxy.com`（公共服务）
+4. 下载的 tarball 缓存到 `.pixi-cache/downloads/` 复用
+**注意**: 当前用户选择保持现状（内网环境），但如需外部部署/代码分享时必须迁移。
+
+---
+
+## 参见
+
+- [conventions.md](conventions.md) — 开发约定与约束
+- [decisions.md](decisions.md) — 架构决策记录
+- [status.md](status.md) — 项目状态与进度

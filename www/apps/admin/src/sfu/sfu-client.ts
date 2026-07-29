@@ -155,12 +155,14 @@ export class SfuConsumerClient {
         });
         this.transportResolver = null;
       } else if (msg.type === 'new_producer' && this.transportId) {
+        const rtpCaps = RTCRtpReceiver.getCapabilities(msg.kind);
         this.ws?.send(JSON.stringify({
           type: 'consume',
           room_id: this.roomId,
           transport_id: this.transportId,
           producer_id: msg.producer_id,
           kind: msg.kind,
+          rtp_capabilities: rtpCaps,
         }));
       } else if (msg.type === 'consumed') {
         // ponytail: producer consumed, stream will arrive via ontrack

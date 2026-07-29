@@ -616,26 +616,36 @@ pub(crate) async fn handle_sfu_message(
             room_id,
             peer_id,
             transport_id,
-            dtls_parameters: _,
+            dtls_parameters,
         } => {
-            // ponytail: DTLS parameter conversion (protocol → mediasoup DtlsFingerprint)
-            // is non-trivial due to enum variants with [u8; N] values.
-            // Accept the connect and log it; full DTLS handshake in follow-up.
-            tracing::info!(
-                "SFU: connect transport {} for peer {} in room {} (DTLS accepted, full connect deferred)",
-                transport_id,
-                peer_id,
-                room_id
-            );
-            let response = SignalingMessage::Error {
-                code: 0,
-                message: "transport_connected".into(),
-            };
-            let _ = sender
-                .lock()
-                .await
-                .send(Message::Text(send_msg(&response).unwrap()))
-                .await;
+            match sfu.connect_transport(&room_id, &peer_id, &transport_id, dtls_parameters).await {
+                Ok(()) => {
+                    tracing::info!(
+                        "SFU: transport {transport_id} connected for peer {peer_id}"
+                    );
+                    let response = SignalingMessage::Error {
+                        code: 0,
+                        message: "transport_connected".into(),
+                    };
+                    let _ = sender
+                        .lock()
+                        .await
+                        .send(Message::Text(send_msg(&response).unwrap()))
+                        .await;
+                }
+                Err(e) => {
+                    tracing::error!("SFU: connect transport failed: {e}");
+                    let response = SignalingMessage::Error {
+                        code: 5000,
+                        message: format!("Connect failed: {e}"),
+                    };
+                    let _ = sender
+                        .lock()
+                        .await
+                        .send(Message::Text(send_msg(&response).unwrap()))
+                        .await;
+                }
+            }
             true
         }
 

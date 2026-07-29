@@ -46,7 +46,7 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 
 | 决策 | 内容 | 状态 | Phase |
 |------|------|:----:|:-----:|
-| D124-D195 | (见 decisions.md) | ✅ | 0-3 |
+| D124-D190 | (见 decisions.md) | ✅ | 0-3 |
 | D196 | Admin Dashboard 架构 | ✅ | 4 |
 | D197 | D87 范围限定 (Client GUI only) | ✅ | 4 |
 | D198 | SFU Server-Offer 架构 | ✅ | 4 |

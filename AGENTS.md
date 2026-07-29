@@ -18,7 +18,9 @@ OMSPBase/
 │   ├── package.json    # OpenCode 插件依赖
 │   └── .gitignore
 ├── .agents/
-│   ├── rules/          # 编码规则文件（16 语言 × common + 中文副本）
+│   ├── rules/          # 编码规则文件（12 语言 + common + web + zh/）
+│   ├── skills/         # 技能（book-to-skill/doc-audit/lesson-review/openspec-*/review-hardcode/test-harness/think-before-act）
+│   └── memorys/        # 项目记忆文件 (decisions, conventions, pitfalls, status)
 │   ├── skills/         # 技能（book-to-skill/doc-audit/openspec-*/test-harness）
 │   └── memorys/        # 项目记忆文件 (decisions.md, status.md)
 ├── crates/              # Rust 工作区 (7 个 member crate)
@@ -55,6 +57,29 @@ OMSPBase/
 │ 模块文档 | `docs/modules/` | 各领域详细设计 (25 篇)
 | 项目记忆 | `.agents/memorys/` | 决策记录 (decisions.md)、状态跟踪 (status.md) |
 │ Rust 源码 | `crates/` | 七个 crate: omspbase-host/remote-client/server/core/media/webrtc/codec
+
+
+## SKILL DIRECTORY
+
+当面对以下场景时，使用 `skill` 工具加载对应技能：
+
+| 场景 | 技能 | 何时触发 |
+|------|------|---------|
+| **开发新功能** | `incremental-implementation` | 多文件变更、跨 crate 修改 |
+| **修复 bug** | `systematic-debugging` | 测试失败、运行时错误 |
+| **查外部库用法** | `source-driven-development` | 使用 mediasoup/webrtc-rs/GStreamer 等外部库 |
+| **写测试** | `test-driven-development` | 任何新功能或 bug 修复前 |
+| **测试浏览器 UI** | `browser-testing` | Admin Dashboard 变更、Playwright |
+| **安全审计** | `security-hardening` | 密钥管理、认证代码、mediasoup 传输安全 |
+| **代码审查** | code-review 规则 | 完成任何代码修改后 |
+| **性能分析** | `performance-optimization` | WebRTC 延迟、React 渲染、cargo bench |
+| **架构/API 设计** | `api-interface-design` | Rust trait 设计、WS 协议、REST 契约 |
+| **上下文切换** | `context-engineering` | 在 Rust/TS/DevOps 间切换任务 |
+| **CI/CD 变更** | `ci-cd-automation` | Dockerfile、pixi.toml、GitHub Actions |
+| **代码简化** | `code-simplification` | 重构、降低复杂度 |
+| **优化 Agent 体系** | `ecosystem-scan` | 审计 .agents/、找新技能 |
+| **会话结束** | `lesson-review` | 总结经验教训 |
+| **行动前** | `think-before-act` | 任何非平凡操作前（自动触发） |
 
 ## CODE MAP
 

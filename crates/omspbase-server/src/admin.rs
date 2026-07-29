@@ -355,20 +355,32 @@ async fn handle_admin_sfu(
             room_id,
             peer_id,
             transport_id,
-            ..
+            dtls_parameters,
         } => {
-            tracing::info!(
-                "Admin SFU: connect transport {} for peer {} in room {}",
-                transport_id, peer_id, room_id
-            );
-            // ponytail: ack the connect; full DTLS handshake deferred
-            let response = SignalingMessage::Error {
-                code: 0,
-                message: "transport_connected".into(),
-            };
-            let _ = ws_sender
-                .send(Message::Text(serde_json::to_string(&response).unwrap()))
-                .await;
+            match sfu.connect_transport(&room_id, &peer_id, &transport_id, dtls_parameters).await {
+                Ok(()) => {
+                    tracing::info!(
+                        "Admin SFU: transport {transport_id} connected for peer {peer_id}"
+                    );
+                    let response = SignalingMessage::Error {
+                        code: 0,
+                        message: "transport_connected".into(),
+                    };
+                    let _ = ws_sender
+                        .send(Message::Text(serde_json::to_string(&response).unwrap()))
+                        .await;
+                }
+                Err(e) => {
+                    tracing::error!("Admin SFU: connect transport failed: {e}");
+                    let response = SignalingMessage::Error {
+                        code: 5000,
+                        message: format!("Connect failed: {e}"),
+                    };
+                    let _ = ws_sender
+                        .send(Message::Text(serde_json::to_string(&response).unwrap()))
+                        .await;
+                }
+            }
             true
         }
         SignalingMessage::Consume {

@@ -2945,6 +2945,28 @@ webrtc-rs 视频管线完整:
 
 ---
 
+## D180: omspbase-core → omspbase-common 重命名 + 依赖清理
+
+**状态**: ✅
+**日期**: 2026-07-23
+
+**决策**: 将 omspbase-core 重命名为 omspbase-common，准确反映其内容（共享类型库，非微内核）。同步清理不合理依赖。
+- core→common: 43 文件（目录名、Cargo.toml、import 路径、文档）
+- 死依赖: omspbase-codec 移除 common 依赖（0 处引用）
+- 弱依赖: omspbase-media 独立，CoreError::Unknown→MediaError::Internal
+- omspbase-webrtc 从未依赖 common
+
+依赖关系现在清晰: remote-host/client/server → common · media/codec/webrtc 独立
+
+**关联**: D181
+
+---
+## D181: 移除 remote- 前缀 (host/client)
+
+**状态**: ✅
+**日期**: 2026-07-23
+
+**决策**: omspbase-remote-host→omspbase-host, omspbase-remote-client→omspbase-client。
 ## D182: E2E video frame relay test
 
 **状态**: ✅
@@ -2977,29 +2999,7 @@ webrtc-rs 视频管线完整:
 
 ---
 
-## D180: omspbase-core → omspbase-common 重命名 + 依赖清理
 
-**状态**: ✅
-**日期**: 2026-07-23
-
-**决策**: 将 omspbase-core 重命名为 omspbase-common，准确反映其内容（共享类型库，非微内核）。同步清理不合理依赖。
-- core→common: 43 文件（目录名、Cargo.toml、import 路径、文档）
-- 死依赖: omspbase-codec 移除 common 依赖（0 处引用）
-- 弱依赖: omspbase-media 独立，CoreError::Unknown→MediaError::Internal
-- omspbase-webrtc 从未依赖 common
-
-依赖关系现在清晰: remote-host/client/server → common · media/codec/webrtc 独立
-
-**关联**: D181
-
----
-
-## D181: 移除 remote- 前缀 (host/client)
-
-**状态**: ✅
-**日期**: 2026-07-23
-
-**决策**: omspbase-remote-host→omspbase-host, omspbase-remote-client→omspbase-client。
 - 'host' 和 'client' 已隐含角色，无需 'remote-' 前缀
 - 27 文件重命名 + 13 文档文件更新
 

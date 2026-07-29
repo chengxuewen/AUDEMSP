@@ -27,14 +27,14 @@ Before requesting review, ensure:
 Before marking code complete:
 
 - [ ] Code is readable and well-named
-- [ ] Functions are focused (<50 lines)
-- [ ] Files are cohesive (<800 lines)
-- [ ] No deep nesting (>4 levels)
-- [ ] Errors are handled explicitly
-- [ ] No hardcoded secrets or credentials
-- [ ] No console.log or debug statements
-- [ ] Tests exist for new functionality
-- [ ] Test coverage meets 80% minimum
+- [ ] Functions &lt;50 lines: verify with `wc -L` on changed files
+- [ ] Files &lt;800 lines: verify with `wc -l` on changed files
+- [ ] No deep nesting (&gt;4 levels): check indent depth in diff
+- [ ] Errors handled explicitly: `grep -c 'unwrap()'` must be 0 in changed .rs
+- [ ] No hardcoded secrets: run `scripts/scan-hardcode.sh`
+- [ ] No dbg!/console.log: `grep -r 'dbg!(' crates/` must return 0
+- [ ] Tests exist: `cargo test --workspace`
+- [ ] Coverage &gt;=80%: `cargo tarpaulin --workspace`
 
 ## Security Review Triggers
 
