@@ -111,7 +111,12 @@ Worker 分配策略：
 
 ### 2.3 Producer/Consumer 模型
 
-mediasoup 使用发布/订阅模型：
+mediasoup 使用发布/订阅模型。OMSPBase 有两种 Producer 来源：
+
+**Browser Producer（浏览器端发布者）**: 通过 getUserMedia 采集摄像头/麦克风，经 mediasoup-client (JS) 创建 Producer。
+
+**Native Host Producer（原生推流端）**: omspbase-host 通过 omspbase-webrtc (webrtc-sys/libwebrtc) 建立 ICE/DTLS 连接，
+经由 WebRtcTransport 创建 Producer 注入视频流。Host 不依赖浏览器，适用于车端/边缘设备原生推流。
 
 ```
 Producer (发布者)            Consumer (订阅者)
@@ -120,18 +125,12 @@ Producer (发布者)            Consumer (订阅者)
 │  │               │       │  │               │
 │  ▼               │       │  ▼               │
 │ Producer         │       │ Consumer         │
-│ - RTP stream in │       │ - RTP stream out │
-│ - Simulcast/SVC │       │ - 层选择         │
-│ - 编码信息       │       │ - 重传缓存       │
+│ • Browser (JS)   │       │ • Browser (JS)   │
+│ • Host (native)  │       │ • RTP stream out │
+│ - RTP stream in  │       │ - 层选择         │
+│ - Simulcast/SVC  │       │ - 重传缓存       │
+│ - 编码信息       │       │                  │
 └──────────────────┘       └──────────────────┘
-     │                            ▲
-     │  pipeToRouter()            │
-     ▼                            │
-┌──────────────────────────────────┴──┐
-│       Recording Consumer            │
-│   (RTP Forwarding -> 录制服务)      │
-└─────────────────────────────────────┘
-```
 
 ### 2.4 级联 (Cascading)
 

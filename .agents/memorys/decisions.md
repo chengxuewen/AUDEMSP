@@ -84,14 +84,8 @@
 - DeepSeek V4 系列支持 reasoning API，设为 true 使 opencode 可使用 reasoning 特性
 - Fallback 上下文窗口经别名映射验证全部正确：premium-max-1(256K)=Kimi K2.6, premium-2(205K)=GLM-5.1, fast-1(131K)=Qwen3.6 Flash 等
 - apiKey 硬编码未修改（用户选择保持现状为内网环境）
-**决策**: 浏览器视频播放使用 mediasoup 的 Server-Offer 模型（SFU 创建 transport offer，客户端创建 answer），参考 LiveKit 模式。Host 通过 SFU Produce 推流（非 P2P WebRTC）。
-**日期**: 2026-07-27
-**原因**:
-- P2P SDP 中继存在时序问题（host offer 在 viewer 加入后丢失）
-- Server-Offer 模型消除此问题 — SFU 为每个 viewer 创建新 transport
-- mediasoup transport 协议已在 sfu.rs 中实现
-- LiveKit 使用此模型，是 WebRTC SFU 的行业标准
-- Admin dashboard 复用现有 SignalingMessage 类型（CreateWebRtcTransport、Consume）用于浏览器 consumer
+
+**Phase**: Config
 
 ## D203: Agent 模型层级最终确认
 
@@ -103,6 +97,8 @@
 - 参考 OMSPBase+AUDEBase 联合评估：oracle + prometheus 为 premium-max 双高杠杆
 **影响**: oh-my-openagent.jsonc 已更新，agent-model-tiers.md 已同步
 
+**Phase**: System
+
 ## D204: ecosystem-scan 技能体系
 
 **决策**: 创建 ecosystem-scan 技能（双层 Quick/Full + 社区对比 + 安全门禁），同时创建 doc-audit OMSPBase 适配版。
@@ -112,6 +108,8 @@
 - 社区先例：autoskills、agent-skill-discovery、skill-update-team、agent-self-audit
 - doc-audit 从 AUDESYS 直搬未适配，需改写
 **影响**: 21 个技能，ecosystem-scan + doc-audit + 9 个从社区移植的技能
+
+**Phase**: System
 
 ## D205: skill-router 技能创建
 

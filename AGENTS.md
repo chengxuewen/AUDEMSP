@@ -20,8 +20,6 @@ OMSPBase/
 ├── .agents/
 │   ├── rules/          # 编码规则文件（12 语言 + common + web + zh/）
 │   ├── skills/         # 技能（book-to-skill/doc-audit/lesson-review/openspec-*/review-hardcode/test-harness/think-before-act）
-│   └── memorys/        # 项目记忆文件 (decisions, conventions, pitfalls, status)
-│   ├── skills/         # 技能（book-to-skill/doc-audit/openspec-*/test-harness）
 │   └── memorys/        # 项目记忆文件 (decisions.md, status.md)
 ├── crates/              # Rust 工作区 (7 个 member crate)
 │   ├── omspbase-host/   # Host 应用 (headless, 采集+编码+推流)
@@ -66,12 +64,12 @@ OMSPBase/
 | 场景 | 技能 | 何时触发 |
 |------|------|---------|
 | **开发新功能** | `incremental-implementation` | 多文件变更、跨 crate 修改 |
-| **修复 bug** | `systematic-debugging` | 测试失败、运行时错误 |
+| **修复 bug** | `systematic-debugging` (内置) | 测试失败、运行时错误 |
 | **查外部库用法** | `source-driven-development` | 使用 mediasoup/webrtc-rs/GStreamer 等外部库 |
-| **写测试** | `test-driven-development` | 任何新功能或 bug 修复前 |
+| **写测试** | `test-driven-development` (内置) | 任何新功能或 bug 修复前 |
 | **测试浏览器 UI** | `browser-testing` | Admin Dashboard 变更、Playwright |
 | **安全审计** | `security-hardening` | 密钥管理、认证代码、mediasoup 传输安全 |
-| **代码审查** | code-review 规则 | 完成任何代码修改后 |
+| **代码审查** | `code-review` (规则) | 完成任何代码修改后 |
 | **性能分析** | `performance-optimization` | WebRTC 延迟、React 渲染、cargo bench |
 | **架构/API 设计** | `api-interface-design` | Rust trait 设计、WS 协议、REST 契约 |
 | **上下文切换** | `context-engineering` | 在 Rust/TS/DevOps 间切换任务 |
@@ -90,7 +88,7 @@ OMSPBase/
 | **硬编码扫描** | `review-hardcode` | 检查密钥/端口/URL 硬编码 |
 | **文档转技能** | `book-to-skill` | 将文档/书籍转为 AI 技能 |
 | **同步规格** | `openspec-sync-specs` | delta specs 同步到主 specs |
-| **文档转技能** | `book-to-skill` | 将文档/书籍转为 AI 技能 |
+
 
 ## CODE MAP
 | **行动前** | `think-before-act` | 任何非平凡操作前（自动触发） |

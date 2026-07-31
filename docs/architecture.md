@@ -1,6 +1,6 @@
 # OMSPBase 架构设计
 
-> Phase 0 — 架构定义 | 2026-07-16 | 最后同步 decisions.md: D155 (2026-07-19)
+> Phase 0 — 架构定义 | 2026-07-16 | 最后同步 decisions.md: D205 (2026-07-31)
 
 > **⚠️ MVP v2 架构变更 (D118, 2026-07-17)**: Phase 1 MVP 采用 Host→Server→Remote relay 三组件模式（原为 Host↔Remote P2P）。信令 relay 和媒体 relay 均由 omspbase-server 承载。完整 P2P/Host↔Remote 直连模式保留为 Phase 2+ 架构目标。
 
@@ -488,7 +488,7 @@ crates/
 ├── omspbase-host/         Host 应用 (headless, 采集+编码+推流+信令+配置, 单体架构 D155)
 ├── omspbase-client/       Remote 应用 (拉流+解码+渲染+控制)
 ├── omspbase-server/       Server 应用 (信令 relay+监控+会话管理, mediasoup SFU)
-├── omspbase-webrtc/       WebRTC 封装 (RTP track API, webrtc-sys 默认后端, 多后端 feature gate)
+├── omspbase-webrtc/       WebRTC 封装 (W3C API, webrtc-sys 默认后端/libwebrtc, 多后端 feature gate; C12: 所有 client crate 仅经此层使用 WebRTC)
 ├── omspbase-media/        媒体管线 (PipelineEngine, BroadcastEngine, Transform 接口)
 └── omspbase-codec/        编解码 (stub + FFmpeg 静态链接 + GStreamer pixi)
   

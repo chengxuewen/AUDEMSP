@@ -1,7 +1,8 @@
 # SFU — mediasoup Integration
 
-> 状态：Phase 2 设计 | 关联决策：D138 | 创建依据：doc-audit H7
+ 状态：Phase 3 实施 | 关联决策：D138, D198 | 更新日期: 2026-07-31
 
+ 设计演变: Phase 2 曾设计 Host 使用 PlainRtp (RTP/UDP 直传，见下文)，Phase 3 统一为 WebRtcTransport。
 ## 概述
 
 mediasoup-sys v0.22 作为 OMSPBase SFU 服务器，负责 Room 内 Host→Server→Remote 的媒体流转发。所有操作封装在 `SfuComponent` 中。
@@ -12,8 +13,8 @@ mediasoup-sys v0.22 作为 OMSPBase SFU 服务器，负责 Room 内 Host→Serve
 |-----------|-------------------|
 | Worker | SfuComponent::WorkerPool |
 | Router | RoomRouter (per-room) |
-| Transport (PlainRtp) | HostRtpTransport (推流) |
-| Transport (WebRtc) | RemoteWebRtcTransport (分发) |
+| Transport (WebRtc) | HostWebRtcTransport (ICE/DTLS/SRTP 推流) |
+| Transport (WebRtc) | RemoteWebRtcTransport (ICE/DTLS/SRTP 分发) |
 | Producer | TrackProducer (上行) |
 | Consumer | TrackConsumer (下行) |
 | SDP ↔ RtpParameters | SdpAdapter (双向 codec) |
@@ -44,20 +45,31 @@ worker.create_router(RouterOptions {
 
 ## Transport 创建
 
-**PlainRtp (Host→Server)**:
+**Host→Server (WebRtcTransport, ICE/DTLS/SRTP)**:
 ```
-Host → SDP offer → SdpAdapter::parse_offer()
-  → router.createPlainRtpTransport()
-  → transport.connect({ip, port})
+Server: router.create_webrtc_transport(WebRtcTransportOptions::new_with_server(webRtcServer))
+  → 返回 { id, ice_parameters, ice_candidates, dtls_parameters }
+
+Host: 用 ice_candidates + ice_parameters + dtls_parameters 构造 SDP remote offer
+  → pc.set_remote_description(SDP)
+  → pc.create_answer() → pc.set_local_description(answer)
+  → 提取 DTLS fingerprint → ws.send(ConnectWebRtcTransport{dtls})
+  → Server: transport.connect(remote_dtls)
+  → ICE handshake (Host=控制方, mediasoup=ICE-Lite 响应方)
+  → DTLS handshake → SRTP key derived
+  → 连接建立
 ```
 
-**WebRtc (Server→Remote)**:
+**Server→Browser (WebRtcTransport, Server-Offer)**:
 ```
-router.createWebRtcTransport({
-    listen_ips: [{ip: "0.0.0.0", announced_ip: server_public_ip}],
-    enable_udp: true, enable_tcp: true, prefer_udp: true,
-}) → dtlsParameters + iceParameters
+Server: router.create_webrtc_transport({
+    webRtcServer, enable_udp: true, enable_tcp: true,
+    iceConsentTimeout: 20
+}) → { id, iceParameters, iceCandidates, dtlsParameters }
+→ Browser: device.createRecvTransport(params) → 自动 ICE/DTLS
 ```
+
+> 设计演变: Phase 2 曾设计 Host 使用 PlainRtp (RTP/UDP 直传)，Phase 3 因部署场景 (车端→云端) 需要 NAT 穿透和 SRTP 加密，改为统一 WebRtcTransport。各端点使用相同 ICE/DTLS 协议，对称简化。
 
 ## Producer / Consumer
 
@@ -203,3 +215,54 @@ pc.restartIce()  →  new ICE candidates  →  server re-gathers  →  new candi
 1. SFU 检测 consumer 带宽 → 主动切换 spatial layer
 2. 浏览器 receiver 检测 packet loss → 触发 PLI → SFU 切换
 3. 手动切换：用户点击"低带宽模式" → 发送 consume 指定 spatial layer
+
+---
+
+## DTLS-SRTP 媒体面安全
+
+### DTLS 握手
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| 指纹算法 | SHA-256 | mediasoup 默认使用 SHA-256 证书指纹 |
+| DTLS 角色 | auto | 根据 ICE controlling/controlled 自动协商 |
+| 协商模式 | ICE-Lite | SFU 侧简化 ICE（server-side only） |
+
+握手流程：
+```
+Client                          mediasoup (ICE-Lite)
+  │                                    │
+  │── STUN Binding Request ───────────→│ ICE 连通性检查
+  │←── STUN Binding Response ─────────│
+  │                                    │
+  │── DTLS ClientHello ───────────────→│ DTLS 握手开始
+  │←── DTLS ServerHello + Certificate │
+  │── DTLS ClientKeyExchange ─────────→│
+  │←── DTLS Finished ─────────────────│
+  │                                    │
+  │═══════ SRTP key derived ═══════════│ 从 DTLS 握手派生 SRTP 密钥
+```
+
+### SRTP 加密
+
+| 参数 | 值 |
+|------|-----|
+| 加密套件 | AES_CM_128_HMAC_SHA1_80（默认） |
+| 密钥协商 | 通过 DTLS 握手派生 SRTP 密钥 |
+| 重放保护 | 启用（SSRC + ROC 计数器） |
+| 密钥轮换 | DTLS re-handshake 触发 SRTP 密钥更新 |
+
+### SCTP 加密（DataChannel）
+
+当启用 DataChannel 时，SCTP over DTLS 提供相同的 DTLS 加密保护。SCTP 关联在 DTLS 握手完成后建立。
+
+### Host 端安全
+
+Host 通过 omspbase-webrtc (webrtc-sys/libwebrtc) 建立连接，libwebrtc 自动处理 DTLS-SRTP 加密。Host 端无需额外配置。
+
+### 安全加固建议
+
+1. **ICE credentials**: 每个 transport 使用独立的 ice-ufrag/ice-pwd（mediasoup 默认）
+2. **DTLS 指纹验证**: Server 端 `transport.connect()` 时验证客户端 DTLS 指纹
+3. **SRTP 重放保护**: 默认启用，防止 RTP 包重放攻击
+4. **端口范围限制**: 缩窄 UDP 端口范围减少攻击面

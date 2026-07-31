@@ -1,3 +1,4 @@
+use std::process;
 use std::time::Duration;
 use tower_http::timeout::TimeoutLayer;
 mod config;
@@ -69,12 +70,6 @@ let app = axum::Router::new()
         async move { m.encode() }
     }))
     .layer(TimeoutLayer::new(Duration::from_secs(30)));
-        .route("/health", axum::routing::get(health_handler))
-        .route("/config", axum::routing::get(config_handler))
-        .route("/metrics", axum::routing::get(move || {
-            let m = metrics_arc.clone();
-            async move { m.encode() }
-        }));
 
     let bind_addr = "0.0.0.0:9101";
 

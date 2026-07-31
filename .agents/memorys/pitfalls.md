@@ -215,7 +215,102 @@ compile_error!("Only one backend can be enabled at a time.");
 
 **验证**: 无 meson.build 修改痕迹。
 
+## PIT-22: pixi 不在 PATH 中，必须用绝对路径 (2026-07-29)
+
+**症状**: `pixi run check` 报 `pixi: 未找到命令`，但 `~/.pixi/bin/pixi` 存在。
+
+**根因**: pixi 安装在 `~/.pixi/bin/` 但未加入 shell PATH。VS Code 终端、脚本、子进程默认不继承用户 shell 的 PATH 配置。
+
+**解法**: 始终使用绝对路径 `~/.pixi/bin/pixi run ...`，或在脚本中 `export PATH="$HOME/.pixi/bin:$PATH"`。
+
+**验证**: `~/.pixi/bin/pixi --version` 返回版本号。
+
+## PIT-23: Admin Dashboard 必须先构建再编译 server (2026-07-30)
+
+**症状**: `curl http://localhost:9800/admin` 返回 `<html><h1>SPA not built</h1></html>`，HTTP 200 但内容是 fallback。
+
+**根因**: `static_files.rs` 使用 `env!("ADMIN_DIST_DIR")` 编译时确定路径。如果 server 先编译、dashboard 后构建，二进制中的路径指向不存在的目录。
+
+**解法**: 必须先 `pnpm build:admin`，再 `cargo build -p omspbase-server --features sfu-mediasoup`。顺序不可颠倒。
+
+**验证**: `curl -s http://localhost:9800/admin | grep 'OMSPBase Admin'` 应返回完整 HTML。
+
+## PIT-24: TypeScript 编辑后必须立即 typecheck (2026-07-30)
+
+**症状**: `npx tsc --noEmit` 报大量语法错误（孤立行、重复代码、缺少括号）。
+
+**根因**: 多次 `edit` 工具修改同一文件后，遗留了重复/孤立的代码行。每次 edit 只验证单次变更，未验证累积效果。
+
+**解法**: 每次对 `.ts/.tsx` 文件执行 `edit` 后，立即运行 `npx tsc --noEmit` 验证。发现错误立即修复，不累积。
+
+**验证**: `cd www/apps/admin && npx tsc --noEmit` 无输出（无错误）。
+
+## PIT-25: mediasoup RouterOptions::default() 创建空 codec 列表 (2026-07-30)
+
+**症状**: `produce()` 返回 "Unsupported codec [mime_type:Video(Vp8), payloadType:100]"。
+
+**根因**: `RouterOptions::default()` 创建 `media_codecs: vec![]`。mediasoup 不提供默认 codec 列表——必须显式配置。
+
+**解法**: 创建 `default_router_options()` 函数，包含 Opus + VP8 + H264 三个 codec。所有 Router 创建必须使用此函数而非 `RouterOptions::default()`。
+
+**验证**: `cargo test -p omspbase-server --features sfu-mediasoup -- e2e_sfu_consume_pipeline` 通过。
+
+## PIT-26: signaling.rs SFU 消息中 peer_id 不一致导致 "Peer not found" (2026-07-30)
+
+**症状**: Produce 返回 "Peer not found in room"，但 CreateWebRtcTransport 刚成功创建了 peer。
+
+**根因**: `CreateWebRtcTransport` 使用消息中的 `peer_id`（如 "host"），但 `Produce`/`ConnectWebRtcTransport` 使用 session 的 `relay_peer_id`（UUID）。两者不一致导致 SFU 找不到 peer。
+
+**解法**: `handle_sfu_message` 中所有 SFU 操作统一使用 session 的 `peer_id`（函数参数），忽略消息中的 `peer_id` 字段。
+
+**验证**: `cargo test -p omspbase-server --features sfu-mediasoup -- e2e_sfu_consume_pipeline` 通过。
 ---
+
+---
+
+## PIT-27: sfu-mediasoup feature 改变 test helper 函数签名 (2026-07-30)
+
+**症状**: `cargo test --features sfu-mediasoup` 编译失败："this function takes 3 arguments but 2 arguments were supplied"。
+
+**根因**: `SignalingServer::new` 在 `sfu-mediasoup` feature 下需要额外的 `Arc<SfuManager>` 参数。`AdminState` 需要 `sfu_manager` 字段。测试代码没有 cfg 条件编译。
+
+**解法**: 使用 `#[cfg(feature = "sfu-mediasoup")]` 和 `#[cfg(not(feature = "sfu-mediasoup"))]` 两个版本的 test helper。async 版本调用 `SfuManager::new().await.unwrap()`。
+
+**验证**: `cargo test -p omspbase-server --features sfu-mediasoup` 编译通过。
+
+## PIT-28: mediasoup RtpCodecParameters 是 untagged enum (2026-07-30)
+
+**症状**: `produce()` 返回 "Invalid RTP parameters: data did not match any variant of untagged enum RtpCodecParameters"。
+
+**根因**: `RtpCodecParameters` 在 mediasoup-rs 中是 `#[serde(untagged)]` enum，有 `Audio` 和 `Video` 两个变体。每个变体需要特定字段：`mimeType`、`payloadType`、`clockRate`（Video 不需要 `channels`）。缺少任何字段或多余字段都会导致反序列化失败。
+
+**解法**: 参考 mediasoup 官方测试（`rust/tests/integration/producer.rs`）构造正确的 JSON：
+```json
+{"mid": "0", "codecs": [{"mimeType": "video/VP8", "payloadType": 100, "clockRate": 90000}], "headerExtensions": [], "encodings": [{"ssrc": 12345}], "rtcp": {"reducedSize": true}}
+```
+注意：`payloadType` 必须匹配 Router 的 codec 列表中的值。
+
+**验证**: `cargo test -p omspbase-server --features sfu-mediasoup -- e2e_sfu_consume_pipeline` 通过。
+
+## PIT-29: SDP BUNDLE MID 必须与 a=mid 匹配 (2026-07-30)
+
+**症状**: `setRemoteDescription` 失败："A BUNDLE group contains a MID='video' matching no m= section"。
+
+**根因**: `a=group:BUNDLE video audio` 声明了 `video` 和 `audio` 作为 MID，但各媒体段使用 `a=mid:0` 和 `a=mid:1`，命名不匹配。
+
+**解法**: `a=mid:` 值必须与 `a=group:BUNDLE` 中声明的 MID 一致。改为 `a=mid:video` 和 `a=mid:audio`。
+
+**验证**: Playwright 测试中 `setRemoteDescription` 不再报错。
+
+## PIT-30: Consumer 可能错过 NewProducer 广播（late-joiner）(2026-07-30)
+
+**症状**: Consumer 连接后从未收到 `new_producer` 消息，不发 `consume`，无视频流。
+
+**根因**: `NewProducer` 通过 broadcast channel 一次发送。Consumer 在 Host produce 之后才连接时，已经错过了广播。
+
+**解法**: 1) Server 在 Consumer 进入 forward loop 时调用 `list_producers()` 查询已有 producer，主动发送 `NewProducer`。2) Browser 端需要排队 pending producer（`new_producer` 可能在 `web_rtc_transport_created` 之前到达，此时 `transportId` 未设置）。
+
+**验证**: `cargo test -p omspbase-server --features sfu-mediasoup -- e2e_sfu` 通过。
 
 ## 参见
 

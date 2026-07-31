@@ -41,6 +41,8 @@ export class SfuConsumerClient {
   private metricsTimer: ReturnType<typeof setInterval> | null = null;
   private transportId: string | null = null;
   private transportResolver: ((params: TransportCreated) => void) | null = null;
+  private pendingProducer: any = null;
+
 
   constructor(
     private serverUrl: string,
@@ -81,7 +83,8 @@ export class SfuConsumerClient {
           } else if (msg.code === 4003) {
             reject(new Error('Auth failed'));
           }
-        } catch {
+        } catch (err) {
+          console.warn('SfuClient: auth message parse failed', err);
           // Non-JSON message, skip
         }
       };
@@ -101,8 +104,14 @@ export class SfuConsumerClient {
       room_id: this.roomId,
       peer_role: 'consumer',
     }));
-  }
 
+    // Reconnect on WS close
+    this.ws.onclose = () => {
+      this.onStatus('disconnected');
+      this.stopMetrics();
+      this.reconnect();
+    };
+  }
   async startPlay(): Promise<void> {
     if (!this.ws) throw new Error('Not connected');
 
@@ -132,58 +141,102 @@ export class SfuConsumerClient {
     ]);
 
     if (sfuResult) {
+      console.log('SfuClient: SFU transport created, building SDP...');
       this.transportId = sfuResult.transport_id;
+      // pending producer will be processed after connect_web_rtc_transport succeeds
+      console.log('SfuClient: setting remote description...');
       const offerSdp = this.buildRemoteSdp(sfuResult.ice_parameters, sfuResult.dtls_parameters);
-      await this.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
-      const answer = await this.pc.createAnswer();
-      await this.pc.setLocalDescription(answer);
-      this.ws.send(JSON.stringify({ type: 'connect_web_rtc_transport', room_id: this.roomId, peer_id: this.roomId + '-consumer', transport_id: sfuResult.transport_id, dtls_parameters: { fingerprints: sfuResult.dtls_parameters.fingerprints, role: "client" }, sdp: answer.sdp }));
+      try {
+        await this.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+        console.log('SfuClient: remote description set OK');
+        const answer = await this.pc.createAnswer();
+        console.log('SfuClient: answer created');
+        await this.pc.setLocalDescription(answer);
+        console.log('SfuClient: local description set, sending connect_web_rtc_transport');
+        this.ws.send(JSON.stringify({ type: 'connect_web_rtc_transport', room_id: this.roomId, peer_id: this.roomId + '-consumer', transport_id: sfuResult.transport_id, dtls_parameters: { fingerprints: sfuResult.dtls_parameters.fingerprints, role: "client" }, sdp: answer.sdp }));
+      } catch (e) {
+        console.error('SfuClient: SDP negotiation failed:', e);
+      }
+    } else {
+      console.log("SfuClient: SFU timeout, falling back to P2P");
+      if (this.pendingSdp) {
+        console.log("SfuClient: replaying pending SDP");
+        this.handleMessage(JSON.stringify(this.pendingSdp));
+      }
     }
-    console.log("SfuClient: SFU timeout, falling back to P2P"); if (this.pendingSdp) { console.log("SfuClient: replaying pending SDP"); this.handleMessage(JSON.stringify(this.pendingSdp)); }
   }
-
   // WS message handler — routed from connect() onmessage
   handleMessage(data: string): void {
     try {
       const msg = JSON.parse(data);
+      console.log('SfuClient: received message type:', msg.type);
 
       if (msg.type === 'web_rtc_transport_created' && this.transportResolver) {
+        console.log('SfuClient: transport created, id:', msg.transport_id);
         this.transportResolver({
           transport_id: msg.transport_id,
           ice_parameters: msg.ice_parameters,
           dtls_parameters: msg.dtls_parameters,
         });
         this.transportResolver = null;
-      } else if (msg.type === 'new_producer' && this.transportId) {
-        const rtpCaps = RTCRtpReceiver.getCapabilities(msg.kind);
-        this.ws?.send(JSON.stringify({
-          type: 'consume',
-          room_id: this.roomId,
-          transport_id: this.transportId,
-          producer_id: msg.producer_id,
-          kind: msg.kind,
-          rtp_capabilities: rtpCaps,
-        }));
+      } else if (msg.type === 'new_producer') {
+        if (this.transportId) {
+          console.log('SfuClient: consuming producer', msg.producer_id);
+          const rtpCaps = {
+            codecs: [{
+              kind: 'video',
+              mimeType: 'video/H264',
+            }],
+            headerExtensions: [],
+          };
+          this.ws?.send(JSON.stringify({
+            type: 'consume', room_id: this.roomId, transport_id: this.transportId,
+            producer_id: msg.producer_id, kind: msg.kind, rtp_capabilities: rtpCaps,
+          }));
+        } else {
+          console.log('SfuClient: new_producer before transport, queuing');
+          this.pendingProducer = msg;
+        }
       } else if (msg.type === 'consumed') {
-        // ponytail: producer consumed, stream will arrive via ontrack
-      } else if (msg.type === "sdp") { console.log("SfuClient: SDP received"); if (!this.pc) { this.pendingSdp = msg; return; }
+        // ponytail: producer consumed, stream arrives via ontrack
+      } else if (msg.type === 'error' && msg.code === 0) {
+        console.log('SfuClient: transport_connected (code: 0)');
+        if (this.pendingProducer && this.transportId) {
+          console.log('SfuClient: consuming pending producer', this.pendingProducer.producer_id);
+          // Construct minimal valid RtpCapabilities (browser's caps lack "kind" field)
+          const rtpCaps = {
+            codecs: [{
+              kind: 'video',
+              mimeType: 'video/H264',
+              clockRate: 90000,
+            }],
+            headerExtensions: [],
+          };
+          this.ws?.send(JSON.stringify({
+            type: 'consume', room_id: this.roomId, transport_id: this.transportId,
+            producer_id: this.pendingProducer.producer_id, kind: this.pendingProducer.kind, rtp_capabilities: rtpCaps,
+          }));
+        }
+      } else if (msg.type === 'error') {
+        console.log('SfuClient: error', msg.code, msg.message);
+      } else if (msg.type === "sdp") {
+        console.log("SfuClient: SDP received");
+        if (!this.pc) { this.pendingSdp = msg; return; }
         // P2P mode: handle host's SDP offer → create answer
         try {
           const sdp = typeof msg.sdp === 'string' ? JSON.parse(msg.sdp) : msg.sdp;
-        if (sdp.type === 'offer' && this.pc) {
-          this.pc.setRemoteDescription(sdp).then(async () => {
-            if (!this.pc) return;
-            const answer = await this.pc.createAnswer();
-            await this.pc.setLocalDescription(answer);
-              this.ws?.send(JSON.stringify({
-                type: 'sdp', room_id: this.roomId, target: null,
-                sdp: JSON.stringify(answer),
-              }));
-            }).catch(() => {});
+          if (sdp.type === 'offer' && this.pc) {
+            this.pc.setRemoteDescription(sdp).then(async () => {
+              if (!this.pc) return;
+              const answer = await this.pc.createAnswer();
+              await this.pc.setLocalDescription(answer);
+              this.ws?.send(JSON.stringify({ type: 'sdp', room_id: this.roomId, target: null, sdp: JSON.stringify(answer) }));
+            }).catch((err) => console.warn('SfuClient: SDP setRemoteDescription failed', err));
           }
-        } catch {}
-      }
-      else if (msg.type === 'rtc_ice_candidate' && this.pc) {
+        } catch (err) {
+          console.warn('SfuClient: SDP handling failed', err);
+        }
+      } else if (msg.type === 'rtc_ice_candidate' && this.pc) {
         console.log('SfuClient: ICE candidate received', msg.candidate);
         this.pc.addIceCandidate({
           candidate: msg.candidate,
@@ -191,8 +244,8 @@ export class SfuConsumerClient {
           sdpMLineIndex: msg.sdp_mline_index ?? null,
         }).catch((e) => console.warn('SfuClient: addIceCandidate failed', e));
       }
-    } catch {
-      // ponytail: malformed messages are non-critical
+    } catch (err) {
+      console.warn('SfuClient: message handling failed', err);
     }
   }
 
@@ -211,14 +264,21 @@ export class SfuConsumerClient {
       `a=ice-pwd:${ice.password}`,
       `a=fingerprint:${fp.algorithm.toLowerCase()} ${fp.value}`,
       'a=setup:active',
+      // Video: H264
       'm=video 7 UDP/TLS/RTP/SAVPF 100',
       'c=IN IP4 127.0.0.1',
       'a=rtcp-mux',
-      'a=mid:0',
-      'a=sendonly',
-      'a=rtpmap:100 VP8/90000',
-      'm=audio 0 UDP/TLS/RTP/SAVPF 0',
-      'a=mid:1',
+      'a=mid:video',
+      'a=recvonly',
+      'a=rtpmap:100 H264/90000',
+      'a=fmtp:100 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f',
+      // Audio: Opus
+      'm=audio 7 UDP/TLS/RTP/SAVPF 111',
+      'c=IN IP4 127.0.0.1',
+      'a=rtcp-mux',
+      'a=mid:audio',
+      'a=rtpmap:111 opus/48000/2',
+      'a=fmtp:111 minptime=10;useinbandfec=1',
       '',
     ].join('\r\n');
   }
@@ -256,7 +316,8 @@ export class SfuConsumerClient {
           jitter,
           resolution: width && height ? `${width}x${height}` : 'unknown',
         });
-      } catch {
+      } catch (err) {
+        console.warn('SfuClient: getStats failed', err);
         // getStats() may fail; non-critical
       }
     }, 2000);
@@ -267,6 +328,28 @@ export class SfuConsumerClient {
       clearInterval(this.metricsTimer);
       this.metricsTimer = null;
     }
+  }
+
+  private async reconnect(): Promise<void> {
+    const maxRetries = 5;
+    let delay = 1000;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      console.log(`SfuClient: reconnecting (attempt ${attempt}/${maxRetries})...`);
+      await new Promise(r => setTimeout(r, delay));
+      
+      try {
+        await this.connect();
+        console.log('SfuClient: reconnected successfully');
+        return;
+      } catch (err) {
+        console.warn(`SfuClient: reconnect attempt ${attempt} failed`, err);
+        delay = Math.min(delay * 2, 30000);
+      }
+    }
+    
+    console.error('SfuClient: max reconnect attempts reached');
+    this.onStatus('error');
   }
 
   close(): void {

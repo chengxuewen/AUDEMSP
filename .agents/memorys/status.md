@@ -1,8 +1,8 @@
 # OMSPBase Status
 
-**生成**: 2026-07-29 | 决策: 200+ (D1-D205) | Phase: 3 完成 | 202 commits | 22 skills | mediasoup 0.24.1
+**生成**: 2026-07-31 | 决策: 180 (D1-D205, 25个预留) | Phase: 3 完成 | 206 commits | 22 skills | mediasoup 0.24.1 | PIT-30
 
-**当前**: 7 crate workspace。Phase 3 全部完成。Docker/CI/DevContainer 就位。macOS 混合开发工作流。P2P 管线生产就绪。SFU transport connect 已实现。**OpenCode 配置优化完成** (D199-D205)。
+**当前**: 7 crate workspace。Phase 3 全部完成。Docker/CI/DevContainer 就位。macOS 混合开发工作流。P2P 管线生产就绪。SFU transport connect 已实现。**OpenCode 配置优化完成** (D199-D205)。**meson buildtype 冲突已解决** (mediasoup-sys 0.14.1)。**SFU 信令全链路通** (Host → Server → Browser consume)。
 
 ## 测试
 
@@ -16,7 +16,7 @@
 | omspbase-codec (stub) | 0 | 32 | |
 | omspbase-codec (FFmpeg) | 0 | 35 | |
 | omspbase-codec (GStreamer) | 0 | 27 | pixi 环境 |
-| omspbase-server | 12 | 30 (25 e2e + 5 integration) | +2 SFU E2E (Linux only) |
+| omspbase-server | 12 | 32 (27 e2e + 5 integration) | +3 SFU E2E (Linux only) |
 | omspbase-host | — | E2E 脚本 9/9 ✅ | macOS native |
 | omspbase-client | — | E2E 脚本 9/9 ✅ | macOS native |
 
@@ -73,7 +73,7 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | Admin WS SFU Routing | ✅ |
 | Web UI (Video Grid + Metrics) | 🟡 |
 | Host SFU Produce | ✅ (VideoFrameGenerator squares) |
-| Integration E2E | ✅ (transport connect implemented) |
+| Integration E2E | ✅ (transport connect + consume pipeline) |
 
 ### SFU 已完成
 
@@ -81,8 +81,16 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - ✅ signaling.rs ConnectWebRtcTransport handler 调用实际连接
 - ✅ admin.rs 同步修复
 - ✅ 浏览器 sfu-client.ts consume 消息补充 rtp_capabilities
+- ✅ `default_router_options()` — Router 默认 codec (Opus+VP8+H264)
+- ✅ signaling.rs peer_id 一致性修复 — 统一使用 session peer_id
+- ✅ `e2e_sfu_consume_pipeline` 测试 — Host produce → Consumer consume 全链路
+- ✅ SDP BUNDLE MID 修复 — `a=mid:video`/`a=mid:audio`
+- ✅ Consumer late-joiner sync — `list_producers()` + pending producer queuing
+- ✅ Host RTP parameters 修复 — payloadType + H264 codec
+- ✅ WebRtcServer 单端口 — port 20000
 
 ### 下一步
 
-1. 浏览器 ontrack → video.srcObject → 视频帧渲染
+1. Host RTP 发送 — 需要 ICE/DTLS 握手完成（当前 webrtc-rs PeerConnection 无 candidate pairs）
 2. Playwright 端到端验证
+3. 浏览器 ontrack → video.srcObject → 视频帧渲染

@@ -180,3 +180,83 @@ webrtc-sys (C++, libwebrtc)
 **当前状态**：v4.19.2（npm 最新 4.19.3，待升级）
 
 **来源**：ecosystem-scan 审计（2026-07-29）
+
+---
+
+## C11: 调试前必须查阅官方资料
+
+**约束**：遇到问题、故障、不确定的技术细节时，优先调研官方仓库源码、官方文档、社区资料（GitHub issues/discussions、Stack Overflow），禁止凭直觉盲目尝试。
+
+**优先级**：
+1. **官方文档** — mediasoup.org, webrtc-rs docs, Rust std docs
+2. **官方仓库源码** — GitHub 集成测试（最权威的 API 用法示例）
+3. **官方示例** — mediasoup-demo, 官方 examples 目录
+4. **社区资料** — GitHub issues/discussions（同问题+解法）
+5. **最后**：凭经验推断（标记为假设，需验证）
+
+**触发条件**：
+- 遇到编译错误/运行时错误/行为异常
+- 不确定 API 的参数格式、字段类型、序列化方式
+- 库版本升级后行为变化
+- ICE/DTLS/RTP 等协议层问题
+- mediasoup Worker、mediasoup-client、webrtc-rs 等第三方库问题
+
+**禁止模式**：
+- 连续 2 次尝试同一修复 → 说明方向错误，必须停下来查资料
+- 凭记忆构造 API 参数格式 → 必须对照官方测试或文档
+- SDP 字符串手动拼接 → 必须先查 RFC 格式或官方生成示例
+- 假设 serde 字段映射 → 必须查 `#[serde(rename_all)]` 注解
+
+**反例（本次教训）**：Host→SFU 方案中 `connect_transport` 消息从未发送、`add_track` 时序错误、Router H264 参数缺失，均因未先对照 mediasoup-demo 的完整信令流程。
+
+**来源**：用户显式要求（2026-07-31 团队评审后）
+
+---
+
+## C12: 仅通过 omspbase-webrtc 使用 WebRTC
+
+**约束**：所有 client 端 crate（host/client）禁止直接依赖 webrtc-rs（`webrtc = "0.12"`），必须通过 `omspbase-webrtc` 抽象层使用 WebRTC 能力。P2P 和 SFU 路径统一经此抽象层。Server 端 SFU 路径不依赖 omspbase-webrtc（WebRTC 来自 mediasoup），webrtc feature 为 P2P relay 保留。
+
+**后端策略**：
+- 默认/当前后端 = `backend-webrtc-sys`（libwebrtc C++ via webrtc-sys FFI），不依赖 omspbase-codec
+- `backend-webrtc-rs` 为备选后端（Phase 2+），需额外依赖 omspbase-codec
+
+**Reason**：
+- `omspbase-webrtc` 已封装 W3C API（RTCPeerConnection + TrackSender + DataChannel）
+- 三后端抽象（stub/webrtc-rs/webrtc-sys）由 omspbase-webrtc 统一控制
+- 直接依赖绕过抽象层破坏后端切换能力和可测试性
+
+**禁止**：
+```toml
+# 任何 client crate 的 Cargo.toml — 禁止
+webrtc = "0.12"
+```
+
+**允许**：
+```toml
+# Cargo.toml — 正确
+omspbase-webrtc = { path = "../omspbase-webrtc", features = ["backend-webrtc-sys"] }
+```
+
+**来源**：用户显式要求（2026-07-31 Host SFU 评审后）
+
+---
+
+## C13: Server 统一 Docker 构建
+
+**约束**：omspbase-server 统一通过 Docker 编译（mediasoup C++ Worker 需要 Linux x86_64 + meson/ninja）。原生 `cargo check --workspace` 排除 server crate。
+
+**pixi 任务映射**：
+| 任务 | 命令 | 说明 |
+|------|------|------|
+| `check` | `cargo check --workspace --exclude omspbase-server` | 原生 |
+| `check-server` | `scripts/docker-cargo.sh check -p omspbase-server --features sfu-mediasoup` | Docker |
+| `build-server` | `scripts/docker-cargo.sh build -p omspbase-server --features sfu-mediasoup` | Docker |
+| `check-native` | `scripts/cargo-sfu.sh check --workspace` | 原生备选 |
+
+**原因**：
+- mediasoup-sys 的 meson wrap 依赖 wrapdb.mesonbuild.com（不可达时无法下载 flatbuffers patch）
+- Docker 镜像预装所有依赖，构建环境一致
+- macOS/Windows 开发者统一使用 Docker
+
+**来源**：用户显式要求（2026-07-31）、OpenVidu pre-built binary 参考
