@@ -58,7 +58,6 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .json()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("info".parse().unwrap()),
         )
         .init();
 
@@ -73,7 +72,8 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         if args.len() > 2 && args[1] == "--config" {
             args[2].clone()
         } else {
-            "/opt/oomspbase/etc/server.conf".to_string()
+            "/opt/omspbase/etc/server.yaml"
+            // ponytail: path matches docker-compose volume mount
         }
     };
     let config = match config::load(&config_path) {

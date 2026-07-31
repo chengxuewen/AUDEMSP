@@ -34,29 +34,34 @@ ninja = ">=1.11,<2"
 openssl = ">=3,<4"
 
 [feature.dev.tasks]
-# === Cargo tasks — mediasoup-sys wrapper patches tasks.py for meson buildtype conflict ===
-check = "sh -c 'scripts/cargo-sfu.sh check --workspace'"
-build = "sh -c 'scripts/cargo-sfu.sh build --workspace'"
+# === Cargo tasks ═════════════════════════════════════════════════
+# 不需要 mediasoup 的 crate — 原生编译 (所有平台)
+check = "cargo check --workspace --exclude omspbase-server"
+build = "cargo build --workspace --exclude omspbase-server"
+test = "cargo test --workspace --exclude omspbase-server"
 lint = "cargo clippy --workspace --all-targets -- -D warnings"
-test = "sh -c 'scripts/cargo-sfu.sh test --workspace'"
-test-sfu = "sh -c 'scripts/cargo-sfu.sh test -p omspbase-server --features sfu-mediasoup'"
 
-# === Vanilla tasks (no mediasoup-sys wrapper) ===
-check-fast = "cargo check --workspace --no-default-features"
-build-fast = "cargo build --workspace --no-default-features"
+# omspbase-server — Docker 编译 (mediasoup C++ Worker 需要 Linux + meson)
+check-server = "sh -c 'scripts/docker-cargo.sh check -p omspbase-server --features sfu-mediasoup'"
+build-server = "sh -c 'scripts/docker-cargo.sh build -p omspbase-server --features sfu-mediasoup'"
+test-server = "sh -c 'scripts/docker-cargo.sh test -p omspbase-server --features sfu-mediasoup'"
+
+# Linux 原生备选 (需 wrapdb.mesonbuild.com 可达)
+check-native = "sh -c 'scripts/cargo-sfu.sh check --workspace'"
+build-native = "sh -c 'scripts/cargo-sfu.sh build --workspace'"
+
+# 工具 (无变更)
 format = "cargo fmt --all -- --check"
 format-fix = "cargo fmt --all"
 audit = "cargo deny check"
-
-# Testing tools
-[feature.test.dependencies]
-
-[feature.test.tasks]
-test = "cargo test --workspace"
+coverage = "cargo tarpaulin --workspace --exclude omspbase-server"
 coverage = "cargo tarpaulin --workspace --out Html --out Lcov"
 test-gstreamer = "LD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$LD_LIBRARY_PATH DYLD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$DYLD_LIBRARY_PATH cargo test -p omspbase-codec --features backend-gstreamer"
 test-sfu = "cargo test -p omspbase-server --features sfu-mediasoup"
 
+# Docker compose tasks
+server = "docker compose up"
+server-dev = "docker compose -f docker-compose.dev.yml up"
 # CI tools (lightweight CI stages)
 [feature.ci.dependencies]
 

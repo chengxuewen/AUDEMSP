@@ -1,28 +1,19 @@
-# Production docker-compose — image-based, no build context
+# Development docker-compose — build-based, source mount
 services:
   server:
-    image: ghcr.io/org/omspbase-server:latest
+    build:
+      context: .
+      target: dev
     ports:
       - "40000-40100:40000-40100/udp"
     environment:
       RUST_LOG: debug
       OMSPBASE_PSK: omspbase-dev
-    deploy:
-      resources:
-        limits:
-          cpus: "2"
-          memory: "4G"
-        reservations:
-          cpus: "1"
-          memory: "2G"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9800/health"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
     volumes:
+      - .:/workspace
       - ./config/server.docker.yaml:/opt/omspbase/etc/server.yaml:ro
       - cargo-cache:/workspace/target
+    command: cargo run --bin omspbase-server --features sfu-mediasoup,admin-dashboard
 
   proxy:
     image: caddy:2
