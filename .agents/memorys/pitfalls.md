@@ -317,3 +317,55 @@ compile_error!("Only one backend can be enabled at a time.");
 - [conventions.md](conventions.md) — 开发约定与约束
 - [decisions.md](decisions.md) — 架构决策记录
 - [status.md](status.md) — 项目状态与进度
+
+## PIT-31: Docker Hub 不可达 — daemon 需独立代理配置 (2026-07-31)
+
+**症状**: `docker run --rm hello-world` 报 `failed to resolve reference "docker.io/library/hello-world"` / `dial tcp 157.240.2.50:443: i/o timeout`。curl 测试镜像源返回 200 但 docker pull 仍失败。
+
+**根因**: 国内网络 Docker Hub 被墙。用户 shell 的 `http_proxy` 环境变量**不影响 docker daemon**（daemon 是 systemd 服务，独立进程）。curl 走用户代理成功，daemon 直连超时。
+
+**解法**: 双重配置：
+1. 镜像加速器 `/etc/docker/daemon.json` (registry-mirrors)
+2. daemon 代理 `/etc/systemd/system/docker.service.d/proxy.conf` (HTTP_PROXY/HTTPS_PROXY/NO_PROXY) → `systemctl daemon-reload && systemctl restart docker`
+
+**验证**: `docker run --rm hello-world` 返回 "Hello from Docker!"。
+
+## PIT-32: docker compose `image:` + `build:` 同存反模式 (2026-07-31)
+
+**症状**: 配置 `image: ghcr.io/...` + `build: target: dev` 后，`docker compose up` 仍本地构建而非拉取预编译镜像。
+
+**根因**: Compose 同时存在 `build:` 和 `image:` 时，**始终执行 build**，`image:` 只作为构建产物的 tag。预编译镜像永远不会被拉取。
+
+**解法**: 分离 compose 文件：`docker-compose.yml`（生产，仅 `image:`） + `docker-compose.dev.yml`（开发，仅 `build:`）。OpenVidu 同此模式。
+
+**验证**: `docker compose pull && docker compose up -d` 应直接拉取镜像（<30s 启动）。
+
+## PIT-33: mediasoup-sys flatbuffers subproject 构建失败 (2026-07-31)
+
+**症状**: `cargo check -p omspbase-server --features sfu-mediasoup` 报 `ERROR: Subproject flatbuffers is buildable: NO` / `Subproject exists but has no meson.build file`。手动解压 flatbuffers tar.gz 后仍无 meson.build。
+
+**根因**: flatbuffers 的 meson.build 来自 wrapdb.mesonbuild.com 的 patch zip（`flatbuffers_24.3.25-1_patch.zip`），wrapdb 不可达时 patch 下载失败。flatbuffers 源码 tarball 本身只有 CMake，无 meson.build。
+
+**解法**: 无法本地补救（patch 必须从 wrapdb 下载）。走 Docker 统一构建（C13）——镜像内预装依赖或使用层缓存。排查时 `find target -name "meson.build"` 确认缺失，不要反复重试原生构建。
+
+**验证**: Docker 构建成功（`docker compose -f docker-compose.dev.yml build`）。
+
+## PIT-34: 子代理完成声明不可信 — 必须验证产物 (2026-07-31)
+
+**症状**: P1b 子代理声称 "docker-compose.dev.yml created"，实际文件**不存在**；生产 docker-compose.yml 还丢了 environment 字段。若直接信完成声明继续，CI 会失败。
+
+**根因**: 子代理响应截断或声称提前（"Good. Now let me create..." 后即返回）。完成声明 ≠ 产物落盘。
+
+**解法**: 编排者必须验证实际产物：`cat` 文件存在性 + `docker compose config` 校验 + grep 关键字段。验证失败 → resume session 修复。
+
+**验证**: `ls docker-compose.dev.yml && grep environment docker-compose.yml`。
+
+## PIT-35: 参考文档子代理幻觉 — 事实核查必要 (2026-07-31)
+
+**症状**: OpenVidu 参考文档 openvidu-deployment.md 写入不存在的容器（Kurento/Coturn/Kibana/PostgreSQL）、错误描述 LiveKit 为"单独服务"、错误记录 ghcr.io。
+
+**根因**: 子代理基于推测补全未知细节，未严格对照上游仓库实际文件。参考文档生成后未做事实核查。
+
+**解法**: 生成参考文档后必须对照上游源码核查事实（容器清单、镜像注册表、端口、数据库）。发现错误 → 修正文档（本轮修正 4 处）。核查时以仓库实际 docker-compose.yaml 为准，不信二手描述。
+
+**验证**: `grep -i "kurento\|coturn" openvidu-deployment.md` 应为空。

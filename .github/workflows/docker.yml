@@ -13,6 +13,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate docker-compose config (PIT-32 gate)
+        run: |
+          docker compose -f docker-compose.yml config --quiet && echo "prod compose OK"
+          docker compose -f docker-compose.dev.yml config --quiet && echo "dev compose OK"
+          # Gate: production compose must NOT contain build: (image:+build: anti-pattern)
+          if grep -qE '^\s+build:' docker-compose.yml; then
+            echo "ERROR: docker-compose.yml contains build: — PIT-32 anti-pattern (image: never pulled)"
+            exit 1
+          fi
+
       - name: Log in to ghcr.io
         uses: docker/login-action@v3
         with:

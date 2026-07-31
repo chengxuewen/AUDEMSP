@@ -260,3 +260,21 @@ omspbase-webrtc = { path = "../omspbase-webrtc", features = ["backend-webrtc-sys
 - macOS/Windows 开发者统一使用 Docker
 
 **来源**：用户显式要求（2026-07-31）、OpenVidu pre-built binary 参考
+
+---
+
+## C14: 子代理产物必须验证（编排者铁律）
+
+**约束**：子代理返回的完成声明不可信。编排者必须验证实际产物后才标记任务完成（PIT-34）。
+
+**验证清单**：
+- 声称创建的文件 → `cat`/`ls` 确认存在 + 内容完整
+- 声称修改的配置 → `grep` 关键字段
+- 声称可运行的命令 → 实际执行
+- 声称通过的测试 → 重新运行
+
+**失败处理**：验证失败 → `task(task_id="ses_...", prompt="fix: <具体问题>")` resume 修复，不自行编辑。
+
+**验证**：`ls <声称的文件> && grep <关键字段> <修改的文件>`。
+
+**来源**：PIT-34 (2026-07-31 docker-compose.dev.yml 声称创建实际缺失)
