@@ -13,7 +13,25 @@ use tokio::sync::broadcast;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn make_state() -> AdminState {
+#[cfg(feature = "sfu-mediasoup")]
+async fn make_state() -> AdminState {
+    let sfu = std::sync::Arc::new(omspbase_server::sfu::SfuManager::new().await.unwrap());
+    let signaling = SignalingServer::new(sfu.clone(), 65536, None);
+    let (event_tx, _) = broadcast::channel(256);
+    AdminState {
+        signaling,
+        event_tx,
+        admin_jwt_secret: Some("test-secret-min-32-bytes!!!".into()),
+        listen_host: "0.0.0.0".into(),
+        listen_port: 9800,
+        rate_limit: 100,
+        room_capacity: 10,
+        consumer_limit_per_stream: 50,
+        sfu_manager: sfu,
+    }
+}
+#[cfg(not(feature = "sfu-mediasoup"))]
+async fn make_state() -> AdminState {
     let signaling = SignalingServer::new(65536, None);
     let (event_tx, _) = broadcast::channel(256);
     AdminState {
@@ -53,7 +71,7 @@ fn admin_token(state: &AdminState) -> String {
 
 #[tokio::test]
 async fn admin_list_devices_empty() {
-    let state = make_state();
+    let state = make_state().await;
     let token = admin_token(&state);
     let app = admin_router(state);
 
@@ -92,7 +110,7 @@ async fn admin_list_devices_empty() {
 
 #[tokio::test]
 async fn admin_list_devices_with_stream() {
-    let state = make_state();
+    let state = make_state().await;
 
     // Join a consumer to create a DeviceStream room
     state
@@ -134,7 +152,7 @@ async fn admin_list_devices_with_stream() {
 
 #[tokio::test]
 async fn admin_stats() {
-    let state = make_state();
+    let state = make_state().await;
     let token = admin_token(&state);
     let app = admin_router(state);
 
@@ -166,7 +184,7 @@ async fn admin_stats() {
 
 #[tokio::test]
 async fn admin_config() {
-    let state = make_state();
+    let state = make_state().await;
     let token = admin_token(&state);
     let app = admin_router(state);
 
@@ -200,7 +218,7 @@ async fn admin_config() {
 
 #[tokio::test]
 async fn admin_auth_required() {
-    let state = make_state();
+    let state = make_state().await;
     let app = admin_router(state);
 
     let response = app
@@ -225,7 +243,7 @@ async fn admin_auth_required() {
 
 #[tokio::test]
 async fn admin_rooms_delete() {
-    let state = make_state();
+    let state = make_state().await;
 
     // Create a room
     state
@@ -260,7 +278,7 @@ async fn admin_rooms_delete() {
 
     // Now delete the room via RoomManager (the DELETE handler does the same)
     // and verify the room is removed from admin list in a new state
-    let state2 = make_state();
+    let state2 = make_state().await;
     state2
         .signaling
         .room_manager

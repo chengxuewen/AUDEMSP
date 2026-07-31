@@ -252,6 +252,47 @@ impl PcBackend for WebrtcRsPc {
             Box::pin(async {})
         }));
     }
+
+    fn set_on_ice_connection_state_change(
+        &self,
+        cb: Box<dyn Fn(RTCIceConnectionState) + Send + Sync + 'static>,
+    ) {
+        let cb = std::sync::Mutex::new(Some(cb));
+        self.inner.on_ice_connection_state_change(Box::new(move |state: webrtc::ice_transport::ice_connection_state::RTCIceConnectionState| {
+            let mapped = match state {
+                webrtc::ice_transport::ice_connection_state::RTCIceConnectionState::New => RTCIceConnectionState::New,
+                webrtc::ice_transport::ice_connection_state::RTCIceConnectionState::Checking => RTCIceConnectionState::Checking,
+                webrtc::ice_transport::ice_connection_state::RTCIceConnectionState::Connected => RTCIceConnectionState::Connected,
+                webrtc::ice_transport::ice_connection_state::RTCIceConnectionState::Completed => RTCIceConnectionState::Completed,
+                webrtc::ice_transport::ice_connection_state::RTCIceConnectionState::Failed => RTCIceConnectionState::Failed,
+                webrtc::ice_transport::ice_connection_state::RTCIceConnectionState::Disconnected => RTCIceConnectionState::Disconnected,
+                webrtc::ice_transport::ice_connection_state::RTCIceConnectionState::Closed => RTCIceConnectionState::Closed,
+                _ => RTCIceConnectionState::New,
+            };
+            if let Some(ref f) = *cb.lock().unwrap() { f(mapped); }
+            Box::pin(async {})
+        }));
+    }
+
+    fn set_on_peer_connection_state_change(
+        &self,
+        cb: Box<dyn Fn(RTCPeerConnectionState) + Send + Sync + 'static>,
+    ) {
+        let cb = std::sync::Mutex::new(Some(cb));
+        self.inner.on_peer_connection_state_change(Box::new(move |state: webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState| {
+            let mapped = match state {
+                webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState::New => RTCPeerConnectionState::New,
+                webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState::Connecting => RTCPeerConnectionState::Connecting,
+                webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState::Connected => RTCPeerConnectionState::Connected,
+                webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState::Disconnected => RTCPeerConnectionState::Disconnected,
+                webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState::Failed => RTCPeerConnectionState::Failed,
+                webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState::Closed => RTCPeerConnectionState::Closed,
+                _ => RTCPeerConnectionState::New,
+            };
+            if let Some(ref f) = *cb.lock().unwrap() { f(mapped); }
+            Box::pin(async {})
+        }));
+    }
 }
 
 // ── Video decode pipeline helpers for webrtc-rs on_track ──

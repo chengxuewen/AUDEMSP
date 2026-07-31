@@ -16,14 +16,48 @@ mod imp {
     use super::*;
     use mediasoup::prelude::*;
     use mediasoup::worker_manager::WorkerManager;
+    use mediasoup::webrtc_server::{WebRtcServer, WebRtcServerOptions, WebRtcServerListenInfos};
     use std::net::{IpAddr, Ipv4Addr};
     use std::sync::Arc;
+    use std::num::{NonZeroU32, NonZeroU8};
 
+    /// Create RouterOptions with sensible default codecs (Opus + VP8 + H264).
+    fn default_router_options() -> RouterOptions {
+        RouterOptions::new(vec![
+            RtpCodecCapability::Audio {
+                mime_type: MimeTypeAudio::Opus,
+                preferred_payload_type: None,
+                clock_rate: NonZeroU32::new(48000).unwrap(),
+                channels: NonZeroU8::new(2).unwrap(),
+                parameters: RtpCodecParametersParameters::default(),
+                rtcp_feedback: vec![],
+            },
+            RtpCodecCapability::Video {
+                mime_type: MimeTypeVideo::Vp8,
+                preferred_payload_type: None,
+                clock_rate: NonZeroU32::new(90000).unwrap(),
+                parameters: RtpCodecParametersParameters::default(),
+                rtcp_feedback: vec![],
+            },
+            RtpCodecCapability::Video {
+                mime_type: MimeTypeVideo::H264,
+                preferred_payload_type: None,
+                clock_rate: NonZeroU32::new(90000).unwrap(),
+                parameters: RtpCodecParametersParameters::from([
+                    ("level-asymmetry-allowed", 1_u32.into()),
+                    ("packetization-mode", 1_u32.into()),
+                    ("profile-level-id", "4d0032".into()),
+                ]),
+                rtcp_feedback: vec![],
+            },
+        ])
+    }
     /// Result of a transport creation request.
     pub struct TransportCreated {
         pub transport_id: String,
         pub ice_parameters: protocol::IceParameters,
         pub dtls_parameters: protocol::DtlsParameters,
+        pub ice_candidates: Vec<protocol::IceCandidate>,
     }
 
     /// Result of a producer creation request.
@@ -59,6 +93,7 @@ mod imp {
     pub struct SfuManager {
         worker_manager: WorkerManager,
         worker: Worker,
+        webrtc_server: Arc<WebRtcServer>,
         rooms: DashMap<String, SfuRoom>,
     }
 
@@ -93,8 +128,22 @@ mod imp {
         }
     }
 
+    fn convert_ice_candidates(candidates: &[IceCandidate]) -> Vec<protocol::IceCandidate> {
+        candidates
+            .iter()
+            .map(|c| protocol::IceCandidate {
+                ip: c.address.clone(),
+                port: c.port,
+                protocol: format!("{:?}", c.protocol).to_lowercase(),
+                foundation: c.foundation.clone(),
+                priority: c.priority,
+                candidate_type: format!("{:?}", c.r#type).to_lowercase(),
+            })
+            .collect()
+    }
+
     impl SfuManager {
-        /// Create a new SfuManager with a single mediasoup Worker.
+        /// Create a new SfuManager with a single mediasoup Worker and WebRtcServer.
         pub async fn new() -> Result<Self, String> {
             let worker_manager = WorkerManager::new();
             let worker = worker_manager
@@ -102,9 +151,30 @@ mod imp {
                 .await
                 .map_err(|e| format!("Failed to create mediasoup worker: {e}"))?;
             tracing::info!("mediasoup Worker created (id: {:?})", worker.id());
+
+            // Create WebRtcServer with single port (port 20000)
+            let webrtc_server = worker
+                .create_webrtc_server(WebRtcServerOptions::new(WebRtcServerListenInfos::new(
+                    ListenInfo {
+                        protocol: Protocol::Udp,
+                        ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                        announced_address: None,
+                        expose_internal_ip: false,
+                        port: Some(20000),  // Fixed ICE port
+                        port_range: None,
+                        flags: None,
+                        send_buffer_size: None,
+                        recv_buffer_size: None,
+                    },
+                )))
+                .await
+                .map_err(|e| format!("Failed to create WebRtcServer: {e}"))?;
+            tracing::info!("WebRtcServer created on port 20000");
+
             Ok(Self {
                 worker_manager,
                 worker,
+                webrtc_server: Arc::new(webrtc_server),
                 rooms: DashMap::new(),
             })
         }
@@ -124,7 +194,7 @@ mod imp {
                     // No room yet — create one
                     let router = self
                         .worker
-                        .create_router(RouterOptions::default())
+                        .create_router(default_router_options())
                         .await
                         .map_err(|e| format!("Failed to create router: {e}"))?;
                     let router = Arc::new(router);
@@ -141,20 +211,8 @@ mod imp {
                 }
             };
 
-            // Create transport
-            let listen_info = ListenInfo {
-                protocol: Protocol::Udp,
-                ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                announced_address: None,
-                expose_internal_ip: false,
-                port: None,
-                port_range: None,
-                flags: None,
-                send_buffer_size: None,
-                recv_buffer_size: None,
-            };
-            let options =
-                WebRtcTransportOptions::new(WebRtcTransportListenInfos::new(listen_info));
+            // Create transport using shared WebRtcServer (single port)
+            let options = WebRtcTransportOptions::new_with_server(self.webrtc_server.as_ref().clone());
             let transport = router
                 .create_webrtc_transport(options)
                 .await
@@ -163,6 +221,7 @@ mod imp {
             let transport_id = transport.id().to_string();
             let ice = transport.ice_parameters().clone();
             let dtls = transport.dtls_parameters();
+            let ice_candidates = convert_ice_candidates(transport.ice_candidates());
 
             // Store transport on peer
             if let Some(room) = self.rooms.get_mut(room_id) {
@@ -190,6 +249,7 @@ mod imp {
                 transport_id,
                 ice_parameters: convert_ice_parameters(&ice),
                 dtls_parameters: convert_dtls_parameters(&dtls),
+                ice_candidates,
             })
         }
 
@@ -368,6 +428,37 @@ mod imp {
                 "SFU: transport {transport_id} connected for peer {peer_id} in room {room_id}"
             );
             Ok(())
+        }
+
+        /// List all producers in a room. Returns (producer_id, kind, peer_id) tuples.
+        /// Used for late-joiner sync to send existing producers to new consumers.
+        pub fn list_producers(&self, room_id: &str) -> Option<Vec<(String, protocol::MediaKind, String)>> {
+            let room = self.rooms.get(room_id)?;
+            let mut result = Vec::new();
+            for entry in room.peers.iter() {
+                let peer_id = entry.key().clone();
+                for producer in &entry.producers {
+                    let kind = match producer.kind() {
+                        MediaKind::Audio => protocol::MediaKind::Audio,
+                        MediaKind::Video => protocol::MediaKind::Video,
+                    };
+                    result.push((producer.id().to_string(), kind, peer_id.clone()));
+                }
+            }
+            Some(result)
+        }
+
+        /// Send raw RTP data through the first video producer in the room.
+        /// Used for WS→SFU frame relay (avoids Host-side ICE/DTLS).
+        ///
+        /// Note: Requires a DirectProducer. Regular producers (WebRtcTransport-based)
+        /// receive RTP from the client-side peer connection, not server-side injection.
+        pub fn send_frame(&self, _room_id: &str, _rtp_data: &[u8]) -> Result<(), String> {
+            Err("send_frame requires DirectProducer; WebRtcTransport producers receive RTP from client-side ICE/DTLS".into())
+        }
+        /// Number of active rooms.
+        pub fn room_count(&self) -> usize {
+            self.rooms.len()
         }
     }
 }

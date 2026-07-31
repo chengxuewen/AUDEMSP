@@ -4595,6 +4595,7 @@ dependencies = [
  "hmac",
  "omspbase-common",
  "omspbase-media",
+ "omspbase-server",
  "omspbase-webrtc",
  "prometheus-client",
  "serde",

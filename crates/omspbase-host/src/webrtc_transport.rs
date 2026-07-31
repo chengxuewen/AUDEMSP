@@ -1,3 +1,4 @@
+#[cfg(feature = "webrtc-p2p")]
 //! WebRTC transport module for OMSPBase Host.
 //!
 //! Creates a RTCPeerConnection, establishes an unordered unreliable RTCDataChannel

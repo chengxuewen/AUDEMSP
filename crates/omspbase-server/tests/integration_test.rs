@@ -11,6 +11,12 @@ const ROOM: &str = "test-room";
 async fn integration_signaling_pipeline() {
     unsafe { std::env::set_var("OMSPBASE_PSK", PSK) };
 
+    #[cfg(feature = "sfu-mediasoup")]
+    let server = {
+        let sfu = std::sync::Arc::new(omspbase_server::sfu::SfuManager::new().await.unwrap());
+        SignalingServer::new(sfu, 65536, None)
+    };
+    #[cfg(not(feature = "sfu-mediasoup"))]
     let server = SignalingServer::new(65536, None);
     let app = signaling_router(server);
 
@@ -218,6 +224,12 @@ fn test_sdp_frame_ice_serialization() {
 async fn test_auth_failure_integration() {
     unsafe { std::env::set_var("OMSPBASE_PSK", PSK) };
 
+    #[cfg(feature = "sfu-mediasoup")]
+    let server = {
+        let sfu = std::sync::Arc::new(omspbase_server::sfu::SfuManager::new().await.unwrap());
+        SignalingServer::new(sfu, 65536, None)
+    };
+    #[cfg(not(feature = "sfu-mediasoup"))]
     let server = SignalingServer::new(65536, None);
     let app = signaling_router(server);
 
@@ -256,6 +268,12 @@ async fn test_auth_failure_integration() {
 async fn e2e_video_frame_relay() {
     unsafe { std::env::set_var("OMSPBASE_PSK", PSK) };
 
+    #[cfg(feature = "sfu-mediasoup")]
+    let server = {
+        let sfu = std::sync::Arc::new(omspbase_server::sfu::SfuManager::new().await.unwrap());
+        SignalingServer::new(sfu, 65536, None)
+    };
+    #[cfg(not(feature = "sfu-mediasoup"))]
     let server = SignalingServer::new(65536, None);
     let app = signaling_router(server);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

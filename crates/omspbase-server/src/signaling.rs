@@ -379,6 +379,29 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
 
     // Forward: this peer's receiver → broadcast
     tracing::info!("Entering forward loop for peer {}", relay_peer_id);
+
+    // Send existing producers to new consumer (late-joiner sync)
+    #[cfg(feature = "sfu-mediasoup")]
+    {
+        tracing::info!("SFU: list_producers for room {}", relay_room);
+        if let Some(created) = server.sfu_manager.list_producers(&relay_room) {
+            tracing::info!("SFU: found {} producers in room {}", created.len(), relay_room);
+            for (producer_id, kind, peer_id) in &created {
+                let msg = SignalingMessage::NewProducer {
+                    room_id: relay_room.clone(),
+                    producer_id: producer_id.clone(),
+                    peer_id: peer_id.clone(),
+                    kind: kind.clone(),
+                };
+                let _ = direct_sender
+                    .lock()
+                    .await
+                    .send(Message::Text(send_msg(&msg).unwrap()))
+                    .await;
+            }
+        }
+    }
+
     while let Some(Ok(msg)) = receiver.next().await {
         // Check shutdown signal before processing each message
         if *shutdown_rx.borrow() {
@@ -407,18 +430,24 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                 // Check for SFU transport messages (server-side handling)
                 #[cfg(feature = "sfu-mediasoup")]
                 {
-                    tracing::debug!("SFU check: parsing message");
+                    tracing::debug!("SFU check: parsing message: {}", &text_str[..text_str.len().min(200)]);
                     if let Ok(sig_msg) = serde_json::from_str::<SignalingMessage>(&text_str) {
                         tracing::debug!("SFU check: parsed OK, calling handle_sfu_message");
-                        if handle_sfu_message(
+                        if let Some(response) = handle_sfu_message(
                             &sig_msg,
                             &server.sfu_manager,
-                            &direct_sender,
                             &tx,
                             &relay_peer_id,
                         )
                         .await
                         {
+                            // Send SFU response directly via WS sender
+                            let _ = direct_sender
+                                .lock()
+                                .await
+                                .send(Message::Text(send_msg(&response).unwrap()))
+                                .await;
+                            tracing::info!("SFU: response sent to peer {}", relay_peer_id);
                             continue; // Handled by SFU, don't relay
                         }
                     } else {
@@ -558,137 +587,104 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
 }
 
 /// Handle SFU transport negotiation and produce/consume messages.
-/// Returns `true` if the message was handled (should not be relayed).
+/// Returns the response message to send, or None if not handled.
+/// Caller is responsible for sending the response (avoids sender lock contention with relay loop).
 #[cfg(feature = "sfu-mediasoup")]
-pub(crate) async fn handle_sfu_message(
+    pub(crate) async fn handle_sfu_message(
     msg: &SignalingMessage,
     sfu: &crate::sfu::SfuManager,
-    sender: &Arc<tokio::sync::Mutex<SplitSink<WebSocket, Message>>>,
     broadcast_tx: &tokio::sync::broadcast::Sender<String>,
     peer_id: &str,
-) -> bool {
+) -> Option<SignalingMessage> {
     match msg {
         SignalingMessage::CreateWebRtcTransport {
             room_id,
-            peer_id,
             direction,
+            ..
         } => {
             tracing::info!(
                 "SFU: creating {} transport for peer {} in room {}",
                 serde_json::to_string(direction).unwrap_or_default(),
-                peer_id,
-                room_id
+                        peer_id, room_id
             );
             let dir_str = match direction {
                 omspbase_common::protocol::TransportDirection::Send => "send",
                 omspbase_common::protocol::TransportDirection::Recv => "recv",
             };
-            match sfu.create_webrtc_transport(room_id, peer_id, dir_str).await {
-                Ok(created) => {
-                    let response = SignalingMessage::WebRtcTransportCreated {
-                        room_id: room_id.clone(),
-                        peer_id: peer_id.clone(),
-                        transport_id: created.transport_id,
-                        ice_parameters: created.ice_parameters,
-                        dtls_parameters: created.dtls_parameters,
-                    };
-                    let _ = sender
-                        .lock()
-                        .await
-                        .send(Message::Text(send_msg(&response).unwrap()))
-                        .await;
-                }
-                Err(e) => {
-                    let error = SignalingMessage::Error {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                sfu.create_webrtc_transport(room_id, peer_id, dir_str)
+            ).await {
+                Ok(Ok(created)) => Some(SignalingMessage::WebRtcTransportCreated {
+                    room_id: room_id.clone(),
+                    peer_id: peer_id.to_string(),
+                    transport_id: created.transport_id,
+                    ice_parameters: created.ice_parameters,
+                    dtls_parameters: created.dtls_parameters,
+                    ice_candidates: Some(created.ice_candidates),
+                }),
+                Ok(Err(e)) => {
+                    tracing::error!("SFU: create transport failed: {e}");
+                    Some(SignalingMessage::Error {
                         code: 5000,
                         message: format!("Transport creation failed: {e}"),
-                    };
-                    let _ = sender
-                        .lock()
-                        .await
-                        .send(Message::Text(send_msg(&error).unwrap()))
-                        .await;
+                    })
+                }
+                Err(_) => {
+                    tracing::error!("SFU: create transport timed out after 5s");
+                    Some(SignalingMessage::Error {
+                        code: 5000,
+                        message: "Transport creation timed out".into(),
+                    })
                 }
             }
-            true
         }
         SignalingMessage::ConnectWebRtcTransport {
             room_id,
-            peer_id,
             transport_id,
             dtls_parameters,
+            ..
         } => {
-            match sfu.connect_transport(&room_id, &peer_id, &transport_id, dtls_parameters.clone()).await {
+            match sfu.connect_transport(&room_id, peer_id, &transport_id, dtls_parameters.clone()).await {
                 Ok(()) => {
                     tracing::info!(
                         "SFU: transport {transport_id} connected for peer {peer_id}"
                     );
-                    let response = SignalingMessage::Error {
+                    Some(SignalingMessage::Error {
                         code: 0,
                         message: "transport_connected".into(),
-                    };
-                    let _ = sender
-                        .lock()
-                        .await
-                        .send(Message::Text(send_msg(&response).unwrap()))
-                        .await;
+                    })
                 }
                 Err(e) => {
                     tracing::error!("SFU: connect transport failed: {e}");
-                    let response = SignalingMessage::Error {
+                    Some(SignalingMessage::Error {
                         code: 5000,
                         message: format!("Connect failed: {e}"),
-                    };
-                    let _ = sender
-                        .lock()
-                        .await
-                        .send(Message::Text(send_msg(&response).unwrap()))
-                        .await;
+                    })
                 }
             }
-            true
         }
-
         SignalingMessage::Produce {
             room_id,
             transport_direction,
             kind,
             rtp_parameters,
         } => {
-            // ponytail: only process "send" direction; recv produce is a protocol error
             if !matches!(transport_direction, omspbase_common::protocol::TransportDirection::Send) {
-                let error = SignalingMessage::Error {
+                return Some(SignalingMessage::Error {
                     code: 4000,
                     message: "Produce requires send transport".into(),
-                };
-                let _ = sender
-                    .lock()
-                    .await
-                    .send(Message::Text(send_msg(&error).unwrap()))
-                    .await;
-                return true;
+                });
             }
-
             match sfu
                 .create_producer(room_id, peer_id, kind, rtp_parameters.clone())
                 .await
             {
                 Ok(result) => {
-                    // Respond to producer
-                    let response = SignalingMessage::Produced {
-                        room_id: room_id.clone(),
-                        producer_id: result.producer_id.clone(),
-                    };
-                    let _ = sender
-                        .lock()
-                        .await
-                        .send(Message::Text(send_msg(&response).unwrap()))
-                        .await;
-
                     // Broadcast NewProducer to all peers in room
                     let broadcast = SignalingMessage::NewProducer {
                         room_id: room_id.clone(),
-                        producer_id: result.producer_id,
+                        producer_id: result.producer_id.clone(),
                         peer_id: peer_id.to_string(),
                         kind: result.kind,
                     };
@@ -697,22 +693,19 @@ pub(crate) async fn handle_sfu_message(
                         "SFU: broadcast NewProducer for peer {} in room {}",
                         peer_id, room_id
                     );
+                    Some(SignalingMessage::Produced {
+                        room_id: room_id.clone(),
+                        producer_id: result.producer_id,
+                    })
                 }
                 Err(e) => {
-                    let error = SignalingMessage::Error {
+                    Some(SignalingMessage::Error {
                         code: 5000,
                         message: format!("Producer creation failed: {e}"),
-                    };
-                    let _ = sender
-                        .lock()
-                        .await
-                        .send(Message::Text(send_msg(&error).unwrap()))
-                        .await;
+                    })
                 }
             }
-            true
         }
-
         SignalingMessage::Consume {
             room_id,
             producer_id,
@@ -722,35 +715,19 @@ pub(crate) async fn handle_sfu_message(
                 .create_consumer(room_id, peer_id, producer_id, rtp_capabilities.clone())
                 .await
             {
-                Ok(result) => {
-                    let response = SignalingMessage::Consumed {
-                        room_id: room_id.clone(),
-                        consumer_id: result.consumer_id,
-                        producer_id: result.producer_id,
-                        kind: result.kind,
-                        rtp_parameters: result.rtp_parameters_json,
-                    };
-                    let _ = sender
-                        .lock()
-                        .await
-                        .send(Message::Text(send_msg(&response).unwrap()))
-                        .await;
-                }
-                Err(e) => {
-                    let error = SignalingMessage::Error {
-                        code: 5000,
-                        message: format!("Consumer creation failed: {e}"),
-                    };
-                    let _ = sender
-                        .lock()
-                        .await
-                        .send(Message::Text(send_msg(&error).unwrap()))
-                        .await;
-                }
+                Ok(result) => Some(SignalingMessage::Consumed {
+                    room_id: room_id.clone(),
+                    consumer_id: result.consumer_id,
+                    producer_id: result.producer_id,
+                    kind: result.kind,
+                    rtp_parameters: result.rtp_parameters_json,
+                }),
+                Err(e) => Some(SignalingMessage::Error {
+                    code: 5000,
+                    message: format!("Consumer creation failed: {e}"),
+                }),
             }
-            true
         }
-
-        _ => false,
+        _ => None,
     }
 }

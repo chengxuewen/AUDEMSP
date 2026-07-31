@@ -164,7 +164,17 @@ mod tests {
 
     #[tokio::test]
     async fn health_returns_200_with_components() {
-        let signaling = crate::signaling::SignalingServer::new(65536, None);
+        let signaling = {
+            #[cfg(feature = "sfu-mediasoup")]
+            {
+                let sfu = std::sync::Arc::new(crate::sfu::SfuManager::new().await.unwrap());
+                crate::signaling::SignalingServer::new(sfu, 65536, None)
+            }
+            #[cfg(not(feature = "sfu-mediasoup"))]
+            {
+                crate::signaling::SignalingServer::new(65536, None)
+            }
+        };
         let app = monitor_router(signaling);
 
         let response = app
@@ -191,7 +201,17 @@ mod tests {
 
     #[tokio::test]
     async fn ready_returns_200_when_healthy() {
-        let signaling = crate::signaling::SignalingServer::new(65536, None);
+        let signaling = {
+            #[cfg(feature = "sfu-mediasoup")]
+            {
+                let sfu = std::sync::Arc::new(crate::sfu::SfuManager::new().await.unwrap());
+                crate::signaling::SignalingServer::new(sfu, 65536, None)
+            }
+            #[cfg(not(feature = "sfu-mediasoup"))]
+            {
+                crate::signaling::SignalingServer::new(65536, None)
+            }
+        };
         let app = monitor_router(signaling);
 
         let response = app

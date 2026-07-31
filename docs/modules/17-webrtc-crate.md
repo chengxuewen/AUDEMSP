@@ -179,9 +179,11 @@ pub(crate) trait PcBackend: Send + Sync + 'static {
 | `add_ice_candidate` | ✅ FFI | ✅ webrtc-rs | ✅ no-op |
 | `connection_state` 等状态方法 | ✅ | ✅ | ✅ |
 | `close` | ✅ FFI | ✅ | ✅ |
-| `set_on_track` | ❌ 默认 no-op | ❌ 默认 no-op | ❌ 默认 no-op |
-| `set_on_data_channel` | ❌ 默认 no-op | ❌ 默认 no-op | ❌ 默认 no-op |
-| `set_on_ice_candidate` | ❌ 默认 no-op | ❌ 默认 no-op | ❌ 默认 no-op |
+| `set_on_track` | ✅ RealObserver (D173) | ❌ 默认 no-op | ❌ 默认 no-op |
+| `set_on_data_channel` | ✅ RealObserver | ❌ 默认 no-op | ❌ 默认 no-op |
+| `set_on_ice_candidate` | ✅ RealObserver | ❌ 默认 no-op | ❌ 默认 no-op |
+
+更新: 2026-07-31 — webrtc-sys 后端通过 RealObserver 已实现三个回调 (D173)，覆盖率表修正。
 
 ## 帧发送链路
 

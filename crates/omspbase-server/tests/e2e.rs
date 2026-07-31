@@ -456,6 +456,12 @@ async fn e2e_monitor_router_health_endpoint() {
     use omspbase_server::tokio::net::TcpListener;
     use omspbase_server::tokio::net::TcpStream;
 
+    #[cfg(feature = "sfu-mediasoup")]
+    let signaling = {
+        let sfu = std::sync::Arc::new(omspbase_server::sfu::SfuManager::new().await.unwrap());
+        SignalingServer::new(sfu, 65536, None)
+    };
+    #[cfg(not(feature = "sfu-mediasoup"))]
     let signaling = SignalingServer::new(65536, None);
     let app = monitor_router(signaling);
 
@@ -492,6 +498,12 @@ async fn e2e_monitor_router_stats_endpoint() {
     use omspbase_server::tokio::net::TcpListener;
     use omspbase_server::tokio::net::TcpStream;
 
+    #[cfg(feature = "sfu-mediasoup")]
+    let signaling = {
+        let sfu = std::sync::Arc::new(omspbase_server::sfu::SfuManager::new().await.unwrap());
+        SignalingServer::new(sfu, 65536, None)
+    };
+    #[cfg(not(feature = "sfu-mediasoup"))]
     let signaling = SignalingServer::new(65536, None);
     let app = monitor_router(signaling);
 
@@ -542,6 +554,12 @@ async fn e2e_monitor_router_metrics_endpoint() {
     use omspbase_server::tokio::net::TcpListener;
     use omspbase_server::tokio::net::TcpStream;
 
+    #[cfg(feature = "sfu-mediasoup")]
+    let signaling = {
+        let sfu = std::sync::Arc::new(omspbase_server::sfu::SfuManager::new().await.unwrap());
+        SignalingServer::new(sfu, 65536, None)
+    };
+    #[cfg(not(feature = "sfu-mediasoup"))]
     let signaling = SignalingServer::new(65536, None);
     let app = monitor_router(signaling);
 

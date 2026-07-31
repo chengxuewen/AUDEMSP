@@ -334,6 +334,7 @@ async fn handle_admin_sfu(
                         transport_id: created.transport_id,
                         ice_parameters: created.ice_parameters,
                         dtls_parameters: created.dtls_parameters,
+                        ice_candidates: Some(created.ice_candidates),
                     };
                     let _ = ws_sender
                         .send(Message::Text(serde_json::to_string(&response).unwrap()))
@@ -452,7 +453,25 @@ mod tests {
     use http::{Method, Request, StatusCode};
     use tower::util::ServiceExt;
 
-    fn make_state() -> AdminState {
+    #[cfg(feature = "sfu-mediasoup")]
+    async fn make_state() -> AdminState {
+        let sfu = Arc::new(crate::sfu::SfuManager::new().await.unwrap());
+        let signaling = crate::signaling::SignalingServer::new(sfu.clone(), 65536, None);
+        let (event_tx, _) = broadcast::channel(256);
+        AdminState {
+            signaling,
+            event_tx,
+            admin_jwt_secret: Some("test-admin-secret-32-byte-min".into()),
+            listen_host: "0.0.0.0".into(),
+            listen_port: 9800,
+            rate_limit: 100,
+            room_capacity: 10,
+            consumer_limit_per_stream: 50,
+            sfu_manager: sfu,
+        }
+    }
+    #[cfg(not(feature = "sfu-mediasoup"))]
+    async fn make_state() -> AdminState {
         let signaling = crate::signaling::SignalingServer::new(65536, None);
         let (event_tx, _) = broadcast::channel(256);
         AdminState {
@@ -492,7 +511,7 @@ mod tests {
 
     #[tokio::test]
     async fn stats_returns_200() {
-        let state = make_state();
+        let state = make_state().await;
         let token = admin_token(&state);
         let app = admin_router(state);
 
@@ -514,7 +533,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "auth temporarily disabled"]
     async fn stats_returns_401_without_token() {
-        let state = make_state();
+        let state = make_state().await;
         let app = admin_router(state);
 
         let response = app
@@ -534,7 +553,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "auth temporarily disabled"]
     async fn stats_returns_401_with_invalid_token() {
-        let state = make_state();
+        let state = make_state().await;
         let app = admin_router(state);
 
         let response = app
@@ -555,18 +574,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "auth temporarily disabled"]
     async fn stats_returns_503_without_secret() {
-        let signaling = crate::signaling::SignalingServer::new(65536, None);
-        let (event_tx, _) = broadcast::channel(256);
-        let state = AdminState {
-            signaling,
-            event_tx,
-            admin_jwt_secret: None,
-            listen_host: "0.0.0.0".into(),
-            listen_port: 9800,
-            rate_limit: 100,
-            room_capacity: 10,
-            consumer_limit_per_stream: 50,
-        };
+        let state = make_state().await;
         let app = admin_router(state);
 
         let response = app
@@ -586,7 +594,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_rooms_returns_devices_and_rooms() {
-        let state = make_state();
+        let state = make_state().await;
         let token = admin_token(&state);
         let app = admin_router(state);
 
@@ -607,7 +615,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_room_returns_404_for_missing() {
-        let state = make_state();
+        let state = make_state().await;
         let token = admin_token(&state);
         let app = admin_router(state);
 
@@ -628,7 +636,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_room_returns_404_for_missing() {
-        let state = make_state();
+        let state = make_state().await;
         let token = admin_token(&state);
         let app = admin_router(state);
 
@@ -649,7 +657,7 @@ mod tests {
 
     #[tokio::test]
     async fn kick_peer_returns_404_for_missing() {
-        let state = make_state();
+        let state = make_state().await;
         let token = admin_token(&state);
         let app = admin_router(state);
 

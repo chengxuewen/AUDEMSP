@@ -44,6 +44,7 @@ type OnTrackCallback = Arc<std::sync::Mutex<Option<Box<dyn Fn(RTCRtpReceiver) + 
 
 pub struct RTCPeerConnection {
     pub backend: ActivePc,
+    pub(crate) factory: Arc<crate::backend::ActiveFactory>,
     pub(crate) tracks: Arc<std::sync::Mutex<HashMap<String, TrackRef>>>,
     pub(crate) on_track_callback: OnTrackCallback,
 }
@@ -77,7 +78,9 @@ impl crate::traits::PeerConnectionApi for RTCPeerConnection {
     fn add_track(&self, track_id: &str, kind: TrackKind) -> Result<String, RTCError> {
         let mut tracks = self.tracks.lock().unwrap();
         if tracks.len() >= MAX_TRACKS { return Err(RTCError::Track("max tracks reached".into())); }
-        let sender = TrackSender::new(track_id.to_string(), kind);
+
+        let sender = self.create_track_sender(track_id, kind);
+
         let id = track_id.to_string();
         tracks.insert(id.clone(), TrackRef::Sender(sender));
         self.backend.register_track(track_id, kind)?;
@@ -105,6 +108,67 @@ impl crate::traits::PeerConnectionApi for RTCPeerConnection {
     }
 }
 
+// ── Internal helpers + unified callback API ──
+
+impl RTCPeerConnection {
+    /// Create a TrackSender, binding to real backend via factory when available.
+    fn create_track_sender(&self, track_id: &str, kind: TrackKind) -> TrackSender {
+        if kind == TrackKind::Video {
+            #[cfg(feature = "backend-webrtc-sys")]
+            {
+                let (track_backend, media_track) = self.factory.create_video_track();
+                self.backend.stage_media_track(media_track);
+                return TrackSender {
+                    id: track_id.to_string(),
+                    kind,
+                    audio_config: None,
+                    backend: track_backend,
+                };
+            }
+            #[cfg(not(feature = "backend-webrtc-sys"))]
+            {
+                let (backend, _media_track) = self.factory.create_video_track();
+                return TrackSender {
+                    id: track_id.to_string(),
+                    kind,
+                    audio_config: None,
+                    backend,
+                };
+            }
+        }
+        TrackSender::new(track_id.to_string(), kind)
+    }
+
+    /// Extract the local DTLS fingerprint from the local description SDP.
+    /// Returns colon:hex string from `a=fingerprint:sha-256 XX:XX:...` line.
+    pub fn local_dtls_fingerprint(&self) -> Option<String> {
+        let sdp = self.backend.local_description_sdp()?;
+        let fp_line = sdp.lines().find(|l| l.starts_with("a=fingerprint:"))?;
+        let colon = fp_line.find(':')?;
+        let after_prefix = &fp_line[colon + 1..];
+        let space = after_prefix.find(' ')?;
+        Some(after_prefix[space + 1..].to_string())
+    }
+
+    /// Register callback for ICE connection state changes.
+    /// Available on all backends — non cfg-gated.
+    pub fn on_ice_connection_state_change<F>(&self, callback: F)
+    where
+        F: Fn(RTCIceConnectionState) + Send + Sync + 'static,
+    {
+        self.backend.set_on_ice_connection_state_change(Box::new(callback));
+    }
+
+    /// Register callback for peer connection state changes.
+    /// Available on all backends — non cfg-gated.
+    pub fn on_peer_connection_state_change<F>(&self, callback: F)
+    where
+        F: Fn(RTCPeerConnectionState) + Send + Sync + 'static,
+    {
+        self.backend.set_on_peer_connection_state_change(Box::new(callback));
+    }
+}
+
 // ── webrtc-rs specific callback methods ──
 
 #[cfg(feature = "backend-webrtc-rs")]
@@ -121,7 +185,12 @@ impl RTCPeerConnection {
 
 impl Clone for RTCPeerConnection {
     fn clone(&self) -> Self {
-        Self { backend: self.backend.clone(), tracks: self.tracks.clone(), on_track_callback: Arc::clone(&self.on_track_callback) }
+        Self {
+            backend: self.backend.clone(),
+            factory: Arc::clone(&self.factory),
+            tracks: self.tracks.clone(),
+            on_track_callback: Arc::clone(&self.on_track_callback),
+        }
     }
 }
 

@@ -64,6 +64,25 @@ pub(crate) trait PcBackend: Send + Sync + 'static {
         &self, _cb: Box<dyn Fn(String, i32, String) + Send + Sync + 'static>,
     ) {
     }
+
+    /// Register callback for ICE connection state changes (monitoring).
+    fn set_on_ice_connection_state_change(
+        &self,
+        _cb: Box<dyn Fn(RTCIceConnectionState) + Send + Sync + 'static>,
+    ) {
+    }
+
+    /// Register callback for peer connection state changes (monitoring).
+    fn set_on_peer_connection_state_change(
+        &self,
+        _cb: Box<dyn Fn(RTCPeerConnectionState) + Send + Sync + 'static>,
+    ) {
+    }
+
+    /// Return the local SDP string if available.
+    fn local_description_sdp(&self) -> Option<String> {
+        None
+    }
 }
 
 pub(crate) trait DcBackend: Send + Sync + 'static {

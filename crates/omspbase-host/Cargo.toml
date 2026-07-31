@@ -17,9 +17,10 @@ gstreamer = { version = "0.23", optional = true }
 gstreamer-app = { version = "0.23", optional = true }
 gstreamer-video = { version = "0.23", optional = true }
 
-# WebRTC (omspbase-webrtc thin wrapper around webrtc-sys libwebrtc)
-omspbase-webrtc = { path = "../omspbase-webrtc", default-features = false, features = ["backend-webrtc-rs"] }
-webrtc = "0.12"
+# WebRTC — only via omspbase-webrtc abstraction (C12)
+omspbase-webrtc = { path = "../omspbase-webrtc", features = ["backend-webrtc-sys"] }
+# Legacy P2P webrtc-rs dependency — gated behind webrtc-p2p feature
+webrtc = { version = "0.12", optional = true }
 
 # HTTP + WebSocket
 axum = { version = "0.7", features = ["ws"] }
@@ -37,7 +38,6 @@ tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 prometheus-client = "0.22"
 anyhow = "1"
 
-
 # Crypto (HMAC for DataChannel)
 hmac = "0.12"
 sha2 = "0.10"
@@ -52,14 +52,18 @@ bytes = "1"
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
+# omspbase-server for SFU integration tests (optional, Linux only)
+omspbase-server = { path = "../omspbase-server", optional = true }
+
 
 [features]
 default = []
 gstreamer = ["dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video"]
 production = ["gstreamer"]
-# Backward-compatible cfg gate for transport.rs fallback path
-webrtc = []
-
+# Legacy P2P WebRTC transport (webrtc-rs)
+webrtc-p2p = ["dep:webrtc"]
+# SFU integration tests (Linux only, requires mediasoup)
+sfu-mediasoup = ["dep:omspbase-server", "omspbase-server/sfu-mediasoup"]
 [dev-dependencies]
 tempfile = "3"
-
+tokio-tungstenite = { version = "0.24", features = ["connect"] }

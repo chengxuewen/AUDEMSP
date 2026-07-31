@@ -69,6 +69,9 @@ pub enum SignalingMessage {
         transport_id: String,
         ice_parameters: IceParameters,
         dtls_parameters: DtlsParameters,
+        /// ICE candidates for the transport (None for backward compat).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ice_candidates: Option<Vec<IceCandidate>>,
     },
 
     /// Client sends back DTLS parameters to connect the transport.
@@ -170,6 +173,24 @@ pub struct Fingerprint {
     pub algorithm: String,
     /// hex-encoded fingerprint value
     pub value: String,
+}
+
+/// An ICE candidate for WebRTC transport connection.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IceCandidate {
+    /// IP address of the candidate.
+    pub ip: String,
+    /// Port of the candidate.
+    pub port: u16,
+    /// Transport protocol ("udp" or "tcp").
+    pub protocol: String,
+    /// Unique identifier for the candidate.
+    pub foundation: String,
+    /// Assigned priority of the candidate.
+    pub priority: u32,
+    /// Type of candidate ("host", "srflx", "prflx", "relay").
+    pub candidate_type: String,
 }
 
 /// Role of a peer in a room.
@@ -405,6 +426,7 @@ mod tests {
                 }],
                 role: "auto".into(),
             },
+            ice_candidates: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"web_rtc_transport_created""#));

@@ -247,11 +247,13 @@ impl MediaSource for GstCaptureSource {
 // ── WebrtcOutputSink ──
 // Always available — WebrtcTransport is not feature-gated.
 
+#[cfg(feature = "webrtc-p2p")]
 pub struct WebrtcOutputSink {
     _drain_handle: tokio::task::JoinHandle<()>,
     frame_tx: mpsc::Sender<Vec<u8>>,
 }
 
+#[cfg(feature = "webrtc-p2p")]
 impl WebrtcOutputSink {
     pub fn new(
         transport: Arc<crate::webrtc_transport::WebrtcTransport>,
@@ -272,6 +274,7 @@ impl WebrtcOutputSink {
     }
 }
 
+#[cfg(feature = "webrtc-p2p")]
 impl NodeInfo for WebrtcOutputSink {
     fn name(&self) -> &str {
         "webrtc-output"
@@ -293,6 +296,7 @@ impl NodeInfo for WebrtcOutputSink {
     }
 }
 
+#[cfg(feature = "webrtc-p2p")]
 impl PipelineNode for WebrtcOutputSink {
     fn on_start(&mut self) -> Result<()> {
         Ok(())
@@ -303,6 +307,7 @@ impl PipelineNode for WebrtcOutputSink {
     }
 }
 
+#[cfg(feature = "webrtc-p2p")]
 impl MediaSink for WebrtcOutputSink {
     type Input = InternalPacket;
 

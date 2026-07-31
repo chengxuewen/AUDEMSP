@@ -30,6 +30,7 @@ use crate::RTCError;
 pub(crate) struct WebrtcSysPc {
     pc: cxx::SharedPtr<webrtc_sys::peer_connection::ffi::PeerConnection>,
     callbacks: Arc<ObserverCallbacks>,
+    local_sdp: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl std::fmt::Debug for WebrtcSysPc {
@@ -161,8 +162,12 @@ impl PcBackend for WebrtcSysPc {
             }
         });
 
-        rx.await
-            .map_err(|_| RTCError::Internal("oneshot cancelled".into()))?
+        let _result = rx.await
+            .map_err(|_| RTCError::Internal("oneshot cancelled".into()))?;
+
+        *self.local_sdp.lock().unwrap() = Some(desc.sdp.clone());
+
+        _result
     }
 
     async fn set_remote_description(&self, desc: &RTCSessionDescription) -> Result<(), RTCError> {
@@ -308,11 +313,49 @@ impl PcBackend for WebrtcSysPc {
         *self.callbacks.on_track.lock().unwrap() = Some(cb);
     }
 
+
+    fn set_on_ice_connection_state_change(
+        &self,
+        cb: Box<dyn Fn(RTCIceConnectionState) + Send + Sync + 'static>,
+    ) {
+        *self.callbacks.on_ice_connection_state_change.lock().unwrap() = Some(cb);
+    }
+
+    fn set_on_peer_connection_state_change(
+        &self,
+        cb: Box<dyn Fn(RTCPeerConnectionState) + Send + Sync + 'static>,
+    ) {
+        *self.callbacks.on_peer_connection_state_change.lock().unwrap() = Some(cb);
+    }
+
+    fn local_description_sdp(&self) -> Option<String> {
+        self.local_sdp.lock().unwrap().clone()
+    }
+
+    /// Override: consume a staged media track and add it to libwebrtc.
+    fn register_track(
+        &self, _track_id: &str, _kind: TrackKind,
+    ) -> Result<(), RTCError> {
+        let mut guard = self.callbacks.staged_media_tracks.lock().unwrap();
+        while let Some(media_track) = guard.pop() {
+            self.pc.add_track(media_track, &vec![]);
+        }
+        Ok(())
+    }
+
 }
 
 // ── create_data_channel (method on WebrtcSysPc, called directly by peer.rs) ──
 
 impl WebrtcSysPc {
+    /// Stage a media track to be consumed by the next register_track call.
+    pub(crate) fn stage_media_track(
+        &self,
+        track: cxx::SharedPtr<webrtc_sys::media_stream_track::ffi::MediaStreamTrack>,
+    ) {
+        self.callbacks.staged_media_tracks.lock().unwrap().push(track);
+    }
+
     pub(crate) async fn create_data_channel(
         &self,
         label: &str,
@@ -528,6 +571,10 @@ pub(crate) struct ObserverCallbacks {
     pub on_track: Mutex<Option<Box<dyn Fn(TrackReceiver) + Send + Sync + 'static>>>,
     /// Retain NativeVideoSink references to prevent GC
     pub video_sinks: Mutex<Vec<cxx::SharedPtr<webrtc_sys::video_track::ffi::NativeVideoSink>>>,
+    pub on_ice_connection_state_change: Mutex<Option<Box<dyn Fn(RTCIceConnectionState) + Send + Sync + 'static>>>,
+    pub on_peer_connection_state_change: Mutex<Option<Box<dyn Fn(RTCPeerConnectionState) + Send + Sync + 'static>>>,
+    /// Staged media tracks awaiting register_track consumption (webrtc-sys only).
+    pub staged_media_tracks: Mutex<Vec<cxx::SharedPtr<webrtc_sys::media_stream_track::ffi::MediaStreamTrack>>>,
 }
 
 /// Real observer that forwards libwebrtc events to Rust callbacks.
@@ -543,24 +590,37 @@ impl webrtc_sys::peer_connection_factory::PeerConnectionObserver for RealObserve
     fn on_renegotiation_needed(&self) {}
     fn on_negotiation_needed_event(&self, _: u32) {}
     fn on_ice_connection_change(&self, state: webrtc_sys::peer_connection::ffi::IceConnectionState) {
-        let state_name = match state {
-            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionNew => "New",
-            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionChecking => "Checking",
-            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionConnected => "Connected",
-            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionCompleted => "Completed",
-            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionFailed => "Failed",
-            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionDisconnected => "Disconnected",
-            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionClosed => "Closed",
-            _ => "Unknown",
+        let mapped = match state {
+            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionNew => RTCIceConnectionState::New,
+            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionChecking => RTCIceConnectionState::Checking,
+            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionConnected => RTCIceConnectionState::Connected,
+            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionCompleted => RTCIceConnectionState::Completed,
+            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionFailed => RTCIceConnectionState::Failed,
+            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionDisconnected => RTCIceConnectionState::Disconnected,
+            webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionClosed => RTCIceConnectionState::Closed,
+            _ => RTCIceConnectionState::New,
         };
-        if matches!(state, webrtc_sys::peer_connection::ffi::IceConnectionState::IceConnectionFailed) {
-            tracing::warn!("ICE connection state: {state_name} — ICE restart may be needed");
-        } else {
-            tracing::info!("ICE connection state changed: {state_name}");
+        tracing::info!("ICE connection state changed: {:?}", mapped);
+        if let Some(ref cb) = *self.callbacks.on_ice_connection_state_change.lock().unwrap() {
+            cb(mapped);
         }
     }
     fn on_standardized_ice_connection_change(&self, _: webrtc_sys::peer_connection::ffi::IceConnectionState) {}
-    fn on_connection_change(&self, _: webrtc_sys::peer_connection::ffi::PeerConnectionState) {}
+    fn on_connection_change(&self, state: webrtc_sys::peer_connection::ffi::PeerConnectionState) {
+        let mapped = match state {
+            webrtc_sys::peer_connection::ffi::PeerConnectionState::New => RTCPeerConnectionState::New,
+            webrtc_sys::peer_connection::ffi::PeerConnectionState::Connecting => RTCPeerConnectionState::Connecting,
+            webrtc_sys::peer_connection::ffi::PeerConnectionState::Connected => RTCPeerConnectionState::Connected,
+            webrtc_sys::peer_connection::ffi::PeerConnectionState::Disconnected => RTCPeerConnectionState::Disconnected,
+            webrtc_sys::peer_connection::ffi::PeerConnectionState::Failed => RTCPeerConnectionState::Failed,
+            webrtc_sys::peer_connection::ffi::PeerConnectionState::Closed => RTCPeerConnectionState::Closed,
+            _ => RTCPeerConnectionState::New,
+        };
+        tracing::info!("PC connection state changed: {:?}", mapped);
+        if let Some(ref cb) = *self.callbacks.on_peer_connection_state_change.lock().unwrap() {
+            cb(mapped);
+        }
+    }
     fn on_ice_gathering_change(&self, _: webrtc_sys::peer_connection::ffi::IceGatheringState) {}
     fn on_ice_candidate(&self, _: cxx::SharedPtr<webrtc_sys::jsep::ffi::IceCandidate>) {}
     fn on_ice_candidate_error(&self, _: String, _: i32, _: String, _: i32, _: String) {}
@@ -662,6 +722,12 @@ impl Default for WebrtcSysFactory {
         let factory =
             webrtc_sys::peer_connection_factory::ffi::create_peer_connection_factory();
         Self { factory }
+}
+}
+
+impl Clone for WebrtcSysFactory {
+    fn clone(&self) -> Self {
+        Self { factory: self.factory.clone() }
     }
 }
 
@@ -709,6 +775,9 @@ impl WebrtcSysFactory {
         let callbacks = Arc::new(ObserverCallbacks {
             on_track: Mutex::new(None),
             video_sinks: Mutex::new(Vec::new()),
+            on_ice_connection_state_change: Mutex::new(None),
+            on_peer_connection_state_change: Mutex::new(None),
+            staged_media_tracks: Mutex::new(Vec::new()),
         });
         let observer = webrtc_sys::peer_connection_factory::PeerConnectionObserverWrapper::new(
             Arc::new(RealObserver { callbacks: callbacks.clone() }),
@@ -719,7 +788,7 @@ impl WebrtcSysFactory {
             .create_peer_connection(rtc_config, Box::new(observer))
             .map_err(|e| RTCError::RTCPeerConnection(e.what().to_owned()))?;
 
-        Ok(WebrtcSysPc { pc, callbacks })
+        Ok(WebrtcSysPc { pc, callbacks, local_sdp: Arc::new(std::sync::Mutex::new(None)) })
     }
 
     /// Create a video track with a new VideoTrackSource.
