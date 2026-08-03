@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pixi-init.sh — Bootstrap OMSPBase pixi development environment
+# pixi-init.sh — Bootstrap AUDEMSP pixi development environment
 # Installs pixi (via pixi-install.sh) and project dependencies
 # Usage: scripts/pixi-init.sh
 set -euo pipefail
@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR_PINIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "${SCRIPT_DIR_PINIT}/_common.sh"
 
-echo "=== OMSPBase pixi environment setup ==="
+echo "=== AUDEMSP pixi environment setup ==="
 echo "Project root: ${PROJECT_ROOT}"
 
 # --- Step 1: Install pixi binary ---
@@ -24,7 +24,7 @@ if grep -q "rsproxy" "${CARGO_CONFIG}" 2>/dev/null; then
 else
     cat >> "${CARGO_CONFIG}" << 'CARGO_EOF'
 
-# OMSPBase: crates.io mirror for China (rsproxy.cn by ByteDance)
+# AUDEMSP: crates.io mirror for China (rsproxy.cn by ByteDance)
 # D208: sparse 协议必须用 /index/ 路径（/crates.io-index/ 是 git 协议地址，sparse 下 404）
 [source.crates-io]
 replace-with = 'rsproxy-sparse'
@@ -58,6 +58,6 @@ if ! "${PIXI_BIN}" install --manifest-path "${PROJECT_ROOT}/pixi.toml"; then
 fi
 
 echo ""
-echo "=== OMSPBase pixi environment ready ==="
+echo "=== AUDEMSP pixi environment ready ==="
 echo "Activate with:  source pixi.sh"
 echo "Or run tasks:   pixi run build | pixi run test | pixi run lint"

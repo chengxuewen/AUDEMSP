@@ -5,7 +5,7 @@ export default function Layout() {
   return (
     <div className="layout">
       <header className="header">
-        <span className="logo">📡 OMSPBase Admin</span>
+        <span className="logo">📡 AUDEMSP Admin</span>
         <span className="version">v0.1.0</span>
       </header>
       <div className="main">

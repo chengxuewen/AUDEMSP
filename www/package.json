@@ -1,12 +1,12 @@
 {
-  "name": "omspbase-admin",
+  "name": "audemsp-admin",
   "private": true,
   "packageManager": "pnpm@10.32.1",
   "scripts": {
     "dev": "turbo run dev",
-    "dev:admin": "turbo run dev --filter=@omspbase/admin",
+    "dev:admin": "turbo run dev --filter=@audemsp/admin",
     "build": "turbo run build",
-    "build:admin": "turbo run build --filter=@omspbase/admin",
+    "build:admin": "turbo run build --filter=@audemsp/admin",
     "lint": "turbo run lint"
   },
   "devDependencies": {

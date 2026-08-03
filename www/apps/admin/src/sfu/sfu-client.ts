@@ -69,7 +69,7 @@ export class SfuConsumerClient {
     this.ws = new WebSocket(wsUrl);
 
     // Auth: send PSK as raw string (not JSON)
-    const psk = this.token || 'omspbase-dev';
+    const psk = this.token || 'audemsp-dev';
     const authPromise = new Promise<void>((resolve, reject) => {
       this.ws!.onopen = () => {
         this.ws!.send(psk);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bootstrap.sh — First-time setup for OMSPBase development
+# bootstrap.sh — First-time setup for AUDEMSP development
 # Usage: source bootstrap.sh
 #
 # This is the user-facing entry point. Run once per machine:
@@ -12,7 +12,7 @@ START_TIME=$(date +%s)
 BOOTSTRAP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 echo "================================================"
-echo "  OMSPBase Development Environment Bootstrap"
+echo "  AUDEMSP Development Environment Bootstrap"
 echo "================================================"
 echo ""
 
@@ -53,7 +53,7 @@ ELAPSED=$((END_TIME - START_TIME))
 
 echo ""
 echo "================================================"
-echo "  OMSPBase environment ready! (${ELAPSED}s)"
+echo "  AUDEMSP environment ready! (${ELAPSED}s)"
 echo "================================================"
 echo ""
 echo "Next time, just run:  source pixi.sh"

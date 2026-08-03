@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check.sh — Quick SFU compile check for OMSPBase
+# check.sh — Quick SFU compile check for AUDEMSP
 # Usage: bash check.sh
 set -euo pipefail
 
@@ -16,8 +16,8 @@ if [ -z "${PIXI}" ]; then
     exit 1
 fi
 
-echo "=== Checking omspbase-server (sfu-mediasoup) ==="
-bash scripts/cargo-sfu.sh check -p omspbase-server --features sfu-mediasoup 2>&1
+echo "=== Checking audemsp-server (sfu-mediasoup) ==="
+bash scripts/cargo-sfu.sh check -p audemsp-server --features sfu-mediasoup 2>&1
 echo ""
-echo "=== Checking omspbase-server (no features) ==="
-bash scripts/cargo-sfu.sh check -p omspbase-server --no-default-features 2>&1
+echo "=== Checking audemsp-server (no features) ==="
+bash scripts/cargo-sfu.sh check -p audemsp-server --no-default-features 2>&1

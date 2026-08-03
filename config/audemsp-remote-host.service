@@ -1,0 +1,18 @@
+[Unit]
+Description=AUDEMSP Host Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=notify
+ExecStart=/opt/audemedia/bin/audemedia-host --config /opt/audemedia/etc/host.conf
+Restart=always
+RestartSec=5
+WatchdogSec=30
+StandardOutput=journal
+StandardError=journal
+Environment=RUST_LOG=info
+Environment=GST_PLUGIN_PATH=/opt/audemedia/lib/gstreamer-1.0
+
+[Install]
+WantedBy=multi-user.target

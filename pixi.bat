@@ -1,5 +1,5 @@
 @echo off
-REM pixi.bat — Activate OMSPBase pixi environment (Windows)
+REM pixi.bat — Activate AUDEMSP pixi environment (Windows)
 REM Usage: pixi.bat
 
 set "SCRIPT_DIR=%~dp0"

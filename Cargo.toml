@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/omspbase-host", "crates/omspbase-client", "crates/omspbase-server", "crates/omspbase-common", "crates/omspbase-webrtc", "crates/omspbase-media", "crates/omspbase-codec"]
+members = ["crates/audemsp-host", "crates/audemsp-client", "crates/audemsp-server", "crates/audemsp-common", "crates/audemsp-webrtc", "crates/audemsp-media", "crates/audemsp-codec"]
 resolver = "3"
 
 [workspace.package]

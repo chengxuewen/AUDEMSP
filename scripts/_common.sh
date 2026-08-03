@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# _common.sh — shared utility for OMSPBase scripts
+# _common.sh — shared utility for AUDEMSP scripts
 # Source this from other scripts: source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 set -euo pipefail
 
 # Guard against double-sourcing
-if [ -n "${_OMSPBASE_COMMON_SH_LOADED:-}" ]; then
+if [ -n "${_AUDEMSP_COMMON_SH_LOADED:-}" ]; then
     return 0
 fi
-_OMSPBASE_COMMON_SH_LOADED=true
+_AUDEMSP_COMMON_SH_LOADED=true
 
 # SCRIPT_DIR detects the CALLER's directory (BASH_SOURCE[1]), not this file
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}")" && pwd -P)"

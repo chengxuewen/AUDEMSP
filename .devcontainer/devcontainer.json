@@ -1,5 +1,5 @@
 {
-  "name": "OMSPBase SFU Dev",
+  "name": "AUDEMSP SFU Dev",
   "dockerComposeFile": "../docker-compose.dev.yml",
   "service": "server",
   "workspaceFolder": "/workspace",

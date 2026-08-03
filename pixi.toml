@@ -1,5 +1,5 @@
 [workspace]
-name = "OMSPBase"
+name = "AUDEMSP"
 channels = ["conda-forge"]
 platforms = ["osx-64", "osx-arm64", "linux-64"]
 version = "0.1.0"
@@ -36,15 +36,15 @@ openssl = ">=3,<4"
 [feature.dev.tasks]
 # === Cargo tasks ═════════════════════════════════════════════════
 # 不需要 mediasoup 的 crate — 原生编译 (所有平台)
-check = "cargo check --workspace --exclude omspbase-server"
-build = "cargo build --workspace --exclude omspbase-server"
-test = "cargo test --workspace --exclude omspbase-server"
+check = "cargo check --workspace --exclude audemsp-server"
+build = "cargo build --workspace --exclude audemsp-server"
+test = "cargo test --workspace --exclude audemsp-server"
 lint = "cargo clippy --workspace --all-targets -- -D warnings"
 
-# omspbase-server — Docker 编译 (mediasoup C++ Worker 需要 Linux + meson)
-check-server = "sh -c 'scripts/docker-cargo.sh check -p omspbase-server --features sfu-mediasoup'"
-build-server = "sh -c 'scripts/docker-cargo.sh build -p omspbase-server --features sfu-mediasoup'"
-test-server = "sh -c 'scripts/docker-cargo.sh test -p omspbase-server --features sfu-mediasoup'"
+# audemsp-server — Docker 编译 (mediasoup C++ Worker 需要 Linux + meson)
+check-server = "sh -c 'scripts/docker-cargo.sh check -p audemsp-server --features sfu-mediasoup'"
+build-server = "sh -c 'scripts/docker-cargo.sh build -p audemsp-server --features sfu-mediasoup'"
+test-server = "sh -c 'scripts/docker-cargo.sh test -p audemsp-server --features sfu-mediasoup'"
 
 # Linux 原生备选 (需 wrapdb.mesonbuild.com 可达)
 check-native = "sh -c 'scripts/cargo-sfu.sh check --workspace'"
@@ -54,10 +54,10 @@ build-native = "sh -c 'scripts/cargo-sfu.sh build --workspace'"
 format = "cargo fmt --all -- --check"
 format-fix = "cargo fmt --all"
 audit = "cargo deny check"
-coverage = "cargo tarpaulin --workspace --exclude omspbase-server"
+coverage = "cargo tarpaulin --workspace --exclude audemsp-server"
 coverage = "cargo tarpaulin --workspace --out Html --out Lcov"
-test-gstreamer = "LD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$LD_LIBRARY_PATH DYLD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$DYLD_LIBRARY_PATH cargo test -p omspbase-codec --features backend-gstreamer"
-test-sfu = "cargo test -p omspbase-server --features sfu-mediasoup"
+test-gstreamer = "LD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$LD_LIBRARY_PATH DYLD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$DYLD_LIBRARY_PATH cargo test -p audemsp-codec --features backend-gstreamer"
+test-sfu = "cargo test -p audemsp-server --features sfu-mediasoup"
 
 # Docker compose tasks
 server = "docker compose up"

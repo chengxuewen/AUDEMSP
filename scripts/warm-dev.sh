@@ -17,6 +17,6 @@ docker compose -f "$PROJECT_ROOT/docker-compose.dev.yml" build server
 # 2. 预热 target 卷：编译一次 server 依赖（首次 15-28 min，之后秒级增量）
 log "Warming cargo-cache volume (first run compiles deps)..."
 docker compose -f "$PROJECT_ROOT/docker-compose.dev.yml" run --rm server \
-    cargo check --bin omspbase-server --features sfu-mediasoup,admin-dashboard
+    cargo check --bin audemsp-server --features sfu-mediasoup,admin-dashboard
 
 log "Done. Dev environment warm."

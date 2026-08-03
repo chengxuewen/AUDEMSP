@@ -8,13 +8,13 @@ set -eo pipefail
 SCRIPT_DIR_PSHELL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "${SCRIPT_DIR_PSHELL}/_common.sh"
 
-echo "Activating OMSPBase pixi environment..."
+echo "Activating AUDEMSP pixi environment..."
 # Pre-set vars that conda completion scripts reference without defaults
 export ZSH_VERSION="${ZSH_VERSION:-}"
 eval "$("${PIXI_BIN}" shell-hook --manifest-path "${PROJECT_ROOT}/pixi.toml" --shell bash)"
 
 echo ""
-echo "OMSPBase environment active."
+echo "AUDEMSP environment active."
 echo "  pixi run build     — cargo build --workspace"
 echo "  pixi run test      — cargo test --workspace"
 echo "  pixi run lint      — cargo clippy + fmt check"

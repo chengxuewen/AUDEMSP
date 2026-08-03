@@ -1,7 +1,7 @@
-# OMSPBase Caddy reverse proxy configuration
+# AUDEMSP Caddy reverse proxy configuration
 # Dev: .local domain — Caddy auto-generates self-signed cert
 # Prod: replace with real domain for Let's Encrypt TLS
-omspbase.local, localhost {
+audemsp.local, localhost {
 
 	# Reverse proxy WebSocket signaling to server
 	# Caddy 2 automatically handles WebSocket upgrades (no special config needed)

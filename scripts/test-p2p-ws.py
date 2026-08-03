@@ -6,7 +6,7 @@ import sys
 import websockets
 
 SERVER_URL = "ws://localhost:9800/ws"
-PSK = "omspbase-dev"
+PSK = "audemsp-dev"
 ROOM_ID = "test-p2p-room"
 
 

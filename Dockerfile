@@ -40,23 +40,23 @@ RUN pip3 install -i https://pypi.tuna.tsinghua.edu.cn/simple 'meson>=1.1.0,<2'
 FROM base AS dev
 WORKDIR /workspace
 COPY Cargo.toml Cargo.lock ./
-COPY crates/omspbase-common/Cargo.toml crates/omspbase-common/
-COPY crates/omspbase-media/Cargo.toml crates/omspbase-media/
-COPY crates/omspbase-webrtc/Cargo.toml crates/omspbase-webrtc/
-COPY crates/omspbase-codec/Cargo.toml crates/omspbase-codec/
-COPY crates/omspbase-server/Cargo.toml crates/omspbase-server/
-COPY crates/omspbase-host/Cargo.toml crates/omspbase-host/
-COPY crates/omspbase-client/Cargo.toml crates/omspbase-client/
+COPY crates/audemsp-common/Cargo.toml crates/audemsp-common/
+COPY crates/audemsp-media/Cargo.toml crates/audemsp-media/
+COPY crates/audemsp-webrtc/Cargo.toml crates/audemsp-webrtc/
+COPY crates/audemsp-codec/Cargo.toml crates/audemsp-codec/
+COPY crates/audemsp-server/Cargo.toml crates/audemsp-server/
+COPY crates/audemsp-host/Cargo.toml crates/audemsp-host/
+COPY crates/audemsp-client/Cargo.toml crates/audemsp-client/
 # dummy src 全建 — cargo fetch 要求依赖 crate 有 targets（缺 src 报 no targets specified）
 # 且 media crate 声明了 [[example]]（square-gen-egui/viewer/square-gen）→ 需 touch 对应文件
-RUN mkdir -p crates/omspbase-common/src && touch crates/omspbase-common/src/lib.rs && \
-    mkdir -p crates/omspbase-server/src && echo 'fn main() {}' > crates/omspbase-server/src/main.rs && \
-    mkdir -p crates/omspbase-media/src crates/omspbase-webrtc/src crates/omspbase-codec/src \
-             crates/omspbase-host/src crates/omspbase-client/src && \
-    touch crates/omspbase-media/src/lib.rs crates/omspbase-webrtc/src/lib.rs \
-          crates/omspbase-codec/src/lib.rs crates/omspbase-host/src/lib.rs crates/omspbase-client/src/lib.rs && \
-    mkdir -p crates/omspbase-media/examples && touch crates/omspbase-media/examples/square-gen-egui.rs \
-          crates/omspbase-media/examples/viewer.rs crates/omspbase-media/examples/square-gen.rs
+RUN mkdir -p crates/audemsp-common/src && touch crates/audemsp-common/src/lib.rs && \
+    mkdir -p crates/audemsp-server/src && echo 'fn main() {}' > crates/audemsp-server/src/main.rs && \
+    mkdir -p crates/audemsp-media/src crates/audemsp-webrtc/src crates/audemsp-codec/src \
+             crates/audemsp-host/src crates/audemsp-client/src && \
+    touch crates/audemsp-media/src/lib.rs crates/audemsp-webrtc/src/lib.rs \
+          crates/audemsp-codec/src/lib.rs crates/audemsp-host/src/lib.rs crates/audemsp-client/src/lib.rs && \
+    mkdir -p crates/audemsp-media/examples && touch crates/audemsp-media/examples/square-gen-egui.rs \
+          crates/audemsp-media/examples/viewer.rs crates/audemsp-media/examples/square-gen.rs
 RUN cargo fetch
 RUN rm -rf crates/*/src
 COPY . .
@@ -68,27 +68,27 @@ WORKDIR /workspace
 
 # 1. Copy dependency manifests first (layer caching)
 COPY Cargo.toml Cargo.lock ./
-COPY crates/omspbase-common/Cargo.toml crates/omspbase-common/
-COPY crates/omspbase-media/Cargo.toml crates/omspbase-media/
-COPY crates/omspbase-webrtc/Cargo.toml crates/omspbase-webrtc/
-COPY crates/omspbase-codec/Cargo.toml crates/omspbase-codec/
-COPY crates/omspbase-server/Cargo.toml crates/omspbase-server/
-COPY crates/omspbase-host/Cargo.toml crates/omspbase-host/
-COPY crates/omspbase-client/Cargo.toml crates/omspbase-client/
+COPY crates/audemsp-common/Cargo.toml crates/audemsp-common/
+COPY crates/audemsp-media/Cargo.toml crates/audemsp-media/
+COPY crates/audemsp-webrtc/Cargo.toml crates/audemsp-webrtc/
+COPY crates/audemsp-codec/Cargo.toml crates/audemsp-codec/
+COPY crates/audemsp-server/Cargo.toml crates/audemsp-server/
+COPY crates/audemsp-host/Cargo.toml crates/audemsp-host/
+COPY crates/audemsp-client/Cargo.toml crates/audemsp-client/
 
 # 2. Create dummy sources to build & cache dependencies (全部 member + media [[example]] 声明文件)
-RUN mkdir -p crates/omspbase-common/src && touch crates/omspbase-common/src/lib.rs && \
-    mkdir -p crates/omspbase-server/src && echo 'fn main() {}' > crates/omspbase-server/src/main.rs && \
-    mkdir -p crates/omspbase-media/src crates/omspbase-webrtc/src crates/omspbase-codec/src \
-             crates/omspbase-host/src crates/omspbase-client/src && \
-    touch crates/omspbase-media/src/lib.rs crates/omspbase-webrtc/src/lib.rs \
-          crates/omspbase-codec/src/lib.rs crates/omspbase-host/src/lib.rs crates/omspbase-client/src/lib.rs && \
-    mkdir -p crates/omspbase-media/examples && touch crates/omspbase-media/examples/square-gen-egui.rs \
-          crates/omspbase-media/examples/viewer.rs crates/omspbase-media/examples/square-gen.rs
+RUN mkdir -p crates/audemsp-common/src && touch crates/audemsp-common/src/lib.rs && \
+    mkdir -p crates/audemsp-server/src && echo 'fn main() {}' > crates/audemsp-server/src/main.rs && \
+    mkdir -p crates/audemsp-media/src crates/audemsp-webrtc/src crates/audemsp-codec/src \
+             crates/audemsp-host/src crates/audemsp-client/src && \
+    touch crates/audemsp-media/src/lib.rs crates/audemsp-webrtc/src/lib.rs \
+          crates/audemsp-codec/src/lib.rs crates/audemsp-host/src/lib.rs crates/audemsp-client/src/lib.rs && \
+    mkdir -p crates/audemsp-media/examples && touch crates/audemsp-media/examples/square-gen-egui.rs \
+          crates/audemsp-media/examples/viewer.rs crates/audemsp-media/examples/square-gen.rs
 
 # 3. Fetch and build dependencies (cached — only re-runs on Cargo.toml changes)
 RUN cargo fetch && \
-    cargo build --release --bin omspbase-server --features sfu-mediasoup
+    cargo build --release --bin audemsp-server --features sfu-mediasoup
 
 # 4. Remove dummy sources
 RUN rm -rf crates/*/src
@@ -101,16 +101,16 @@ COPY . .
 RUN find crates -name '*.rs' -exec touch {} +
 
 # 6. Final build — only recompiles changed source
-RUN cargo build --release --bin omspbase-server --features sfu-mediasoup
+RUN cargo build --release --bin audemsp-server --features sfu-mediasoup
 
 # ---- Runtime: minimal Ubuntu 22.04 ----
 FROM ubuntu:22.04 AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 libuv1 ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd -m -s /bin/bash omspbase
-COPY --from=builder /workspace/target/release/omspbase-server /usr/local/bin/
-USER omspbase
+    && useradd -m -s /bin/bash audemsp
+COPY --from=builder /workspace/target/release/audemsp-server /usr/local/bin/
+USER audemsp
 EXPOSE 9800 40000-40100/udp
 HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:9800/health || exit 1
-ENTRYPOINT ["omspbase-server"]
+ENTRYPOINT ["audemsp-server"]

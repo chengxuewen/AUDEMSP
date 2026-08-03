@@ -1,12 +1,12 @@
 @echo off
-REM bootstrap.bat — First-time setup for OMSPBase development (Windows)
+REM bootstrap.bat — First-time setup for AUDEMSP development (Windows)
 REM Usage: bootstrap.bat
 REM After initial setup, use: pixi.bat
 
 set "SCRIPT_DIR=%~dp0"
 
 echo ================================================
-echo   OMSPBase Development Environment Bootstrap
+echo   AUDEMSP Development Environment Bootstrap
 echo ================================================
 echo.
 
@@ -19,7 +19,7 @@ call "%SCRIPT_DIR%scripts\pixi-shell.bat"
 
 echo.
 echo ================================================
-echo   OMSPBase environment ready!
+echo   AUDEMSP environment ready!
 echo ================================================
 echo.
 echo Next time, just run: pixi.bat

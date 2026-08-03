@@ -5,5 +5,5 @@ listen:
 room_capacity: 50
 rate_limit: 100
 consumer_limit_per_stream: 50
-psk: "omspbase-dev"
+psk: "audemsp-dev"
 admin_jwt_secret: "docker-admin-secret-with-32-plus-bytes!!"

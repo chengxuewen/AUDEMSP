@@ -1,0 +1,75 @@
+[package]
+name = "audemsp-server"
+version = "0.1.0"
+edition = "2024"
+description = "AUDEMSP Server — signaling relay, room management, and monitoring"
+license = "Apache-2.0"
+
+[[bin]]
+name = "audemsp-server"
+path = "src/main.rs"
+
+[dependencies]
+# Shared core crate
+audemsp-common = { path = "../audemsp-common" }
+
+# WebRTC relay (optional)
+audemsp-webrtc = { path = "../audemsp-webrtc", optional = true }
+
+# mediasoup SFU (optional, Linux only)
+mediasoup = { version = "0.24", optional = true }
+
+# HTTP + WebSocket
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5", features = ["trace", "cors", "timeout", "fs"] }
+tower_governor = "0.3"
+
+# Config + serialization
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+prometheus-client = "0.22"
+
+# Async utilities
+futures-util = "0.3"
+tokio-stream = "0.1"
+
+# DateTime
+chrono = "0.4"
+
+# JWT
+jsonwebtoken = "9"
+
+# Shared state
+dashmap = "6"
+uuid = { version = "1", features = ["v4"] }
+# TLS (rustls, native Rust implementation)
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+
+# Static file embedding (optional)
+rust-embed = { version = "8", optional = true }
+[features]
+default = ["sfu-mediasoup", "admin-dashboard"]
+webrtc = ["dep:audemsp-webrtc"]
+sfu-mediasoup = ["dep:mediasoup"]
+admin-dashboard = ["dep:rust-embed"]
+[[bench]]
+name = "bench"
+harness = false
+path = "benches/bench.rs"
+
+[dev-dependencies]
+tempfile = "3"
+tower = "0.5"
+http = "1"
+tokio-tungstenite = "0.24"
+base64 = "0.22"
+
+
