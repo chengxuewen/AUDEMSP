@@ -435,46 +435,46 @@ go build -o my-webrtc-app .
 
 ---
 
-## 7. 对 OMSPBase 的参考价值
+## 7. 对 AUDEMSP 的参考价值
 
 ### 7.1 架构理念借鉴
 
-1. **Interceptor 管道模式**: Pion 的 Interceptor 架构是 OMSPBase PipelineEngine 的最佳参考。链式 RTP/RTCP 处理器, 支持自定义插件, 出站/入站对称——直接映射到 OMSPBase 的数据管道设计。
+1. **Interceptor 管道模式**: Pion 的 Interceptor 架构是 AUDEMSP PipelineEngine 的最佳参考。链式 RTP/RTCP 处理器, 支持自定义插件, 出站/入站对称——直接映射到 AUDEMSP 的数据管道设计。
 
-2. **SettingEngine 设计**: Pion 将平台特定配置抽象为 `SettingEngine`, 而非污染核心 API。OMSPBase 的配置系统可采用相同模式: 默认值 + 可注入的引擎配置。
+2. **SettingEngine 设计**: Pion 将平台特定配置抽象为 `SettingEngine`, 而非污染核心 API。AUDEMSP 的配置系统可采用相同模式: 默认值 + 可注入的引擎配置。
 
-3. **纯 Rust 优势**: Pion 的 "纯 Go 零 Cgo" 是其主要卖点。OMSPBase 同理: 纯 Rust 意味着 `cargo build` 即可, 无 C 链接地狱, 交叉编译简易。
+3. **纯 Rust 优势**: Pion 的 "纯 Go 零 Cgo" 是其主要卖点。AUDEMSP 同理: 纯 Rust 意味着 `cargo build` 即可, 无 C 链接地狱, 交叉编译简易。
 
-4. **SFU 的 Router 模式**: `ion-sfu` 的 Router→Receiver→DownTrack 设计简洁高效。OMSPBase 的媒体路由可参考: 按 trackID 索引, Buffer 工厂模式, RTCP 中央通道。
+4. **SFU 的 Router 模式**: `ion-sfu` 的 Router→Receiver→DownTrack 设计简洁高效。AUDEMSP 的媒体路由可参考: 按 trackID 索引, Buffer 工厂模式, RTCP 中央通道。
 
 ### 7.2 可直接复用的技术决策
 
-| Pion 决策 | OMSPBase 对应 |
+| Pion 决策 | AUDEMSP 对应 |
 |-----------|---------------|
 | Interceptor 管道 → 插件化 RTP/RTCP | PipelineEngine + PluginManager 的核心思路 |
-| SettingEngine → 平台适配器 | OMSPBase 的 `config` 模块设计 |
+| SettingEngine → 平台适配器 | AUDEMSP 的 `config` 模块设计 |
 | BufferFactory → 可替换缓冲策略 | 类似的 Buffer 抽象层 |
 | IceUDPMux → 单端口多路复用 | Host 应用的网络层设计 |
 | Ballast → GC 优化 | Rust 不需要, 但可用 `jemalloc` 等 |
-| webrtc-stats → 标准统计 API | OMSPBase 的监控指标 |
+| webrtc-stats → 标准统计 API | AUDEMSP 的监控指标 |
 | WHIP/WHEP → 标准化信令 | OMSPServer 的信令协议参考 |
 
 ### 7.3 潜在集成点
 
-- **信令协议**: OMSPBase Server 的信令层可兼容 WHIP/WHEP, 实现与 OBS/GStreamer 等工具的互通
-- **TURN 服务**: Pion 内置 TURN 可作为 OMSPBase 中继方案的参考实现
-- **监控对标**: Pion 的 `webrtc-bench` 和 `rtsp-bench` 的测试方法可直接复用为 OMSPBase 的性能基准框架
-- **LiveKit 的 SDK 生态**: LiveKit 提供 8 种语言 SDK (JS, Swift, Kotlin, Flutter, React, Python, Rust, Unity), OMSPBase 可对标的客户端覆盖
+- **信令协议**: AUDEMSP Server 的信令层可兼容 WHIP/WHEP, 实现与 OBS/GStreamer 等工具的互通
+- **TURN 服务**: Pion 内置 TURN 可作为 AUDEMSP 中继方案的参考实现
+- **监控对标**: Pion 的 `webrtc-bench` 和 `rtsp-bench` 的测试方法可直接复用为 AUDEMSP 的性能基准框架
+- **LiveKit 的 SDK 生态**: LiveKit 提供 8 种语言 SDK (JS, Swift, Kotlin, Flutter, React, Python, Rust, Unity), AUDEMSP 可对标的客户端覆盖
 
 ### 7.4 不会采用的部分
 
-- Pion 的 Go 并发模型 (Goroutine + Channel), OMSPBase 使用 Rust 的 async/await + Tokio
-- ion 集群的 etcd + NATS 依赖栈, OMSPBase 可用更轻量的方案
+- Pion 的 Go 并发模型 (Goroutine + Channel), AUDEMSP 使用 Rust 的 async/await + Tokio
+- ion 集群的 etcd + NATS 依赖栈, AUDEMSP 可用更轻量的方案
 - Go 内存管理策略 (Ballast), Rust 的所有权模型天然无 GC 压力
 
 ### 7.5 一句话总结
 
-**Pion 证明了 "语言原生 WebRTC 栈" 的可行性** — 纯 Go 实现性能可达 libwebrtc 的 15-25x (服务器场景), 且构建/部署/跨平台体验远超 C++ 方案。OMSPBase 以 Rust 构建相同愿景, Pion 的架构决策 (Interceptor 管道, SettingEngine, Router 模式) 是经过生产验证的最佳实践, 值得深度参考。
+**Pion 证明了 "语言原生 WebRTC 栈" 的可行性** — 纯 Go 实现性能可达 libwebrtc 的 15-25x (服务器场景), 且构建/部署/跨平台体验远超 C++ 方案。AUDEMSP 以 Rust 构建相同愿景, Pion 的架构决策 (Interceptor 管道, SettingEngine, Router 模式) 是经过生产验证的最佳实践, 值得深度参考。
 
 ---
 **相关决策**: D144-D145 (多后端trait), D153 (RTP interceptor)

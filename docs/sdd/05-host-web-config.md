@@ -32,7 +32,7 @@ pub enum WebRoute {
 ### Host Config Schema (D114)
 
 ```yaml
-# /opt/oomspbase/etc/host.conf
+# /opt/audemsp/etc/host.conf
 host:
   id: "host-001"
 signaling:

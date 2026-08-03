@@ -1,6 +1,6 @@
 # 权限认证参考
 
-> OMSPBase 提供双模式认证：Local（独立部署）和 AUDEBase（平台模式）。
+> AUDEMSP 提供双模式认证：Local（独立部署）和 AUDEBase（平台模式）。
 
 ---
 
@@ -80,18 +80,18 @@ License Manager 在每个管线操作前校验
 
 ## 五、参考模型
 
-类比群晖 DSM：OMSPBase 作为 Docker 模块安装在 AUDEBase 上，使用 AUDEBase 的用户/权限系统（类似 Jira 安装在群晖上使用 DSM 的 LDAP 账户）。
+类比群晖 DSM：AUDEMSP 作为 Docker 模块安装在 AUDEBase 上，使用 AUDEBase 的用户/权限系统（类似 Jira 安装在群晖上使用 DSM 的 LDAP 账户）。
 
 
 ## 六、gRPC Auth 合约 (D57)
 
-当 OMSPBase 运行在 AUDEBase 模块模式下，AuthProvider 通过 gRPC 调用 AUDEBase：
+当 AUDEMSP 运行在 AUDEBase 模块模式下，AuthProvider 通过 gRPC 调用 AUDEBase：
 
 ### Proto
 
 ```protobuf
 syntax = "proto3";
-package omspbase.auth;
+package audemsp.auth;
 
 service AuthService {
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
@@ -114,7 +114,7 @@ message ValidateTokenResponse {
 
 message CheckPermissionRequest {
   string user_id = 1;
-  string permission = 2;             // OMSPBase 权限字符串
+  string permission = 2;             // AUDEMSP 权限字符串
 }
 
 message CheckPermissionResponse {
@@ -126,7 +126,7 @@ message CheckPermissionResponse {
 ### 调用流程
 
 ```
-客户端请求 → OMSPBase axum 收到 JWT
+客户端请求 → AUDEMSP axum 收到 JWT
                            │
                            ▼
               AuthProvider.authenticate(token)
@@ -146,11 +146,11 @@ message CheckPermissionResponse {
 
 - `validateToken`: 结果缓存在内存 5 分钟（JWT 过期时间以下）
 - `checkPermission`: 优先查 `validateToken` 返回的 permissions[] 列表
-- 权限变更: AUDEBase 需要通知 OMSPBase 清除缓存 → Phase 2 Channel
+- 权限变更: AUDEBase 需要通知 AUDEMSP 清除缓存 → Phase 2 Channel
 
-### OMSPBase Permission 枚举
+### AUDEMSP Permission 枚举
 
-OMSPBase 自维护权限字符串，AUDEBase RBAC 做字符串→角色映射：
+AUDEMSP 自维护权限字符串，AUDEBase RBAC 做字符串→角色映射：
 
 | 权限 | 说明 |
 |------|------|

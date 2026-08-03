@@ -6,7 +6,7 @@
 
 ## Motivation
 
-OMSPBase 所有用户面向文本当前硬编码为英文字符串。初期不实施 i18n，但为每种错误类型添加一个零成本的 `locale_key()` 方法，返回已有的数字错误码作为稳定标识符。后续添加多语言支持时，翻译层只需映射 `"1001"` → 区域文本，无需修改任何错误产生点。
+AUDEMSP 所有用户面向文本当前硬编码为英文字符串。初期不实施 i18n，但为每种错误类型添加一个零成本的 `locale_key()` 方法，返回已有的数字错误码作为稳定标识符。后续添加多语言支持时，翻译层只需映射 `"1001"` → 区域文本，无需修改任何错误产生点。
 
 ## Scope
 
@@ -34,10 +34,10 @@ OMSPBase 所有用户面向文本当前硬编码为英文字符串。初期不�
 
 ### Inherent Methods (No Trait)
 
-`omspbase-core` 和 `omspbase-webrtc` 无相互依赖关系，因此每种错误类型实现直接方法：
+`audemsp-core` 和 `audemsp-webrtc` 无相互依赖关系，因此每种错误类型实现直接方法：
 
 ```rust
-// crates/omspbase-core/src/error.rs
+// crates/audemsp-core/src/error.rs
 impl CoreError {
     /// Return the numeric error code as a stable, context-free key.
     /// Used by future i18n layers to look up locale-specific text.
@@ -63,7 +63,7 @@ impl CoreError {
 ```
 
 ```rust
-// crates/omspbase-webrtc/src/lib.rs
+// crates/audemsp-webrtc/src/lib.rs
 impl RTCError {
     /// Return a stable, context-free identifier for this error.
     pub fn locale_key(&self) -> &'static str {
@@ -126,8 +126,8 @@ pub fn localized_display(err: &CoreError, locale: &Locale) -> String {
 
 | File | Action | Description |
 |------|--------|-------------|
-| `crates/omspbase-core/src/error.rs` | Modify | Add `CoreError::locale_key()` — 14-arm match |
-| `crates/omspbase-webrtc/src/lib.rs` | Modify | Add `RTCError::locale_key()` — 5-arm match |
+| `crates/audemsp-core/src/error.rs` | Modify | Add `CoreError::locale_key()` — 14-arm match |
+| `crates/audemsp-webrtc/src/lib.rs` | Modify | Add `RTCError::locale_key()` — 5-arm match |
 
 ## Non-Goals
 

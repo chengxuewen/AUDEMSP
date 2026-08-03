@@ -1,24 +1,24 @@
-# OMSPBase Status
+# AUDEMSP Status
 
-**生成**: 2026-08-03 | 决策: 181 (D1-D208) | Phase: 3 完成 | 209 commits | 22 skills | mediasoup 0.24.1 | PIT-41
+**生成**: 2026-08-03 | 决策: 182 (D1-D209) | Phase: 3 完成 | 209 commits | 22 skills | mediasoup 0.24.1 | PIT-41
 
-**当前**: 7 crate workspace。Phase 3 全部完成。**Host SFU 全链路实现完成** (host-webrtc-sfu-web-client 50/50: omspbase-webrtc 抽象层补全 + ICE/DTLS + E2E)。**统一 Docker 构建策略完成** (docker-build-strategy 29/29: 层缓存 + compose 分离 + Caddy 代理 + CI 镜像)。**OpenVidu 参考文档 3 篇**。Docker 环境本机已装 (29.1.3 + 镜像加速 + daemon 代理)。**构建优化 D208 已实施验证** — 本周 9 项 P0 修复全部完成：builder/dev/runtime 三 target 冒烟 EXIT 0 + runtime health 200；docker-cargo.sh 全链路实测通过（C13 check-server 首次可用，3m27s）；CI 门禁升级（PIT-39 gate 冒烟 + PR build-only）；沉淀 PIT-36~41（Docker dev 链路历史故障 + 编排/编辑教训）。**待办**: ghcr org 确认 → 预烘焙镜像；admin dist 修复
+**当前**: 7 crate workspace (audemsp-*)。Phase 3 全部完成。**Host SFU 全链路实现完成** (host-webrtc-sfu-web-client 50/50: audemsp-webrtc 抽象层补全 + ICE/DTLS + E2E)。**统一 Docker 构建策略完成** (docker-build-strategy 29/29: 层缓存 + compose 分离 + Caddy 代理 + CI 镜像)。**OpenVidu 参考文档 3 篇**。Docker 环境本机已装 (29.1.3 + 镜像加速 + daemon 代理)。**构建优化 D208 已实施验证** — 本周 9 项 P0 修复全部完成：builder/dev/runtime 三 target 冒烟 EXIT 0 + runtime health 200；docker-cargo.sh 全链路实测通过（C13 check-server 首次可用，3m27s）；CI 门禁升级（PIT-39 gate 冒烟 + PR build-only）；沉淀 PIT-36~41（Docker dev 链路历史故障 + 编排/编辑教训）。**项目重命名 D209 完成**（OMSPBase→AUDEMSP，217 文件/2363 处）。**待办**: ghcr org 确认 → 预烘焙镜像；admin dist 修复
 
 ## 测试
 
 | Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
-| omspbase-common | 68 | — | +backup +logging +auth tests |
-| omspbase-media | 54 | — | |
-| omspbase-webrtc (stub) | 11 | 67+ | |
-| omspbase-webrtc (webrtc-sys) | 11 | 49 (4 ICE 预存) | |
-| omspbase-webrtc (webrtc-rs) | 11 | 29 (9 SDP/ICE 预存) | |
-| omspbase-codec (stub) | 0 | 32 | |
-| omspbase-codec (FFmpeg) | 0 | 35 | |
-| omspbase-codec (GStreamer) | 0 | 27 | pixi 环境 |
-| omspbase-server | 12 | 32 (27 e2e + 5 integration) | +3 SFU E2E (Linux only) |
-| omspbase-host | — | E2E 脚本 9/9 ✅ | macOS native |
-| omspbase-client | — | E2E 脚本 9/9 ✅ | macOS native |
+| audemsp-common | 68 | — | +backup +logging +auth tests |
+| audemsp-media | 54 | — | |
+| audemsp-webrtc (stub) | 11 | 67+ | |
+| audemsp-webrtc (webrtc-sys) | 11 | 49 (4 ICE 预存) | |
+| audemsp-webrtc (webrtc-rs) | 11 | 29 (9 SDP/ICE 预存) | |
+| audemsp-codec (stub) | 0 | 32 | |
+| audemsp-codec (FFmpeg) | 0 | 35 | |
+| audemsp-codec (GStreamer) | 0 | 27 | pixi 环境 |
+| audemsp-server | 12 | 32 (27 e2e + 5 integration) | +3 SFU E2E (Linux only) |
+| audemsp-host | — | E2E 脚本 9/9 ✅ | macOS native |
+| audemsp-client | — | E2E 脚本 9/9 ✅ | macOS native |
 
 ### macOS E2E 验证 (2026-07-24)
 ```
@@ -60,15 +60,16 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | D206 | Docker 国内镜像加速（部分修订: cargo tuna→rsproxy） | 🟡 | Config |
 | D207 | 预构建 dev 镜像（机制修订: compose pull） | 🟡 | Config |
 | D208 | 构建优化策略实施（详见 docs/reference/build-optimization-strategy.md） | 🟡 | Config |
+| D209 | 项目重命名 OMSPBase→AUDEMSP（217 文件/2363 处） | ✅ | Config |
 
 ## Admin Dashboard 测试
 
 | Crate | Lib Tests |
 |-------|:---------:|
-| omspbase-common | 71 (+3) |
-| omspbase-server | 32 (新增 admin) |
-| omspbase-server e2e | 25 |
-| omspbase-server integration | 5 |
+| audemsp-common | 71 (+3) |
+| audemsp-server | 32 (新增 admin) |
+| audemsp-server e2e | 25 |
+| audemsp-server integration | 5 |
 
 ## SFU Video Playback
 

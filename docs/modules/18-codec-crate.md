@@ -1,14 +1,14 @@
-# 18. Codec Crate — omspbase-codec
+# 18. Codec Crate — audemsp-codec
 
 > 状态：Phase 2 规划中 | 关联决策：D43, D46, D70, D71, D82, C5
 
 ## 定位
 
-`omspbase-codec` 是 OMSPBase 的统一编解码层，提供 `VideoEncoder` / `VideoDecoder` trait，后端通过编译期 feature gate 支持 GStreamer 和 FFmpeg 双后端。遵循 C5 `&[u8]` 字节边界——不依赖 `omspbase-media` 的类型体系。
+`audemsp-codec` 是 AUDEMSP 的统一编解码层，提供 `VideoEncoder` / `VideoDecoder` trait，后端通过编译期 feature gate 支持 GStreamer 和 FFmpeg 双后端。遵循 C5 `&[u8]` 字节边界——不依赖 `audemsp-media` 的类型体系。
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                 omspbase-codec                      │
+│                 audemsp-codec                      │
 │                                                     │
 │  CodecFactory::create_encoder()                     │
 │    └→ Box<dyn VideoEncoder>                        │
@@ -86,8 +86,8 @@ pub trait VideoDecoder: Send {
 Host 端双后端可切换：
 ```toml
 # Cargo.toml (remote-host)
-omspbase-codec = { features = ["backend-ffmpeg"] }   # 生产/edge 静态分发
-# omspbase-codec = { features = ["backend-gstreamer"] } # 开发机默认
+audemsp-codec = { features = ["backend-ffmpeg"] }   # 生产/edge 静态分发
+# audemsp-codec = { features = ["backend-gstreamer"] } # 开发机默认
 ```
 
 ## 编码/解码链路
@@ -111,7 +111,7 @@ TrackReceiver → EncodedPacket(H.264 bytes)
 
 ## 数据边界 (C5)
 
-codec crate **不依赖** `omspbase-media`。所有数据交换通过 `&[u8]`：
+codec crate **不依赖** `audemsp-media`。所有数据交换通过 `&[u8]`：
 
 - `VideoFrame`（codec 自有类型，不同于 media 的 `VideoFrame<T>`）
 - `EncodedPacket`（纯 `Vec<u8>` + 元数据）
@@ -144,7 +144,7 @@ impl CodecFactory {
 使用示例：
 
 ```rust
-use omspbase_codec::{CodecFactory, EncoderConfig, CodecId, BackendId};
+use audemsp_codec::{CodecFactory, EncoderConfig, CodecId, BackendId};
 
 let factory = CodecFactory::new();
 let mut encoder = factory.create_encoder(
@@ -167,7 +167,7 @@ encoder.flush()?;
 ## 文件结构
 
 ```
-crates/omspbase-codec/
+crates/audemsp-codec/
 ├── Cargo.toml
 ├── src/
 │   ├── lib.rs              re-exports + feature gate guards
@@ -194,7 +194,7 @@ crates/omspbase-codec/
 ```
 ## API 边界与类型映射
 
-codec crate 不依赖 omspbase-media，通过 &[u8] 交换数据（C5）。
+codec crate 不依赖 audemsp-media，通过 &[u8] 交换数据（C5）。
 
 | codec 类型 | media/webrtc 类型 | 转换方向 |
 |-----------|-------------------|---------|
@@ -266,13 +266,13 @@ CodecError (thiserror)，关键变体：
 - [08. 管线模型参考](08-pipeline-model.md) — PipelineEngine 集成
 - [决策记录 D43/D46/D70/D71/D82](../.agents/memorys/decisions.md) — 编码架构决策链
 - [FFmpeg 静态构建策略](../reference/ffmpeg-static-build-strategy.md) — 构建方案
-- [SDD 验收标准](../sdd/omspbase-codec-acceptance-criteria.md) — 具体阈值
-- [E2E 验收矩阵](../../.sisyphus/plans/omspbase-codec/e2e-acceptance-matrix.md) — 端到端场景
+- [SDD 验收标准](../sdd/audemsp-codec-acceptance-criteria.md) — 具体阈值
+- [E2E 验收矩阵](../../.sisyphus/plans/audemsp-codec/e2e-acceptance-matrix.md) — 端到端场景
 
 ## 交叉引用
 
 以下文档链接回本文档：
 - [17. WebRTC Crate](17-webrtc-crate.md) — Phase 2 预留 write_frame / on_encoded_packet API
-- [SDD 验收标准](../sdd/omspbase-codec-acceptance-criteria.md) — 对齐 push-pull trait API
+- [SDD 验收标准](../sdd/audemsp-codec-acceptance-criteria.md) — 对齐 push-pull trait API
 - [FFmpeg 静态构建策略](../reference/ffmpeg-static-build-strategy.md) — 预构建 + CI 集成
-- [E2E 验收矩阵](../../.sisyphus/plans/omspbase-codec/e2e-acceptance-matrix.md) — 8 场景测试矩阵
+- [E2E 验收矩阵](../../.sisyphus/plans/audemsp-codec/e2e-acceptance-matrix.md) — 8 场景测试矩阵

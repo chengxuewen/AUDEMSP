@@ -302,21 +302,21 @@ session.on('signal:chat', (event) => { /* 解析 event.data */ });
 
 不需要额外的 WebSocket 连接，消息类型通过 type 字段区分，支持定向发送和广播。
 
-## 9. OMSPBase 可借鉴的设计
+## 9. AUDEMSP 可借鉴的设计
 
 ### 9.1 Session 抽象层
 
-客户端不直接操作 RTCPeerConnection，所有 WebRTC 细节由 SDK 封装。OMSPBase Admin Dashboard 可以定义 `MeetingSession` 接口，封装 join/leave/publish/subscribe，底层实现可切换（P2P、SFU-mediasoup、SFU-LiveKit），对 UI 层完全透明。
+客户端不直接操作 RTCPeerConnection，所有 WebRTC 细节由 SDK 封装。AUDEMSP Admin Dashboard 可以定义 `MeetingSession` 接口，封装 join/leave/publish/subscribe，底层实现可切换（P2P、SFU-mediasoup、SFU-LiveKit），对 UI 层完全透明。
 
 ### 9.2 Token 鉴权流程
 
-应用服务器生成 Token，客户端不接触 REST API 密钥。每个 Token 绑定特定 Session 和 Connection，支持角色权限控制（PUBLISHER/SUBSCRIBER），单次使用防重放。OMSPBase 的 SFU 鉴权可以借鉴此设计，替代当前简单的 PSK 模型。
+应用服务器生成 Token，客户端不接触 REST API 密钥。每个 Token 绑定特定 Session 和 Connection，支持角色权限控制（PUBLISHER/SUBSCRIBER），单次使用防重放。AUDEMSP 的 SFU 鉴权可以借鉴此设计，替代当前简单的 PSK 模型。
 
 ### 9.3 Subscriber 自动管理 + 信号消息通道
 
-streamCreated 事件自动触发 subscribe，streamDestroyed 自动触发 unsubscribe，事件驱动而非轮询。OMSPBase 的 SFU consume 流程可以封装为类似的响应式模式。
+streamCreated 事件自动触发 subscribe，streamDestroyed 自动触发 unsubscribe，事件驱动而非轮询。AUDEMSP 的 SFU consume 流程可以封装为类似的响应式模式。
 
-signal() 机制提供轻量级自定义消息通道，不需要额外连接。OMSPBase 的 WebSocket 信令协议可以增加类似的通用信号通道。
+signal() 机制提供轻量级自定义消息通道，不需要额外连接。AUDEMSP 的 WebSocket 信令协议可以增加类似的通用信号通道。
 
 ### 9.4 视频元素管理分离
 
@@ -324,7 +324,7 @@ signal() 机制提供轻量级自定义消息通道，不需要额外连接。OM
 
 ### 9.5 差距分析
 
-| 维度 | OpenVidu Meet | OMSPBase Admin Dashboard |
+| 维度 | OpenVidu Meet | AUDEMSP Admin Dashboard |
 |------|---------------|-------------------------|
 | SDK 封装 | 完整（openvidu-browser） | 无（直接操作 mediasoup-client） |
 | Session 管理 | Session 对象 + 事件驱动 | 手动管理 WebSocket 消息 |
@@ -337,4 +337,4 @@ signal() 机制提供轻量级自定义消息通道，不需要额外连接。OM
 | 屏幕共享 | replaceTrack 一行切换 | 需自行实现 |
 | 录制 | REST API 一行触发 | 未实现 |
 
-OpenVidu Meet 是成熟的参考实现，OMSPBase Admin Dashboard 可以从中提取大量设计模式，避免重造轮子。
+OpenVidu Meet 是成熟的参考实现，AUDEMSP Admin Dashboard 可以从中提取大量设计模式，避免重造轮子。

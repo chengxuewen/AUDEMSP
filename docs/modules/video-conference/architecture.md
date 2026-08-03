@@ -18,7 +18,7 @@
 └─────────────────────────────┼───────────────────────────────────┘
                               │
 ┌─────────────────────────────┼───────────────────────────────────┐
-│                     OMSPBase Backend                            │
+│                     AUDEMSP Backend                            │
 │                              │                                    │
 │  ┌──────────────────────────┴──────────────────────────────┐    │
 │  │               Signaling (WebSocket + gRPC)               │    │
@@ -63,7 +63,7 @@
 
 ### 2.1 选型: mediasoup
 
-mediasoup 作为核心 SFU 引擎，通过 napi-rs 绑定到 OMSPBase native-core。
+mediasoup 作为核心 SFU 引擎，通过 napi-rs 绑定到 AUDEMSP native-core。
 
 理由：
 - C++ 实现，性能最优，进程级 Worker 隔离
@@ -111,11 +111,11 @@ Worker 分配策略：
 
 ### 2.3 Producer/Consumer 模型
 
-mediasoup 使用发布/订阅模型。OMSPBase 有两种 Producer 来源：
+mediasoup 使用发布/订阅模型。AUDEMSP 有两种 Producer 来源：
 
 **Browser Producer（浏览器端发布者）**: 通过 getUserMedia 采集摄像头/麦克风，经 mediasoup-client (JS) 创建 Producer。
 
-**Native Host Producer（原生推流端）**: omspbase-host 通过 omspbase-webrtc (webrtc-sys/libwebrtc) 建立 ICE/DTLS 连接，
+**Native Host Producer（原生推流端）**: audemsp-host 通过 audemsp-webrtc (webrtc-sys/libwebrtc) 建立 ICE/DTLS 连接，
 经由 WebRtcTransport 创建 Producer 注入视频流。Host 不依赖浏览器，适用于车端/边缘设备原生推流。
 
 ```
@@ -246,7 +246,7 @@ PSTN 桥接:
 
 ## 7. 参考架构对比
 
-| 维度 | OMSPBase VC | Zoom | Jitsi | LiveKit |
+| 维度 | AUDEMSP VC | Zoom | Jitsi | LiveKit |
 |------|-------------|------|-------|---------|
 | SFU 引擎 | mediasoup (C++) | MMR (自研) | JVB (Java) | LiveKit (Go) |
 | 信令 | 自研 WebSocket+gRPC | 自研 | XMPP+Colibri2 | WebSocket 自研 |

@@ -1,13 +1,13 @@
-# AGENTS.md — OMSPBase Project Knowledge Base
+# AGENTS.md — AUDEMSP Project Knowledge Base
 
 **Generated:** 2026-07-23
 
-OMSPBase — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入等能力。当前状态: Phase 3 完成，7 crate workspace，webrtc triple-backend (webrtc-rs 视频管线完整对齐)，omspbase-codec 三后端 (stub+FFmpeg+GStreamer)，44 commits on main。
+AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入等能力。当前状态: Phase 3 完成，7 crate workspace，webrtc triple-backend (webrtc-rs 视频管线完整对齐)，audemsp-codec 三后端 (stub+FFmpeg+GStreamer)，44 commits on main。
 
 ## STRUCTURE
 
 ```
-OMSPBase/
+AUDEMSP/
 ├── .opencode/          # OpenCode 配置（插件、MCP、LSP、instructions）
 │   ├── opencode.json   # 主配置：模型、插件、instructions、MCP、LSP
 │   ├── agent-guide.md  # AI 代理使用指南（5 层模型体系、OMO 编排）
@@ -22,13 +22,13 @@ OMSPBase/
 │   ├── skills/         # 技能（book-to-skill/doc-audit/lesson-review/openspec-*/review-hardcode/test-harness/think-before-act）
 │   └── memorys/        # 项目记忆文件 (decisions.md, status.md)
 ├── crates/              # Rust 工作区 (7 个 member crate)
-│   ├── omspbase-host/   # Host 应用 (headless, 采集+编码+推流)
-│   ├── omspbase-client/ # Remote 应用 (拉流+解码+控制)
-│   ├── omspbase-server/ # Server 应用 (信令+relay+监控)
-│   ├── omspbase-common/   # 共享基础: config, error, metrics, protocol, auth (41 tests)
-│   ├── omspbase-media/  # 媒体管线: pipeline, broadcast, engine, transform (54 tests)
-│   ├── omspbase-webrtc/ # WebRTC 抽象层 (stub/webrtc-rs/webrtc-sys, video pipeline parity)
-│   └── omspbase-codec/  # 编解码: stub + FFmpeg + GStreamer 三后端
+│   ├── audemsp-host/   # Host 应用 (headless, 采集+编码+推流)
+│   ├── audemsp-client/ # Remote 应用 (拉流+解码+控制)
+│   ├── audemsp-server/ # Server 应用 (信令+relay+监控)
+│   ├── audemsp-common/   # 共享基础: config, error, metrics, protocol, auth (41 tests)
+│   ├── audemsp-media/  # 媒体管线: pipeline, broadcast, engine, transform (54 tests)
+│   ├── audemsp-webrtc/ # WebRTC 抽象层 (stub/webrtc-rs/webrtc-sys, video pipeline parity)
+│   └── audemsp-codec/  # 编解码: stub + FFmpeg + GStreamer 三后端
 ├── docs/               # 设计文档 (architecture.md + modules/ + reference/ + research/)
 ├── README.md           # 项目简介
 ├── LICENSE             # Apache 2.0
@@ -54,7 +54,7 @@ OMSPBase/
 | 架构文档 | `docs/architecture.md` | 整体架构设计 |
 │ 模块文档 | `docs/modules/` | 各领域详细设计 (25 篇)
 | 项目记忆 | `.agents/memorys/` | 决策记录 (decisions.md)、状态跟踪 (status.md) |
-│ Rust 源码 | `crates/` | 七个 crate: omspbase-host/remote-client/server/core/media/webrtc/codec
+│ Rust 源码 | `crates/` | 七个 crate: audemsp-host/remote-client/server/core/media/webrtc/codec
 
 
 ## SKILL DIRECTORY
@@ -99,13 +99,13 @@ _项目已进入代码实施阶段。以下为当前状态：_
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| omspbase-host | 🟡 骨架完成 | Host 应用: 采集、编码、推流、信令、配置 |
-| omspbase-client | 🟡 骨架完成 | Remote 应用: 拉流、解码、渲染、控制 |
-| omspbase-server | 🟡 骨架完成 | Server 应用: 信令 relay、监控、会话管理 |
-│ omspbase-common | ✅ 已实现 | 共享基础: config, error, metrics, protocol, auth (41 tests)
-│ omspbase-media | ✅ 已实现 | 媒体管线: pipeline, broadcast, engine, transform (54 tests)
-│ omspbase-webrtc | ✅ triple-backend | WebRTC 抽象层 (stub/webrtc-rs/webrtc-sys), 118+ tests, webrtc-rs 视频管线完整对齐
-│ omspbase-codec | ✅ 三后端 | 编解码: stub + FFmpeg (static) + GStreamer (dynamic, pixi)
+| audemsp-host | 🟡 骨架完成 | Host 应用: 采集、编码、推流、信令、配置 |
+| audemsp-client | 🟡 骨架完成 | Remote 应用: 拉流、解码、渲染、控制 |
+| audemsp-server | 🟡 骨架完成 | Server 应用: 信令 relay、监控、会话管理 |
+│ audemsp-common | ✅ 已实现 | 共享基础: config, error, metrics, protocol, auth (41 tests)
+│ audemsp-media | ✅ 已实现 | 媒体管线: pipeline, broadcast, engine, transform (54 tests)
+│ audemsp-webrtc | ✅ triple-backend | WebRTC 抽象层 (stub/webrtc-rs/webrtc-sys), 118+ tests, webrtc-rs 视频管线完整对齐
+│ audemsp-codec | ✅ 三后端 | 编解码: stub + FFmpeg (static) + GStreamer (dynamic, pixi)
 │ Phase 2+ crates | 🔲 计划中 | 详见 `.sisyphus/plans/consolidated-mvp/` 和 `docs/architecture.md`
 
 ## CONVENTIONS
@@ -148,5 +148,5 @@ _项目已进入代码实施阶段。以下为当前状态：_
 ## NOTES
 
 - **Phase 3 完成** — Docker/CI/DevContainer 就位，SFU connect_transport 已实现，91 commits on main
-- **骨架代码已创建** — `crates/omspbase-{host,remote,server}` 三个 crate 含模块骨架
+- **骨架代码已创建** — `crates/audemsp-{host,remote,server}` 三个 crate 含模块骨架
 - **AUDE 生态共享依赖** — AUDESYS 引用 Rust crate，AUDEBase 通过 napi 绑定

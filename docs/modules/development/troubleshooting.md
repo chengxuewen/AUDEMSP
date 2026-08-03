@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Common issues encountered during OMSPBase development and deployment, with diagnostics and fixes.
+Common issues encountered during AUDEMSP development and deployment, with diagnostics and fixes.
 
 ## Docker Networking Debug
 
@@ -53,12 +53,12 @@ rm -rf ~/.cargo/registry/cache/
 ### Symptom
 `Address already in use` errors on startup.
 
-### OMSPBase Ports
+### AUDEMSP Ports
 | Service | Default Port |
 |---------|-------------|
-| omspbase-server | 9800 |
-| omspbase-host | 9801 |
-| omspbase-client | 9101 |
+| audemsp-server | 9800 |
+| audemsp-host | 9801 |
+| audemsp-client | 9101 |
 
 ### Find and Kill
 ```bash
@@ -85,7 +85,7 @@ WebRTC peers can't establish a connection despite successful SDP exchange.
 ### Debug Levels
 Enable verbose ICE logging:
 ```bash
-RUST_LOG=webrtc=debug,ice=trace ./target/debug/omspbase-server
+RUST_LOG=webrtc=debug,ice=trace ./target/debug/audemsp-server
 ```
 
 ### Common Causes
@@ -123,7 +123,7 @@ RUST_LOG=webrtc=debug,ice=trace ./target/debug/omspbase-server
 RUST_LOG=debug cargo run
 
 # Specific module
-RUST_LOG=omspbase-webrtc=debug,omspbase-server=trace cargo run
+RUST_LOG=audemsp-webrtc=debug,audemsp-server=trace cargo run
 
 # JSON format for structured analysis
 RUST_LOG_FORMAT=json
@@ -136,18 +136,18 @@ ulimit -c unlimited
 echo '/tmp/core.%e.%p' | sudo tee /proc/sys/kernel/core_pattern
 
 # Analyze after crash
-gdb ./target/debug/omspbase-server /tmp/core.omspbase-server.1234
+gdb ./target/debug/audemsp-server /tmp/core.audemsp-server.1234
 (gdb) bt
 ```
 
 ### Memory Profiling
 ```bash
 # Valgrind for memory leaks
-valgrind --leak-check=full ./target/debug/omspbase-server
+valgrind --leak-check=full ./target/debug/audemsp-server
 
 # heaptrack for Rust (Linux)
 cargo install heaptrack
-heaptrack ./target/debug/omspbase-server
+heaptrack ./target/debug/audemsp-server
 ```
 
 ---
@@ -162,7 +162,7 @@ curl -v ws://localhost:9800/ws
 netstat -tlnp | grep -E '9800|9801|9101'
 
 # Running processes
-ps aux | grep omspbase
+ps aux | grep audemsp
 
 # Disk space (cargo cache grows large)
 du -sh ~/.cargo/registry/

@@ -5,11 +5,11 @@
  设计演变: Phase 2 曾设计 Host 使用 PlainRtp (RTP/UDP 直传，见下文)，Phase 3 统一为 WebRtcTransport。
 ## 概述
 
-mediasoup-sys v0.22 作为 OMSPBase SFU 服务器，负责 Room 内 Host→Server→Remote 的媒体流转发。所有操作封装在 `SfuComponent` 中。
+mediasoup-sys v0.22 作为 AUDEMSP SFU 服务器，负责 Room 内 Host→Server→Remote 的媒体流转发。所有操作封装在 `SfuComponent` 中。
 
 ## 核心概念映射
 
-| mediasoup | OMSPBase Component |
+| mediasoup | AUDEMSP Component |
 |-----------|-------------------|
 | Worker | SfuComponent::WorkerPool |
 | Router | RoomRouter (per-room) |
@@ -258,7 +258,7 @@ Client                          mediasoup (ICE-Lite)
 
 ### Host 端安全
 
-Host 通过 omspbase-webrtc (webrtc-sys/libwebrtc) 建立连接，libwebrtc 自动处理 DTLS-SRTP 加密。Host 端无需额外配置。
+Host 通过 audemsp-webrtc (webrtc-sys/libwebrtc) 建立连接，libwebrtc 自动处理 DTLS-SRTP 加密。Host 端无需额外配置。
 
 ### 安全加固建议
 

@@ -3,7 +3,7 @@ name: incremental-implementation
 description: "Thin vertical slices across Rust+TS. Implement→test→verify→commit per slice. Use when implementing multi-file Rust crate changes, Admin Dashboard TS features, or any change touching 2+ crates. Triggers: 'incremental', 'slice by slice', 'one crate at a time', multi-crate refactor."
 ---
 
-# Incremental Implementation — OMSPBase
+# Incremental Implementation — AUDEMSP
 
 ## Overview
 
@@ -18,7 +18,7 @@ Build in thin vertical slices — one crate, one module, one function at a time.
 
 **When NOT to use:** Single-function bugfix in one crate where `cargo check -p <crate>` is the only verification needed.
 
-## The OMSPBase Slice Cycle
+## The AUDEMSP Slice Cycle
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -36,17 +36,17 @@ For Rust code, each slice's verification gates:
 | Multi-crate change | `cargo check --workspace && cargo test --workspace` |
 | Feature-gated change | `cargo check -p <crate> --features <feat> && cargo test -p <crate> --features <feat>` |
 | TS Admin Dashboard | `npx tsc --noEmit` (from admin dir) + browser verify |
-| SFU/mediasoup | `pixi run check` (Linux) or `cargo check -p omspbase-server --features sfu-mediasoup` |
+| SFU/mediasoup | `pixi run check` (Linux) or `cargo check -p audemsp-server --features sfu-mediasoup` |
 
 ### Rust Crate Slice Example
 
 ```
-Slice 1: Add protocol enum variant to omspbase-common
-  → cargo check -p omspbase-common && cargo test -p omspbase-common
+Slice 1: Add protocol enum variant to audemsp-common
+  → cargo check -p audemsp-common && cargo test -p audemsp-common
   → 68 tests pass ✓ → commit
 
-Slice 2: Handle new variant in omspbase-server
-  → cargo check -p omspbase-server && cargo test -p omspbase-server
+Slice 2: Handle new variant in audemsp-server
+  → cargo check -p audemsp-server && cargo test -p audemsp-server
   → 32 tests pass ✓ → commit
 
 Slice 3: Wire up in Admin Dashboard TS
@@ -54,18 +54,18 @@ Slice 3: Wire up in Admin Dashboard TS
   → commit
 
 Slice 4: Integration test (WS relay)
-  → cargo test -p omspbase-server --test '*' 
+  → cargo test -p audemsp-server --test '*' 
   → 25 e2e + 5 integration pass ✓ → commit
 ```
 
 ### SFU/WebRTC Vertical Slice
 
 ```
-Slice 1: Define SFU message type in omspbase-common (protocol.rs)
-  → cargo test -p omspbase-common ✓
+Slice 1: Define SFU message type in audemsp-common (protocol.rs)
+  → cargo test -p audemsp-common ✓
 
-Slice 2: Add handler in omspbase-server (admin/sfu_handler.rs)
-  → cargo test -p omspbase-server ✓
+Slice 2: Add handler in audemsp-server (admin/sfu_handler.rs)
+  → cargo test -p audemsp-server ✓
 
 Slice 3: Implement browser-side SFU client (admin/src/sfu-client.ts)
   → npx tsc --noEmit + browser console verify ✓
@@ -74,7 +74,7 @@ Slice 4: Docker integration test
   → docker compose up -d && pixi run test-sfu ✓
 ```
 
-### Risk-First Slicing (OMSPBase)
+### Risk-First Slicing (AUDEMSP)
 
 For SFU/media pipeline work, prove the riskiest piece first:
 
@@ -89,16 +89,16 @@ Slice 3: Admin Dashboard video grid
   → Verify multi-peer layout renders ✓
 ```
 
-## OMSPBase-Specific Rules
+## AUDEMSP-Specific Rules
 
 ### Rule 0: Feature Flag Awareness
 
-OMSPBase has many feature flags. Each slice must specify which features it touches:
+AUDEMSP has many feature flags. Each slice must specify which features it touches:
 
 ```
 Always document the feature set:
-  cargo check -p omspbase-webrtc --features backend-webrtc-rs
-  cargo check -p omspbase-server --features sfu-mediasoup
+  cargo check -p audemsp-webrtc --features backend-webrtc-rs
+  cargo check -p audemsp-server --features sfu-mediasoup
 
 A slice that accidentally breaks a feature behind a flag is a broken slice.
 ```
@@ -133,7 +133,7 @@ Each commit should be independently revertable:
 - `feat(server): handle ConnectWebRtcTransport`
 - `feat(admin): wire SFU transport status in dashboard`
 
-## Verification Checklist (OMSPBase)
+## Verification Checklist (AUDEMSP)
 
 After each slice, verify with these commands (run only what changed):
 
@@ -156,7 +156,7 @@ After each slice, verify with these commands (run only what changed):
 | Files changed | 5 | > 5 = slice deeper |
 | Time to verify | 60s | > 2 min = too much |
 
-## Common OMSPBase Rationalizations
+## Common AUDEMSP Rationalizations
 
 | Rationalization | Reality |
 |---|---|
@@ -166,7 +166,7 @@ After each slice, verify with these commands (run only what changed):
 | "mediasoup only builds on Linux, I'll test later" | At minimum `cargo check --features sfu-mediasoup` on macOS. |
 | "I'll add the feature flag later" | If Slice 1 breaks `sfu-mediasoup` feature, Slices 2-5 are built on sand. |
 
-## Red Flags (OMSPBase)
+## Red Flags (AUDEMSP)
 
 - > 150 lines in one commit
 - Workspace `cargo check` broken between slices

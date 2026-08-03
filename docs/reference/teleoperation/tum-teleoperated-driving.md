@@ -191,7 +191,7 @@ TUM Teleoperated Driving 在遥操作研究生态中的独特定位：
 - **ROS2 生态中的遥操作参考实现**：作为 ROS2 官方生态的一部分，TUM 的模块化设计（9 个独立 tod_* 包）被 Nav2、Autoware 等 ROS2 项目引用为遥操作模块的设计参考
 - **多平台验证的 VehicleInterface**：4 种车辆平台（Audi Q7/模型车/标线机/模拟器）的 VehicleInterface 实现提供了从 CAN 到 Modbus 到共享内存的完整适配参考
 - **Direct Control + Trajectory Guidance 双模式的开源先例**：唯一同时提供两种操控模式的开源实现，为双模式架构设计提供了可运行的参考代码
-- **学术透明度 vs 生产代码的差距**：论文中明确讨论的局限性（RTSP 无自适应码率、DDS 开销、无安全认证）为 OMSPBase 提供了直接的"学术→生产"转型路线图
+- **学术透明度 vs 生产代码的差距**：论文中明确讨论的局限性（RTSP 无自适应码率、DDS 开销、无安全认证）为 AUDEMSP 提供了直接的"学术→生产"转型路线图
 
 ## 3. 功能概览
 ### 核心功能模块
@@ -338,87 +338,87 @@ TUM Teleoperated Driving 在遥操作研究生态中的独特定位：
 4. **配置驱动车辆适配（YAML Vehicle Interface）**：通过单一 YAML 配置文件定义车型所有控制接口，无需修改核心代码。已在 4 种不同平台上验证
 5. **ROS2 原生集成 + 模块化独立**：9 个 tod_* 包各自独立，替换一个模块不影响其他 — 模块化架构的教科书级参考
 
-## 7. 对 OMSPBase 的参考价值
+## 7. 对 AUDEMSP 的参考价值
 ### [Adopt] 可直接借鉴
-- **三级安全管道架构**（Monitoring → Safety → StateMachine）：OMSPBase teleop SDK 采纳此分层设计：`NetworkMonitor` + `SafetyValidator` + `SessionManager`，三层独立运行
+- **三级安全管道架构**（Monitoring → Safety → StateMachine）：AUDEMSP teleop SDK 采纳此分层设计：`NetworkMonitor` + `SafetyValidator` + `SessionManager`，三层独立运行
 - **配置驱动车辆接口**：YAML 配置 + VehicleInterface trait 的适配模式。定义 CAN/UART/Modbus 信号映射、执行器特性和传感器参数
-- **Direct Control / Trajectory Guidance 双模式**：OMSPBase 遥操作模式枚举支持 `DirectControl`(50Hz) 和 `TrajectoryGuidance`(按需)，根据 RTT 自动推荐
+- **Direct Control / Trajectory Guidance 双模式**：AUDEMSP 遥操作模式枚举支持 `DirectControl`(50Hz) 和 `TrajectoryGuidance`(按需)，根据 RTT 自动推荐
 - **延迟分段测量**：在 pipeline 关键节点注入 NTP 时间戳，逐段计算延迟。实现 7 段延迟分解
-- **模块化独立设计**：每个插件可单独编译、测试和替换（OMSPBase 已采纳此原则）
+- **模块化独立设计**：每个插件可单独编译、测试和替换（AUDEMSP 已采纳此原则）
 - **UDP vs TCP 结论**：控制通道优先使用 UDP-like RTCDataChannel (`ordered:false, maxRetransmits:0`)
-- **H.264 zerolatency 编码参数组合**：`tune=zerolatency speed-preset=ultrafast intra-refresh=true rc-lookahead=0 sliced-threads=true` — OMSPBase GStreamer 编码插件默认遥操作 preset
+- **H.264 zerolatency 编码参数组合**：`tune=zerolatency speed-preset=ultrafast intra-refresh=true rc-lookahead=0 sliced-threads=true` — AUDEMSP GStreamer 编码插件默认遥操作 preset
 
 ### [Adapt] 需修改后采用
-- **RTSP → WebRTC 视频传输替换**：TUM 论文已确认 RTSP 缺乏自适应码率。OMSPBase 使用 WebRTC + GCC 拥塞控制
-- **ROS2 DDS → FlatBuffers**：OMSPBase 不使用 ROS2，`tod_network::UdpSender<T>` → `ProtocolBroker::Publish(topic, FlatBuffersMessage)`
+- **RTSP → WebRTC 视频传输替换**：TUM 论文已确认 RTSP 缺乏自适应码率。AUDEMSP 使用 WebRTC + GCC 拥塞控制
+- **ROS2 DDS → FlatBuffers**：AUDEMSP 不使用 ROS2，`tod_network::UdpSender<T>` → `ProtocolBroker::Publish(topic, FlatBuffersMessage)`
 - **MQTT → 可靠 RTCDataChannel**：`ordered:true, reliable:true` 替代 MQTT
-- **ROS2 Lifecycle → Plugin 生命周期 + SessionManager**：扩展 OMSPBase Plugin trait 为完整状态机
-- **Safety 决策矩阵 → SafetyValidator trait**：TUM 的网络质量→处理策略矩阵直接映射为 OMSPBase 安全配置
-- **TUM 延迟绝对值 → OMSPBase 延迟 SLO**：LTE 中位数 160ms, 尾延迟 ~400ms 可作为分网络条件的延迟目标
+- **ROS2 Lifecycle → Plugin 生命周期 + SessionManager**：扩展 AUDEMSP Plugin trait 为完整状态机
+- **Safety 决策矩阵 → SafetyValidator trait**：TUM 的网络质量→处理策略矩阵直接映射为 AUDEMSP 安全配置
+- **TUM 延迟绝对值 → AUDEMSP 延迟 SLO**：LTE 中位数 160ms, 尾延迟 ~400ms 可作为分网络条件的延迟目标
 
 ### [Avoid] 已知坑 / 不适用场景
-- **RTSP ≠ WebRTC**：OMSPBase 必须从第一天就使用 WebRTC，不重复 RTSP 的错误路径
-- **DDS 元数据开销**：OMSPBase 二进制 RTCDataChannel 协议（16 字节）远更紧凑
-- **Ubuntu 22.04 锁定**：OMSPBase 保持平台独立性（Linux x86_64/ARM/macOS/Windows）
+- **RTSP ≠ WebRTC**：AUDEMSP 必须从第一天就使用 WebRTC，不重复 RTSP 的错误路径
+- **DDS 元数据开销**：AUDEMSP 二进制 RTCDataChannel 协议（16 字节）远更紧凑
+- **Ubuntu 22.04 锁定**：AUDEMSP 保持平台独立性（Linux x86_64/ARM/macOS/Windows）
 - **LTE 尾部延迟是安全威胁**：不仅优化中位数，更要关注 P99 和 jitter buffer 调优（目标深度 1-2 帧）
 - **TCP vs UDP 结论仅限 LTE**：高丢包 Wi-Fi/卫星通信场景需重新评估
-- **Vehicle Interface 集成成本**：CAN 逆向 2-4 周 + 参数标定 1-2 周。OMSPBase 需提供更多默认实现
-- **Jitter buffer 缺失**：OMSPBase WebRTC jitter buffer 需遥操作场景专门调优（目标深度 1-2 帧 vs 默认 4-6 帧）
-- **无生产安全认证**：OMSPBase 若目标商业化，需从 TUM 架构参考转向 Vay 的 ASIL-D 合规实践
-- **x86_64 限制**：OMSPBase 需支持 ARM (Jetson/RPi) 和 RISC-V
-- **学术代码 vs 生产代码**：OMSPBase 借鉴架构设计时，需重写实现以符合生产质量要求
+- **Vehicle Interface 集成成本**：CAN 逆向 2-4 周 + 参数标定 1-2 周。AUDEMSP 需提供更多默认实现
+- **Jitter buffer 缺失**：AUDEMSP WebRTC jitter buffer 需遥操作场景专门调优（目标深度 1-2 帧 vs 默认 4-6 帧）
+- **无生产安全认证**：AUDEMSP 若目标商业化，需从 TUM 架构参考转向 Vay 的 ASIL-D 合规实践
+- **x86_64 限制**：AUDEMSP 需支持 ARM (Jetson/RPi) 和 RISC-V
+- **学术代码 vs 生产代码**：AUDEMSP 借鉴架构设计时，需重写实现以符合生产质量要求
 
 ### [Adopt] 可直接借鉴 (补充)
 
-- **7 段延迟分解方法学**：NTP 时间戳注入式延迟分段测量是遥操作系统延迟优化的标准化方法。OMSPBase 的 `TelemetryPipeline` 组件应在 pipeline 关键节点注入时间戳，逐段计算和上报各段延迟
-- **H.264 x264enc 超低延迟参数组合**：`tune=zerolatency` + `speed-preset=ultrafast` + `intra-refresh=true` + `rc-lookahead=0` 的组合经过实验验证，OMSPBase 的 GStreamer 编码插件应直接采用此组合作为遥操作默认编码 preset
-- **YAML 配置驱动 VehicleInterface**：OMSPBase 的 `VehicleInterface` trait 应支持运行时 YAML 配置文件定义执行器映射、传感器参数和安全阈值
+- **7 段延迟分解方法学**：NTP 时间戳注入式延迟分段测量是遥操作系统延迟优化的标准化方法。AUDEMSP 的 `TelemetryPipeline` 组件应在 pipeline 关键节点注入时间戳，逐段计算和上报各段延迟
+- **H.264 x264enc 超低延迟参数组合**：`tune=zerolatency` + `speed-preset=ultrafast` + `intra-refresh=true` + `rc-lookahead=0` 的组合经过实验验证，AUDEMSP 的 GStreamer 编码插件应直接采用此组合作为遥操作默认编码 preset
+- **YAML 配置驱动 VehicleInterface**：AUDEMSP 的 `VehicleInterface` trait 应支持运行时 YAML 配置文件定义执行器映射、传感器参数和安全阈值
 - **Direct Control / Trajectory Guidance 双模式**：根据 `NetworkMonitor` 返回的网络质量自动推荐操控模式（RTT < 50ms 推荐 Direct, > 200ms 强制 TrajectoryGuidance）
 - **UDP-like 控制通道优先**：控制通道使用 `ordered:false, maxRetransmits:0` 的 RTCDataChannel 配置
 - **三级安全管道架构独立运行**：`NetworkMonitor` + `SafetyValidator` + `SessionManager` 三层独立运行，单一模块失效不会导致全线失控
 
 ### [Adapt] 需修改后采用 (补充)
 
-- **RTSP → WebRTC 视频传输替换**：TUM 论文已确认 RTSP 缺乏自适应码率。OMSPBase 使用 WebRTC + GCC 拥塞控制
+- **RTSP → WebRTC 视频传输替换**：TUM 论文已确认 RTSP 缺乏自适应码率。AUDEMSP 使用 WebRTC + GCC 拥塞控制
 - **ROS2 DDS → FlatBuffers**：`tod_network::UdpSender<T>` → `ProtocolBroker::Publish(topic, FlatBuffersMessage)`
 - **MQTT → 可靠 RTCDataChannel**：`ordered:true, reliable:true` 替代 MQTT 传输非关键数据
-- **ROS2 Lifecycle → Plugin 生命周期 + SessionManager**：扩展 OMSPBase Plugin trait 为完整状态机管理
-- **Safety 决策矩阵 → SafetyValidator trait**：TUM 的网络质量→处理策略矩阵直接映射为 OMSPBase 安全配置
-- **TUM 延迟绝对值 → OMSPBase 延迟 SLO**：LTE 中位数 160ms, 尾延迟 ~400ms 可作为分网络条件的延迟目标
+- **ROS2 Lifecycle → Plugin 生命周期 + SessionManager**：扩展 AUDEMSP Plugin trait 为完整状态机管理
+- **Safety 决策矩阵 → SafetyValidator trait**：TUM 的网络质量→处理策略矩阵直接映射为 AUDEMSP 安全配置
+- **TUM 延迟绝对值 → AUDEMSP 延迟 SLO**：LTE 中位数 160ms, 尾延迟 ~400ms 可作为分网络条件的延迟目标
 
 ### [Avoid] 已知坑 / 不适用场景 (补充)
 
-- **RTSP ≠ WebRTC**：OMSPBase 必须从第一天就使用 WebRTC，不重复 RTSP 的错误路径
-- **DDS 元数据开销**：OMSPBase 二进制 RTCDataChannel 协议（16 字节）远比 DDS 紧凑
-- **Ubuntu 22.04 锁定**：OMSPBase 保持平台独立性（Linux x86_64/ARM/macOS/Windows）
+- **RTSP ≠ WebRTC**：AUDEMSP 必须从第一天就使用 WebRTC，不重复 RTSP 的错误路径
+- **DDS 元数据开销**：AUDEMSP 二进制 RTCDataChannel 协议（16 字节）远比 DDS 紧凑
+- **Ubuntu 22.04 锁定**：AUDEMSP 保持平台独立性（Linux x86_64/ARM/macOS/Windows）
 - **LTE 尾部延迟是安全威胁**：不仅优化中位数，更要关注 P99 和 jitter buffer 调优（目标深度 1-2 帧）
 - **TCP vs UDP 结论仅限 LTE**：高丢包 Wi-Fi/卫星通信场景需重新评估
-- **Vehicle Interface 集成成本**：CAN 逆向 2-4 周 + 参数标定 1-2 周。OMSPBase 需提供更多默认实现
-- **Jitter buffer 缺失**：OMSPBase WebRTC jitter buffer 需遥操作场景专门调优（目标深度 1-2 帧 vs 默认 4-6 帧）
-- **无生产安全认证**：OMSPBase 若目标商业化，需从 TUM 架构参考转向 Vay 的 ASIL-D 合规实践
-- **x86_64 限制**：OMSPBase 需支持 ARM (Jetson/RPi) 和 RISC-V
-- **学术代码 vs 生产代码**：OMSPBase 借鉴架构设计时，需重写实现以符合生产质量要求
+- **Vehicle Interface 集成成本**：CAN 逆向 2-4 周 + 参数标定 1-2 周。AUDEMSP 需提供更多默认实现
+- **Jitter buffer 缺失**：AUDEMSP WebRTC jitter buffer 需遥操作场景专门调优（目标深度 1-2 帧 vs 默认 4-6 帧）
+- **无生产安全认证**：AUDEMSP 若目标商业化，需从 TUM 架构参考转向 Vay 的 ASIL-D 合规实践
+- **x86_64 限制**：AUDEMSP 需支持 ARM (Jetson/RPi) 和 RISC-V
+- **学术代码 vs 生产代码**：AUDEMSP 借鉴架构设计时，需重写实现以符合生产质量要求
 
 ### [Adopt] 可直接借鉴 (补充二)
 
-- **ROS2 包独立编译与测试**：每个 tod_* 包可单独编译、测试和替换，包之间通过 ROS2 接口（消息/服务/动作）解耦。OMSPBase 的每个插件（`teleop-sdk` 中的 `SafetyValidator`、`NetworkMonitor`、`SessionManager` 等）应设计为独立的 Rust crate，通过 trait 和消息类型解耦
-- **操控设备 HID 热插拔支持**：TUM 的 `tod_operator_interface` 支持 Logitech G920/Thrustmaster T300RS/游戏手柄/键盘的热插拔，自动切换优先级。OMSPBase Client 的 `InputDeviceManager` 应实现同样的 HID 抽象层
-- **监控频率自适应调整**：网络质量良好时监控频率 1Hz，网络降级时自动提升至 10Hz。OMSPBase 的 `NetworkMonitor` 应实现类似的动态采样率策略
+- **ROS2 包独立编译与测试**：每个 tod_* 包可单独编译、测试和替换，包之间通过 ROS2 接口（消息/服务/动作）解耦。AUDEMSP 的每个插件（`teleop-sdk` 中的 `SafetyValidator`、`NetworkMonitor`、`SessionManager` 等）应设计为独立的 Rust crate，通过 trait 和消息类型解耦
+- **操控设备 HID 热插拔支持**：TUM 的 `tod_operator_interface` 支持 Logitech G920/Thrustmaster T300RS/游戏手柄/键盘的热插拔，自动切换优先级。AUDEMSP Client 的 `InputDeviceManager` 应实现同样的 HID 抽象层
+- **监控频率自适应调整**：网络质量良好时监控频率 1Hz，网络降级时自动提升至 10Hz。AUDEMSP 的 `NetworkMonitor` 应实现类似的动态采样率策略
 
 ### [Adapt] 需修改后采用 (补充二)
 
-- **TUM 的 VehicleInterfacePlugin C++ 虚基类 → OMSPBase 的 VehicleInterface Rust trait**：`initialize(YAML)`, `sendCommand(ControlCommand)`, `getState()`, `emergencyStop()` 四个方法直接映射到 OMSPBase 的 `VehicleInterface` trait。新增 `calibrate()` 和 `selfTest()` 方法用于部署调试
-- **TUM 的操控模式自动推荐 → OMSPBase 的 AutoModeSelector**：TUM 根据 RTT 阈值（<50ms Direct, 50-200ms 均可, >200ms TrajectoryGuidance）自动推荐操控模式。OMSPBase 的 `AutoModeSelector` 组件应实现同等的决策逻辑，并增加带宽作为决策因子
-- **TUM 的延迟 7 段分解 → OMSPBase 的 TelemetryPipeline 7 段标记**：在 pipeline 关键节点注入 NTP 时间戳的测量方法学直接复用。OMSPBase 的 `TelemetryPipeline` 应在 capture/encode_start/encode_end/send/recv/decode/render 各节点注入 `PipelineTimestamp` 事件，由 `NetworkMonitor` 收集和上报
+- **TUM 的 VehicleInterfacePlugin C++ 虚基类 → AUDEMSP 的 VehicleInterface Rust trait**：`initialize(YAML)`, `sendCommand(ControlCommand)`, `getState()`, `emergencyStop()` 四个方法直接映射到 AUDEMSP 的 `VehicleInterface` trait。新增 `calibrate()` 和 `selfTest()` 方法用于部署调试
+- **TUM 的操控模式自动推荐 → AUDEMSP 的 AutoModeSelector**：TUM 根据 RTT 阈值（<50ms Direct, 50-200ms 均可, >200ms TrajectoryGuidance）自动推荐操控模式。AUDEMSP 的 `AutoModeSelector` 组件应实现同等的决策逻辑，并增加带宽作为决策因子
+- **TUM 的延迟 7 段分解 → AUDEMSP 的 TelemetryPipeline 7 段标记**：在 pipeline 关键节点注入 NTP 时间戳的测量方法学直接复用。AUDEMSP 的 `TelemetryPipeline` 应在 capture/encode_start/encode_end/send/recv/decode/render 各节点注入 `PipelineTimestamp` 事件，由 `NetworkMonitor` 收集和上报
 
 ### [Avoid] 已知坑 / 不适用场景 (补充二)
 
-- **TUM 的 GStreamer x264enc 软件编码延迟不可接受**：x264enc 的软件编码延迟（8-12ms）在 30fps 管线中占比较高。OMSPBase 应优先使用硬件编码器（VAAPI/NVENC/VideoToolbox），软件编码仅作为后备方案
-- **TUM 的 ROS2 DDS 依赖限制了生态**：ROS2 的 DDS 发现协议（Discovery）在跨网络场景中引入额外延迟和带宽消耗。OMSPBase 的自定义 RTCDataChannel 协议完全避免了 DDS 发现开销
-- **TUM 的学术论文延迟数据不可直接作为产品 SLO**：实验室环境（静态车辆、固定路线、优质 LTE 信号）的 160ms 中位数在真实城市环境中可能显著恶化。OMSPBase 的延迟 SLO 应基于真实道路测试数据制定
+- **TUM 的 GStreamer x264enc 软件编码延迟不可接受**：x264enc 的软件编码延迟（8-12ms）在 30fps 管线中占比较高。AUDEMSP 应优先使用硬件编码器（VAAPI/NVENC/VideoToolbox），软件编码仅作为后备方案
+- **TUM 的 ROS2 DDS 依赖限制了生态**：ROS2 的 DDS 发现协议（Discovery）在跨网络场景中引入额外延迟和带宽消耗。AUDEMSP 的自定义 RTCDataChannel 协议完全避免了 DDS 发现开销
+- **TUM 的学术论文延迟数据不可直接作为产品 SLO**：实验室环境（静态车辆、固定路线、优质 LTE 信号）的 160ms 中位数在真实城市环境中可能显著恶化。AUDEMSP 的延迟 SLO 应基于真实道路测试数据制定
 
 **总体评分**：★★★★☆ (4/5)
-— TUM Teleoperated Driving 是学术界最系统化、最透明的遥操作开源方案。其模块化架构设计、双模式操控、三级安全管道和配置驱动车辆接口是对 OMSPBase teleop SDK 架构设计最直接、最重要的参考来源。唯一扣分点在于 RTSP 视频方案已过时（WebRTC 迁移仍在进行中）和 ROS2 依赖导致平台受限。其延迟分段测量数据（全链路 7 段分解）和三级安全管道决策矩阵是 OMSPBase 遥操作模块设计的核心学术参考。
+— TUM Teleoperated Driving 是学术界最系统化、最透明的遥操作开源方案。其模块化架构设计、双模式操控、三级安全管道和配置驱动车辆接口是对 AUDEMSP teleop SDK 架构设计最直接、最重要的参考来源。唯一扣分点在于 RTSP 视频方案已过时（WebRTC 迁移仍在进行中）和 ROS2 依赖导致平台受限。其延迟分段测量数据（全链路 7 段分解）和三级安全管道决策矩阵是 AUDEMSP 遥操作模块设计的核心学术参考。
 **相关决策**: D73, D77, D4, D149
 
 
@@ -496,15 +496,15 @@ gst-launch-1.0 \
     4. 对于遥操作控制通道: UDP 优于 TCP (同延迟 + 更高鲁棒性)
 ```
 
-### D. TUM 模块到 OMSPBase 架构映射
-| TUM 包 (ROS2) | OMSPBase 对应模块 | 映射说明 |
+### D. TUM 模块到 AUDEMSP 架构映射
+| TUM 包 (ROS2) | AUDEMSP 对应模块 | 映射说明 |
 |--------------|-------------------|---------|
-| tod_network | omspbase-transport (传输层) | TUM UDP template → OMSPBase RTCDataChannel/WebRTC transport |
-| tod_video | omspbase-capture + HardwareEncoder + WebRtcPlugin | RTSP → WebRTC (GStreamer 保留为编码引擎) |
+| tod_network | audemsp-transport (传输层) | TUM UDP template → AUDEMSP RTCDataChannel/WebRTC transport |
+| tod_video | audemsp-capture + HardwareEncoder + WebRtcPlugin | RTSP → WebRTC (GStreamer 保留为编码引擎) |
 | tod_direct_control | teleop-sdk::DirectControl | 控制协议: DDS → FlatBuffers binary + RTCDataChannel |
 | tod_trajectory_guidance | teleop-sdk::TrajectoryGuidance | 路径点序列化: DDS → FlatBuffers |
 | tod_safety | teleop-sdk::SafetyValidator | 决策矩阵 → SafetyValidator trait + YAML 配置 |
 | tod_monitoring | teleop-sdk::NetworkMonitor | 延迟分段测量: 7 段 → 7 段 (NTP 时间戳注入) |
 | tod_state_machine | teleop-sdk::SessionManager | ROS2 Lifecycle → Plugin trait lifecycle |
 | tod_vehicle_interface | teleop-sdk::VehicleInterface (trait) | YAML 配置 + 插件体系保持 |
-| tod_operator_interface | omspbase-client::TeleopUI | HID 抽象层保持 (游戏手柄/方向盘/键盘) |
+| tod_operator_interface | audemsp-client::TeleopUI | HID 抽象层保持 (游戏手柄/方向盘/键盘) |

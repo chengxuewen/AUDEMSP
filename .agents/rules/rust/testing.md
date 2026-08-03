@@ -35,7 +35,7 @@ my_crate/
 
 Unit tests go inside `#[cfg(test)]` modules in the same file. Integration tests go in `tests/`.
 
-## OMSPBase Convention
+## AUDEMSP Convention
 
 All crates MUST follow this organization:
 
@@ -49,7 +49,7 @@ All crates MUST follow this organization:
 - **Integration/E2E tests** in `tests/` test only the public API. They compile as separate binaries and catch API surface issues.
 - **Examples** demonstrate usage patterns. GUI examples may use external deps (egui, image) gated behind `[[example]]`-specific dependencies.
 - Keep `tests/` files focused — one feature area per file. Use `tests/common/` for shared test utilities.
-- **No examples/ in library-only crates** (e.g., omspbase-core). Application crates and feature crates (e.g., omspbase-media) should have examples.
+- **No examples/ in library-only crates** (e.g., audemsp-core). Application crates and feature crates (e.g., audemsp-media) should have examples.
 
 ## Unit Test Pattern
 

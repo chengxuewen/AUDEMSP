@@ -1,6 +1,6 @@
 ---
 name: security-hardening
-description: "OMSPBase security audit and hardening. OWASP Top 10 checks, hardcoded secrets/ports/URLs scan (merged review-hardcode), PSK/JWT auth flow review, WebSocket security, secrets management (PIT-10 lesson), mediasoup SFU transport security. Use before release, after auth changes, or when onboarding new PSK keys. Also accessible via /review-hardcode."
+description: "AUDEMSP security audit and hardening. OWASP Top 10 checks, hardcoded secrets/ports/URLs scan (merged review-hardcode), PSK/JWT auth flow review, WebSocket security, secrets management (PIT-10 lesson), mediasoup SFU transport security. Use before release, after auth changes, or when onboarding new PSK keys. Also accessible via /review-hardcode."
 ---
 
 # security-hardening — 安全加固
@@ -84,7 +84,7 @@ PreToolUse (on edit .rs/.toml):
 
 ```toml
 # .gitleaks.toml — project-level config
-title = "OMSPBase gitleaks config"
+title = "AUDEMSP gitleaks config"
 
 [extend]
 useDefault = true
@@ -98,7 +98,7 @@ paths = [
 
 [[rules]]
 id = "custom-psk-pattern"
-description = "OMSPBase PSK keys"
+description = "AUDEMSP PSK keys"
 regex = '''(?i)(psk|pre_shared_key)\s*=\s*["'][A-Za-z0-9+/]{32,}["']'''
 ```
 
@@ -194,7 +194,7 @@ grep -rn 'apiKey\|api_key\|API_KEY' .opencode/ --include='*.json' --include='*.j
 ### PSK 认证 (Host↔Server)
 
 ```rust
-// OMSPBase PSK flow:
+// AUDEMSP PSK flow:
 // Host ──[PSK in WS header]──> Server ──[validate]──> Session token
 
 // 检查点:
@@ -207,10 +207,10 @@ grep -rn 'apiKey\|api_key\|API_KEY' .opencode/ --include='*.json' --include='*.j
 
 ```bash
 # 检查命令
-grep -rn 'pre_shared_key\|psk' crates/omspbase-server/src/ --include='*.rs'
+grep -rn 'pre_shared_key\|psk' crates/audemsp-server/src/ --include='*.rs'
 grep -rn 'env::var.*PSK\|env::var.*SECRET' crates/ --include='*.rs'
-grep -rn 'session.*ttl\|token.*expir\|jwt.*exp' crates/omspbase-common/src/auth/ --include='*.rs'
-grep -rn 'rate.limit\|429\|too.many' crates/omspbase-server/src/ --include='*.rs'
+grep -rn 'session.*ttl\|token.*expir\|jwt.*exp' crates/audemsp-common/src/auth/ --include='*.rs'
+grep -rn 'rate.limit\|429\|too.many' crates/audemsp-server/src/ --include='*.rs'
 ```
 
 ### JWT 认证 (Admin UI)
@@ -221,13 +221,13 @@ grep -rn 'rate.limit\|429\|too.many' crates/omspbase-server/src/ --include='*.rs
 grep -rn 'jwt.*secret\|JWT_SECRET' crates/ --include='*.rs' | grep -v env::var
 
 # 2. 确认算法是 HS256 或 RS256 (不是 none)
-grep -rn 'Algorithm\|alg.*HS\|alg.*RS' crates/omspbase-common/src/auth/ --include='*.rs'
+grep -rn 'Algorithm\|alg.*HS\|alg.*RS' crates/audemsp-common/src/auth/ --include='*.rs'
 
 # 3. 确认有 exp 声明
-grep -rn 'exp\|expir' crates/omspbase-common/src/auth/ --include='*.rs'
+grep -rn 'exp\|expir' crates/audemsp-common/src/auth/ --include='*.rs'
 
 # 4. 确认有 refresh token 轮换
-grep -rn 'refresh_token\|refresh' crates/omspbase-server/src/ --include='*.rs'
+grep -rn 'refresh_token\|refresh' crates/audemsp-server/src/ --include='*.rs'
 ```
 
 ## Phase 3: WebSocket 安全
@@ -235,16 +235,16 @@ grep -rn 'refresh_token\|refresh' crates/omspbase-server/src/ --include='*.rs'
 ```bash
 # 检查命令
 # 1. 消息大小限制 (防 OOM)
-grep -rn 'max.*message\|max.*frame\|message.*size' crates/omspbase-server/src/ --include='*.rs'
+grep -rn 'max.*message\|max.*frame\|message.*size' crates/audemsp-server/src/ --include='*.rs'
 
 # 2. 连接速率限制
-grep -rn 'connection.*limit\|max_connections\|concurrent' crates/omspbase-server/src/ --include='*.rs'
+grep -rn 'connection.*limit\|max_connections\|concurrent' crates/audemsp-server/src/ --include='*.rs'
 
 # 3. Origin 验证
-grep -rn 'origin\|allowed_origin\|verify_origin' crates/omspbase-server/src/ --include='*.rs'
+grep -rn 'origin\|allowed_origin\|verify_origin' crates/audemsp-server/src/ --include='*.rs'
 
 # 4. TLS (生产环境)
-grep -rn 'wss://\|tls\|ssl_config' crates/omspbase-server/src/ --include='*.rs'
+grep -rn 'wss://\|tls\|ssl_config' crates/audemsp-server/src/ --include='*.rs'
 ```
 
 ### 消息注入防护
@@ -257,7 +257,7 @@ grep -rn 'wss://\|tls\|ssl_config' crates/omspbase-server/src/ --include='*.rs'
 
 ```bash
 grep -rn '#\[serde(deny_unknown_fields)\|unknown_fields\|additional_properties' crates/ --include='*.rs'
-grep -rn 'serde_json::from_slice\|serde_json::from_str' crates/omspbase-server/src/ --include='*.rs' --include='*.rs'
+grep -rn 'serde_json::from_slice\|serde_json::from_str' crates/audemsp-server/src/ --include='*.rs' --include='*.rs'
 ```
 
 ## Phase 4: mediasoup SFU 安全
@@ -265,16 +265,16 @@ grep -rn 'serde_json::from_slice\|serde_json::from_str' crates/omspbase-server/s
 ```bash
 # 检查命令
 # 1. RTP 端口范围是否受控 (非 0-65535)
-grep -rn 'rtc_min_port\|rtc_max_port\|rtp_port' crates/omspbase-server/src/ --include='*.rs'
+grep -rn 'rtc_min_port\|rtc_max_port\|rtp_port' crates/audemsp-server/src/ --include='*.rs'
 
 # 2. WebRTC transport 是否需要 auth
-grep -rn 'web_rtc_server\|webRtcTransport\|transport.*auth' crates/omspbase-server/src/ --include='*.rs'
+grep -rn 'web_rtc_server\|webRtcTransport\|transport.*auth' crates/audemsp-server/src/ --include='*.rs'
 
 # 3. Room 创建是否需要权限
-grep -rn 'create_room\|router.*create' crates/omspbase-server/src/sfu/ --include='*.rs'
+grep -rn 'create_room\|router.*create' crates/audemsp-server/src/sfu/ --include='*.rs'
 
 # 4. Producer/Consumer 权限隔离
-grep -rn 'peer_id\|producer.*peer\|consumer.*peer' crates/omspbase-server/src/sfu/ --include='*.rs'
+grep -rn 'peer_id\|producer.*peer\|consumer.*peer' crates/audemsp-server/src/sfu/ --include='*.rs'
 ```
 
 ## Phase 5: 依赖审计
@@ -296,21 +296,21 @@ grep -rn 'unsafe' crates/ --include='*.rs' | grep -v '// SAFETY:'
 ```bash
 # 检查命令
 # 1. Dashboard 是否要求认证
-grep -rn 'auth\|login\|redirect.*login' crates/omspbase-server/src/admin/ --include='*.rs'
+grep -rn 'auth\|login\|redirect.*login' crates/audemsp-server/src/admin/ --include='*.rs'
 
 # 2. 是否有 CSRF 防护
-grep -rn 'csrf\|xsrf\|same_site' crates/omspbase-server/src/ --include='*.rs'
+grep -rn 'csrf\|xsrf\|same_site' crates/audemsp-server/src/ --include='*.rs'
 
 # 3. CORS 是否严格
-grep -rn 'access-control\|allow_origin\|cors' crates/omspbase-server/src/ --include='*.rs'
+grep -rn 'access-control\|allow_origin\|cors' crates/audemsp-server/src/ --include='*.rs'
 
 # 4. Content Security Policy
-grep -rn 'content-security\|CSP\|frame-ancestors' crates/omspbase-server/src/admin/ --include='*.rs'
+grep -rn 'content-security\|CSP\|frame-ancestors' crates/audemsp-server/src/admin/ --include='*.rs'
 ```
 
 ## 安全清单 (OWASP Top 10 aligned)
 
-| # | 检查项 | OMSPBase 对应 | 命令 | 必须 |
+| # | 检查项 | AUDEMSP 对应 | 命令 | 必须 |
 |---|--------|-------------|------|:---:|
 | A01 | 访问控制失效 | Auth trait 实现完整 | `grep -rn 'TODO\|FIXME' crates/*/src/auth/` | ✅ |
 | A02 | 加密失败 | PSK ≥32B, TLS wss:// | `grep -rn 'wss://' crates/` (生产检查) | ✅ |
@@ -321,7 +321,7 @@ grep -rn 'content-security\|CSP\|frame-ancestors' crates/omspbase-server/src/adm
 | A07 | 认证失败 | PSK + JWT 双模式 | Phase 2 全部检查 | ✅ |
 | A08 | 软件数据完整性 | FlatBuffers 验证 | (Phase 2+) | ✅ |
 | A09 | 日志监控失败 | 审计日志 | `grep -rn 'audit\|security.log' crates/` | ⚠️ |
-| A10 | SSRF | 无服务端 HTTP 拉取 | `grep -rn 'reqwest\|hyper::Client' crates/omspbase-server/` | ✅ |
+| A10 | SSRF | 无服务端 HTTP 拉取 | `grep -rn 'reqwest\|hyper::Client' crates/audemsp-server/` | ✅ |
 
 ## 报告格式
 

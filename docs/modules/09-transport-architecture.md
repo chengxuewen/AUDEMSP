@@ -4,7 +4,7 @@
 
 > Phase 0 架构定义 — MediaTransport trait、双后端 + 测试桩分发、sans-I/O 运行循环。参考 webrtc-kit 的 trait 抽象 + str0m 的 sans-I/O 设计。默认后端 webrtc-sys（libwebrtc C++ FFI 包装）。str0m 推迟至 Phase 2+（Embed 场景）。
 
-**命名约定**: 本文档描述 sans-I/O 内部传输层，方法使用 Rust snake_case 惯例（如 create_offer）。对外 omspbase-webrtc W3C API 层使用 camelCase（如 createOffer），RTC 前缀类型名（如 RTCPeerConnection）。详见 docs/modules/17-webrtc-crate.md。
+**命名约定**: 本文档描述 sans-I/O 内部传输层，方法使用 Rust snake_case 惯例（如 create_offer）。对外 audemsp-webrtc W3C API 层使用 camelCase（如 createOffer），RTC 前缀类型名（如 RTCPeerConnection）。详见 docs/modules/17-webrtc-crate.md。
 
 
 ---
@@ -188,7 +188,7 @@ libwebrtc VideoTrackSource::write_frame()
                                 │
                                 ▼
 ┌───────────────────────────────────────────────────┐
-│           OMSPBase Transport Layer                 │
+│           AUDEMSP Transport Layer                 │
 │  MediaTrack::write(&[u8])                         │
 │  → webrtc-sys: TrackLocal::write_frame()          │
 │  → libwebrtc: RTP packetizer + SRTP + DTLS        │
@@ -206,7 +206,7 @@ libwebrtc VideoTrackSource::write_frame()
 ### 3.1 cfg dispatch（webrtc-kit 模式）
 
 ```rust
-// omspbase-transport/src/engine.rs
+// audemsp-transport/src/engine.rs
 
 pub fn create_factory(
     config: &TransportConfig,
@@ -384,7 +384,7 @@ pub struct CodecConfig {
 
 ## 七、参考项目映射
 
-| OMSPBase 概念 | webrtc-kit | str0m | mediasoup-rust |
+| AUDEMSP 概念 | webrtc-kit | str0m | mediasoup-rust |
 |---------------|-----------|-------|----------------|
 | MediaTransportFactory | RTCPeerConnectionFactory | — | Router |
 | MediaTransport | RTCPeerConnection | Rtc | Transport trait |

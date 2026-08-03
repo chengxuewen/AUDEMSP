@@ -1,9 +1,9 @@
 ---
 name: ci-cd-automation
-description: "OMSPBase CI/CD pipeline management: Docker compose (server + SFU), GitHub Actions (fmt/check/clippy/test/mediasoup/benchmark), pixi tasks (check/build/lint/test/audit/coverage), cargo-deny audit, and platform-specific builds (macOS native + Linux Docker). Use for CI troubleshooting, pipeline changes, or pre-merge verification."
+description: "AUDEMSP CI/CD pipeline management: Docker compose (server + SFU), GitHub Actions (fmt/check/clippy/test/mediasoup/benchmark), pixi tasks (check/build/lint/test/audit/coverage), cargo-deny audit, and platform-specific builds (macOS native + Linux Docker). Use for CI troubleshooting, pipeline changes, or pre-merge verification."
 ---
 
-# ci-cd-automation — OMSPBase CI/CD Pipeline
+# ci-cd-automation — AUDEMSP CI/CD Pipeline
 
 > The pipeline IS the gate. Every check is a contract. Don't merge red.
 
@@ -18,7 +18,7 @@ GitHub Actions (on push/PR to main)
 ├── test         : cargo test --workspace   (ubuntu + macOS)
 ├── test-gstreamer   : pixi run test-gstreamer  (ubuntu)
 ├── test-mediasoup   : SFU tests (ubuntu-22.04 only)
-├── benchmark        : cargo bench -p omspbase-server
+├── benchmark        : cargo bench -p audemsp-server
 └── openapi-validate : Python OpenAPI 3.0.3 validation
 ```
 
@@ -41,7 +41,7 @@ pixi run check          # via scripts/cargo-sfu.sh wrapper
 pixi run build          # via scripts/cargo-sfu.sh wrapper
 pixi run lint           # clippy via wrapper
 pixi run test           # test via wrapper
-pixi run test-sfu       # omspbase-server with sfu-mediasoup feature
+pixi run test-sfu       # audemsp-server with sfu-mediasoup feature
 ```
 
 ## Docker Compose Workflow
@@ -56,7 +56,7 @@ docker compose up -d
 docker compose logs -f server
 
 # Execute commands inside
-docker compose exec server cargo check -p omspbase-server --features sfu-mediasoup
+docker compose exec server cargo check -p audemsp-server --features sfu-mediasoup
 
 # SFU E2E test inside container
 docker compose exec server bash scripts/test-sfu-e2e.sh
@@ -87,7 +87,7 @@ These run through `scripts/cargo-sfu.sh` which handles mediasoup-sys build quirk
 | `pixi run build` | `cargo build --workspace` | Before running bins |
 | `pixi run lint` | `cargo clippy --workspace --all-targets -- -D warnings` | Before commit |
 | `pixi run test` | `cargo test --workspace` | Before PR |
-| `pixi run test-sfu` | `cargo test -p omspbase-server --features sfu-mediasoup` | SFU changes only |
+| `pixi run test-sfu` | `cargo test -p audemsp-server --features sfu-mediasoup` | SFU changes only |
 
 ### Vanilla Tasks (no wrapper, faster)
 
@@ -154,7 +154,7 @@ docker compose exec server cargo test --features sfu-mediasoup  # macOS workarou
 pixi run test-gstreamer  # Linux only
 
 # 8. Coverage check (target: 80%+)
-pixi run coverage | grep -E "omspbase|TOTAL"
+pixi run coverage | grep -E "audemsp|TOTAL"
 ```
 
 ## CI Troubleshooting
@@ -207,15 +207,15 @@ print('OK')
 
 ```bash
 # Host and Client: NATIVE (no mediasoup dep)
-cargo build -p omspbase-host
-cargo build -p omspbase-client
+cargo build -p audemsp-host
+cargo build -p audemsp-client
 
 # Server: check only (mediasoup won't build)
-cargo check -p omspbase-server --features sfu-mediasoup
+cargo check -p audemsp-server --features sfu-mediasoup
 
 # Full server build + test: use Docker
 docker compose up -d
-docker compose exec server cargo test -p omspbase-server --features sfu-mediasoup
+docker compose exec server cargo test -p audemsp-server --features sfu-mediasoup
 ```
 
 ## Adding a New CI Job

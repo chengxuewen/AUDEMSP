@@ -1,6 +1,6 @@
 # Code Edit Safety
 
-> **Target audience**: AI agents editing OMSPBase source code.
+> **Target audience**: AI agents editing AUDEMSP source code.
 > **Violation of these rules causes token waste from repeated fix cycles.**
 
 ## Tool Selection
@@ -89,7 +89,7 @@ After claiming tests are written or features are working:
 
 - **ALL required features MUST be in `default` features** in Cargo.toml — never require manual `--features` for core functionality
 - **Build commands in docs MUST include all features** — never document `cargo build` without required features
-- **Before running server, ALWAYS verify**: `cargo build -p omspbase-server` (with defaults) produces working binary
+- **Before running server, ALWAYS verify**: `cargo build -p audemsp-server` (with defaults) produces working binary
 - **If a feature is optional, it must be explicitly opt-out** (disable with `--no-default-features`)
 
 ## Self-Verification Requirement (NON-NEGOTIABLE)

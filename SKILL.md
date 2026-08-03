@@ -1,4 +1,4 @@
-# OMSPBase Skills Registry
+# AUDEMSP Skills Registry
 
 ## Superpowers
 
@@ -6,7 +6,7 @@
 
 ## Project Skills
 
-OMSPBase 项目专属技能，位于 `.agents/skills/`：
+AUDEMSP 项目专属技能，位于 `.agents/skills/`：
 
 | Skill | 类型 | 说明 |
 |-------|------|------|

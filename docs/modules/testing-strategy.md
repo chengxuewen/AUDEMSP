@@ -30,7 +30,7 @@ Layer 4: E2E          → Host→Server→Remote 全链路
 
 ### Layer 3: Integration
 
-- 位置：`crates/omspbase-server/tests/integration_*.rs`（server 作为协调点）
+- 位置：`crates/audemsp-server/tests/integration_*.rs`（server 作为协调点）
 - 场景：
   - Host 注册 → Server 确认 → Remote 发现 Host 列表
   - RTP relay 环路：Host → Server → Remote → Server → Host
@@ -50,10 +50,10 @@ Layer 4: E2E          → Host→Server→Remote 全链路
 
 | Crate | Unit | Component | 合计 |
 |-------|------|-----------|------|
-| omspbase-host | 60% | 80% | 80% |
-| omspbase-client | 50% | 75% | 75% |
-| omspbase-server | 60% | 80% | 80% |
-| omspbase-common (Phase 2) | 70% | 85% | 85% |
+| audemsp-host | 60% | 80% | 80% |
+| audemsp-client | 50% | 75% | 75% |
+| audemsp-server | 60% | 80% | 80% |
+| audemsp-common (Phase 2) | 70% | 85% | 85% |
 
 工具：`cargo tarpaulin --workspace --out xml`
 

@@ -133,7 +133,7 @@ MediaMTX 的协议自动转换支持任意协议组合，以下是已验证的�
 
 MediaMTX 的协议转换不需要编解码操作（pure passthrough），但在不同协议组合下的延迟表现因传输层特性而异：
 
-| 推流协议 | 播放协议 | 端到端延迟（局域网） | 瓶颈环节 | 适用 OMSPBase 场景 |
+| 推流协议 | 播放协议 | 端到端延迟（局域网） | 瓶颈环节 | 适用 AUDEMSP 场景 |
 |---------|---------|-------------------|---------|-------------------|
 | RTSP (TCP) | RTSP (TCP) | <100ms | RTP 解包/封包 | 监控相机→监控观看 |
 | RTSP (TCP) | LL-HLS | 500ms-2s | HLS segment 缓冲 | 监控相机→Web 观看 |
@@ -147,7 +147,7 @@ MediaMTX 的协议转换不需要编解码操作（pure passthrough），但在�
 
 **延迟等级划分**：
 
-| 等级 | 延迟范围 | MediaMTX 组合 | OMSPBase 协议路由策略 |
+| 等级 | 延迟范围 | MediaMTX 组合 | AUDEMSP 协议路由策略 |
 |------|---------|--------------|---------------------|
 | 实时 (Real-time) | <150ms | RTSP→RTSP, WebRTC→WebRTC, SRT→WebRTC | Fragment→WHEP 直通，零缓冲 |
 | 准实时 (Near-real-time) | 150-500ms | RTSP→WebRTC, RTMP→WebRTC, QUIC→WebRTC | Fragment→WHEP，最小 jitter buffer |
@@ -156,7 +156,7 @@ MediaMTX 的协议转换不需要编解码操作（pure passthrough），但在�
 
 ### 传输层协议对比
 
-| 传输协议 | 多路复用 | 丢包恢复 | 连接迁移 | TLS 加密 | 防火墙穿越 | OMSPBase 优先级 |
+| 传输协议 | 多路复用 | 丢包恢复 | 连接迁移 | TLS 加密 | 防火墙穿越 | AUDEMSP 优先级 |
 |---------|:-------:|:-------:|:-------:|:--------:|:---------:|:--------------:|
 | TCP | ❌ (顺序) | 重传 (头部阻塞) | ❌ | ✅ | ✅ | Phase 1 (基础) |
 | UDP | ❌ | 应用层处理 | ❌ | DTLS | ⚠️ | Phase 1 (SRT/WebRTC) |
@@ -269,13 +269,13 @@ MediaMTX 没有传统插件系统。扩展方式：
 4. **Media-over-QUIC 先行者**：2026年6月 v1.19.0 即支持。领先 SRS (13 年项目)、nginx-rtmp (14 年项目)、Ant Media (8 年项目) 等所有竞品。QUIC 传输层在丢包恢复、连接迁移、多路复用方面优于 TCP
 5. **IP 摄像头场景的一站式方案**：RPI Camera 硬件编码 + RTSP 主协议 + on-demand 拉流 + 多协议分发。从摄像头到 viewer 的完整链路，且几乎零配置
 
-## 7. 对 OMSPBase 的参考价值
+## 7. 对 AUDEMSP 的参考价值
 ### [Adopt] 可直接借鉴
-1. **Path 抽象模型**：`path → { publisher/source, readers[], auth, config }` 的流生命周期管理模型直接映射到 OMSPBase 的 Stream/Channel 概念。Path 作为 publisher 和 reader 的 meeting point，与 OMSPBase 的 Stream 概念高度契合。状态机设计（Idle → Ready → OnDemand*）也值得直接复用
-2. **sourceOnDemand 按需拉流模式**：OMSPBase 监控相机接入的核心能力之一。`MediaSource` trait 的 `start()`/`stop()` 生命周期方法天然支持此模式。当没有 `StreamSubscriber` 连接时释放对摄像头的 RTSP 连接
-3. **协议自动转换的零配置哲学**：MediaMTX 证明了不需要显式配置"RTSP → HLS"转换规则。OMSPBase 的 Unified Fragment Model 天然支持这种模式：所有输入产生 Fragment → 所有输出消费 Fragment → 所有协议组合自动可用
-4. **Read Replica 水平扩展**：origin-replica 是最简单的水平扩展模式。不需要 Raft/etcd，通过外部 LB 实现。OMSPBase Phase 1-2 可以先用此模式，后期再升级到更完善的集群方案
-5. **热重载配置**：不中断已有连接更新配置是生产服务器的基本要求。OMSPBase 的 PluginManager 应该设计运行时配置重载能力（通过 `ConfigUpdate` trait 方法或信号处理）
+1. **Path 抽象模型**：`path → { publisher/source, readers[], auth, config }` 的流生命周期管理模型直接映射到 AUDEMSP 的 Stream/Channel 概念。Path 作为 publisher 和 reader 的 meeting point，与 AUDEMSP 的 Stream 概念高度契合。状态机设计（Idle → Ready → OnDemand*）也值得直接复用
+2. **sourceOnDemand 按需拉流模式**：AUDEMSP 监控相机接入的核心能力之一。`MediaSource` trait 的 `start()`/`stop()` 生命周期方法天然支持此模式。当没有 `StreamSubscriber` 连接时释放对摄像头的 RTSP 连接
+3. **协议自动转换的零配置哲学**：MediaMTX 证明了不需要显式配置"RTSP → HLS"转换规则。AUDEMSP 的 Unified Fragment Model 天然支持这种模式：所有输入产生 Fragment → 所有输出消费 Fragment → 所有协议组合自动可用
+4. **Read Replica 水平扩展**：origin-replica 是最简单的水平扩展模式。不需要 Raft/etcd，通过外部 LB 实现。AUDEMSP Phase 1-2 可以先用此模式，后期再升级到更完善的集群方案
+5. **热重载配置**：不中断已有连接更新配置是生产服务器的基本要求。AUDEMSP 的 PluginManager 应该设计运行时配置重载能力（通过 `ConfigUpdate` trait 方法或信号处理）
 - **版本演进**：
   - 2019-12：rtsp-simple-server v0.0.0 — 仅 RTSP 推流+拉流，Go 编写
   - 2020-02：v0.2.0 — 加入 RTMP 播放支持
@@ -291,24 +291,24 @@ MediaMTX 没有传统插件系统。扩展方式：
 
 
 ### [Adapt] 需修改后采用
-1. **Path 模型 + Fragment 模型融合**：MediaMTX 的 path 模型缺乏统一的内部媒体表示（内部只是 codec-aware ring buffer）。OMSPBase 应该在 path 模型上叠加 Fragment 模型 — path 管理流生命周期和权限，Fragment 管理媒体数据表示和跨协议映射
-2. **录制策略**：MediaMTX 的 fMP4/MPEG-TS 分段录制到本地磁盘。OMSPBase 应该统一使用 CMAF/fMP4（与 Fragment payload 一致），录制目标支持多种后端（本地、S3/OSS、NFS），且直接从 FragmentObserver 写入
-3. **外部转码的集成方式**：MediaMTX 的 `runOnReady` 钩子 + FFmpeg 子进程模式的功能性正确但运维复杂。OMSPBase 应该设计 `Transcoder` trait，支持内建转码（首选）和外部转码（备选）两种后端，统一生命周期管理
-4. **RPI Camera 配置统一的思路**：MediaMTX v2.8.0 统一软硬件编码参数的作法值得借鉴。OMSPBase 的 `HardwareEncoder` trait 应该提供统一的配置接口，隐藏 NVENC/VAAPI/VT/QSV 的差异
-5. **RTSP 隧道**：RTSP over HTTP/WebSocket 的防火墙穿透对监控场景有价值。OMSPBase 的 `RtspPlugin` 应该支持多种 transport（TCP interleaved, UDP, HTTP tunnel）
-6. **QUIC/WebTransport 传输层**：MediaMTX v1.19.0 验证了 QUIC 在流媒体中的可行性。OMSPBase Phase 4+ 应该将 QUIC/WebTransport 作为统一传输层，减少协议数量
+1. **Path 模型 + Fragment 模型融合**：MediaMTX 的 path 模型缺乏统一的内部媒体表示（内部只是 codec-aware ring buffer）。AUDEMSP 应该在 path 模型上叠加 Fragment 模型 — path 管理流生命周期和权限，Fragment 管理媒体数据表示和跨协议映射
+2. **录制策略**：MediaMTX 的 fMP4/MPEG-TS 分段录制到本地磁盘。AUDEMSP 应该统一使用 CMAF/fMP4（与 Fragment payload 一致），录制目标支持多种后端（本地、S3/OSS、NFS），且直接从 FragmentObserver 写入
+3. **外部转码的集成方式**：MediaMTX 的 `runOnReady` 钩子 + FFmpeg 子进程模式的功能性正确但运维复杂。AUDEMSP 应该设计 `Transcoder` trait，支持内建转码（首选）和外部转码（备选）两种后端，统一生命周期管理
+4. **RPI Camera 配置统一的思路**：MediaMTX v2.8.0 统一软硬件编码参数的作法值得借鉴。AUDEMSP 的 `HardwareEncoder` trait 应该提供统一的配置接口，隐藏 NVENC/VAAPI/VT/QSV 的差异
+5. **RTSP 隧道**：RTSP over HTTP/WebSocket 的防火墙穿透对监控场景有价值。AUDEMSP 的 `RtspPlugin` 应该支持多种 transport（TCP interleaved, UDP, HTTP tunnel）
+6. **QUIC/WebTransport 传输层**：MediaMTX v1.19.0 验证了 QUIC 在流媒体中的可行性。AUDEMSP Phase 4+ 应该将 QUIC/WebTransport 作为统一传输层，减少协议数量
 
 ### [Avoid] 已知坑 / 不适用场景
-1. **Go GC 低延迟风险**：毫秒级 GC 停顿对 <50ms 场景不可接受。OMSPBase 的 Rust 核心没有 GC，这是正确的选择
-2. **不内置转码的架构限制**：MediaMTX 完全依赖外部进程转码。OMSPBase 需要内置 transmux 路径（Fragment 容器格式转换）和可选编码管线。不应依赖外部进程
-3. **无 GPU 硬件编码能力**：纯 Go 无法调用 GPU API。OMSPBase 的屏幕捕获和编码路径必须通过 Rust FFI 或 `libloading` 直接调用 NVENC/VAAPI/VT
-4. **Read Replica 无故障转移**：无自动 failover。OMSPBase 如果需要高可用，需要设计更完善的集群方案（参考 LVQR 的 gossip 集群）
-5. **单 publisher 限制**：一个 path 仅一个 publisher。OMSPBase 的视频会议需要多 publisher → audiomixer/compositor 后输出。需要在 path 模型上增加 room/conference 抽象
+1. **Go GC 低延迟风险**：毫秒级 GC 停顿对 <50ms 场景不可接受。AUDEMSP 的 Rust 核心没有 GC，这是正确的选择
+2. **不内置转码的架构限制**：MediaMTX 完全依赖外部进程转码。AUDEMSP 需要内置 transmux 路径（Fragment 容器格式转换）和可选编码管线。不应依赖外部进程
+3. **无 GPU 硬件编码能力**：纯 Go 无法调用 GPU API。AUDEMSP 的屏幕捕获和编码路径必须通过 Rust FFI 或 `libloading` 直接调用 NVENC/VAAPI/VT
+4. **Read Replica 无故障转移**：无自动 failover。AUDEMSP 如果需要高可用，需要设计更完善的集群方案（参考 LVQR 的 gossip 集群）
+5. **单 publisher 限制**：一个 path 仅一个 publisher。AUDEMSP 的视频会议需要多 publisher → audiomixer/compositor 后输出。需要在 path 模型上增加 room/conference 抽象
 6. **gortsplib 等依赖库的 bus factor**：MediaMTX 的所有协议库都由一人维护。如果作者停止维护，整个生态崩溃
 
 **总体评分**：★★★☆☆ (3/5)
 
-MediaMTX 是协议路由 reference — 在零配置协议转换、IoT/监控边缘场景、QUIC 传输方面表现卓越。Path 抽象和 sourceOnDemand 模式对 OMSPBase 有直接参考价值。但 Go GC 限制、无转码能力、无 GPU 编码能力使其实现方式不适合 OMSPBase 的直接需求。取其设计思想（Path 管理 + 自动转换 + on-demand 拉流），用 Rust + Fragment Model 重新实现。
+MediaMTX 是协议路由 reference — 在零配置协议转换、IoT/监控边缘场景、QUIC 传输方面表现卓越。Path 抽象和 sourceOnDemand 模式对 AUDEMSP 有直接参考价值。但 Go GC 限制、无转码能力、无 GPU 编码能力使其实现方式不适合 AUDEMSP 的直接需求。取其设计思想（Path 管理 + 自动转换 + on-demand 拉流），用 Rust + Fragment Model 重新实现。
 
 ---
 **相关决策**: D5 (Unified Fragment), D21 (时间戳), D-STREAM-TOPOLOGY, D152 (nginx hooks)
@@ -361,7 +361,7 @@ paths:
 
 ### [Adopt] 补充 — 热重载配置设计
 
-**6. 运行时配置热重载**：MediaMTX 支持通过 SIGHUP 信号或 POST API 热重载 YAML 配置文件，不中断已有连接。OMSPBase 的 `PluginManager` 需要类似的机制：
+**6. 运行时配置热重载**：MediaMTX 支持通过 SIGHUP 信号或 POST API 热重载 YAML 配置文件，不中断已有连接。AUDEMSP 的 `PluginManager` 需要类似的机制：
 
 ```rust
 pub trait ConfigurablePlugin: Send + Sync {
@@ -372,13 +372,13 @@ pub trait ConfigurablePlugin: Send + Sync {
 }
 ```
 
-热重载的边界的处理：端口变更需要重启 listener、编解码器变更不会影响已有编码会话、path 配置变更立即生效但不会踢出已有 viewer。OMSPBase 的 PipelineEngine 应在 reload_config() 时遍历所有插件的 apply_config() 方法。
+热重载的边界的处理：端口变更需要重启 listener、编解码器变更不会影响已有编码会话、path 配置变更立即生效但不会踢出已有 viewer。AUDEMSP 的 PipelineEngine 应在 reload_config() 时遍历所有插件的 apply_config() 方法。
 
 ### [Adapt] 补充 — 认证与授权模型
 
-**7. 多级认证机制**：MediaMTX 支持 per-path 的 external/RTSP Digest/JWT/internal 认证，以及 IP 白名单。OMSPBase 的认证模型应更简洁：
+**7. 多级认证机制**：MediaMTX 支持 per-path 的 external/RTSP Digest/JWT/internal 认证，以及 IP 白名单。AUDEMSP 的认证模型应更简洁：
 
-| 认证级别 | MediaMTX 方式 | OMSPBase 方式 | 差异说明 |
+| 认证级别 | MediaMTX 方式 | AUDEMSP 方式 | 差异说明 |
 |---------|-------------|---------------|---------|
 | Level 0 | 无认证 (noauth) | `AuthMode::None` | 内部测试、开发环境 |
 | Level 1 | 静态密码 (internal) | `AuthMode::Static` | 单 Token/密码，简单部署 |
@@ -386,17 +386,17 @@ pub trait ConfigurablePlugin: Send + Sync {
 | Level 3 | JWT | `AuthMode::Jwt` | 无状态令牌，适合微服务 |
 | Level 4 | 多因子 + IP ACL | `AuthMode::Composite` | 安全敏感场景 |
 
-OMSPBase 应采用 `AuthMode` 枚举 + `AuthBackend` trait，允许插件实现自定义认证后端（LDAP/OAuth/OIDC）。
+AUDEMSP 应采用 `AuthMode` 枚举 + `AuthBackend` trait，允许插件实现自定义认证后端（LDAP/OAuth/OIDC）。
 
 ### [Avoid] 补充 — 更多已知坑
 
-**7. QUIC 传输的可达性问题**：MediaMTX 的 Media-over-QUIC 需要客户端支持 HTTP/3 (WebTransport API)。在企业网络中，QUIC (UDP 443) 可能被防火墙封锁（允许 TLS/TCP 443 但不允许 UDP 443）。OMSPBase 如果采用 QUIC 传输，必须保留 TCP/Long-Polling/WebSocket 作为回退传输层。
+**7. QUIC 传输的可达性问题**：MediaMTX 的 Media-over-QUIC 需要客户端支持 HTTP/3 (WebTransport API)。在企业网络中，QUIC (UDP 443) 可能被防火墙封锁（允许 TLS/TCP 443 但不允许 UDP 443）。AUDEMSP 如果采用 QUIC 传输，必须保留 TCP/Long-Polling/WebSocket 作为回退传输层。
 
-**8. 单 path 单 publisher 的局限性**：MediaMTX 一个 path 只允许一个 publisher。这适合监控摄像头和通用推流，但不适合视频会议（需要多方合成）。OMSPBase 需要在 Path 模型上叠加 Room/Conference 模型 — Room 管理多 publisher 的音频混音和视频合成后成为单一的 Fragment 流输出。
+**8. 单 path 单 publisher 的局限性**：MediaMTX 一个 path 只允许一个 publisher。这适合监控摄像头和通用推流，但不适合视频会议（需要多方合成）。AUDEMSP 需要在 Path 模型上叠加 Room/Conference 模型 — Room 管理多 publisher 的音频混音和视频合成后成为单一的 Fragment 流输出。
 
 
-对 OMSPBase 的启示：
-- omspbase-surveillance SDK 的 CameraSource trait 应支持 onDemand: bool
+对 AUDEMSP 的启示：
+- audemsp-surveillance SDK 的 CameraSource trait 应支持 onDemand: bool
 - start() 方法是拉流动作，stop() 是释放动作
 - PipelineEngine 需要感知 viewer 连接数，触发 start/stop
 - 防抖超时需要可配置
@@ -448,10 +448,10 @@ paths:
 - 无自动服务发现：需手动更新 LB 配置
 - Replica 仅分发阅读流量 (无推流/录制功能)
 
-对 OMSPBase 的启示：
+对 AUDEMSP 的启示：
 - Phase 1-2 可采用 Read Replica 作为简单水平扩展方案
 - Phase 3+ 升级到 LVQR gossip 集群 (自动发现 + 故障转移)
-- omspbase-cluster 应实现两个后端 trait 支持渐进式升级
+- audemsp-cluster 应实现两个后端 trait 支持渐进式升级
 
 ---
 
@@ -499,7 +499,7 @@ paths:
 - recordSegmentDuration 录制分段时间，避免单文件过大
 - sourceOnDemand + sourceOnDemandCloseAfter 组合实现节能模式
 
-对 OMSPBase 的启示：
+对 AUDEMSP 的启示：
 - 配置格式应考虑 YAML (人类友好) 而非 INI (SRS) 或 TOML (Xiu)
 - runOnReady 钩子模式是简单场景实用方案，生产应用 trait 抽象
 - 基础录制配置 (路径/格式/分段时间) 是 MVP 的一部分

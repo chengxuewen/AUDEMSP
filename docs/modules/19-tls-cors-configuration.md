@@ -2,11 +2,11 @@
 
 > Phase 1 — 部署参考 | 2026-07-24
 > 关联文档: [security-architecture.md](security-architecture.md) §mTLS, [operations.md](operations.md) §TLS, [13-server-architecture.md](13-server-architecture.md) §部署
-> 关联 crate: omspbase-server
+> 关联 crate: audemsp-server
 
 ## 19.1 概述
 
-OMSPBase Phase 1 采用**外部 TLS 终止**策略：服务进程本身只监听 plain HTTP/WS，TLS 由前置的 reverse proxy（nginx/Caddy/Traefik）处理。这遵循 operations.md 的设计决策：「Phase 1: systemd socket activation + 外部 TLS 终止 (nginx/Caddy)」。
+AUDEMSP Phase 1 采用**外部 TLS 终止**策略：服务进程本身只监听 plain HTTP/WS，TLS 由前置的 reverse proxy（nginx/Caddy/Traefik）处理。这遵循 operations.md 的设计决策：「Phase 1: systemd socket activation + 外部 TLS 终止 (nginx/Caddy)」。
 
 本文档提供：
 - Reverse proxy 配置示例（nginx / Caddy / Traefik）
@@ -33,7 +33,7 @@ Client (browser/GUI)
             │ HTTP/1.1 plain (internal)
             ▼
 ┌─────────────────────────────┐
-│  omspbase-server (port 9800)│
+│  audemsp-server (port 9800)│
 │  - axum HTTP + WS           │
 │  - CORS via CorsLayer       │
 │  - GovernorLayer (rate lim) │
@@ -56,12 +56,12 @@ Client (browser/GUI)
 
 ### 19.3.2 当前状态
 
-`crates/omspbase-server/Cargo.toml` (line 25):
+`crates/audemsp-server/Cargo.toml` (line 25):
 ```toml
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 ```
 
-`cors` feature 已编译但**未被使用**。`crates/omspbase-server/src/main.rs` 的 axum router 仅配置了 `GovernorLayer`：
+`cors` feature 已编译但**未被使用**。`crates/audemsp-server/src/main.rs` 的 axum router 仅配置了 `GovernorLayer`：
 
 ```rust
 // 当前: 无 CORS
@@ -147,7 +147,7 @@ CORS 可以在**两层**处理：
 在 `ServerConfig` 中添加 CORS 配置：
 
 ```rust
-// crates/omspbase-common/src/config.rs
+// crates/audemsp-common/src/config.rs
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CorsConfig {
@@ -181,10 +181,10 @@ fn default_cors_allowed_origins() -> Vec<String> {
 
 ### 19.4.2 Nginx
 
-**最小配置** (`/etc/nginx/sites-available/omspbase`):
+**最小配置** (`/etc/nginx/sites-available/audemsp`):
 
 ```nginx
-upstream omspbase_server {
+upstream audemsp_server {
     server 127.0.0.1:9800;
     keepalive 64;
 }
@@ -209,7 +209,7 @@ server {
 
     # API endpoints (no CORS headers — handled by axum)
     location /api/ {
-        proxy_pass http://omspbase_server;
+        proxy_pass http://audemsp_server;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -219,7 +219,7 @@ server {
 
     # WebSocket — critical: upgrade headers required
     location /ws {
-        proxy_pass http://omspbase_server;
+        proxy_pass http://audemsp_server;
         proxy_http_version 1.1;
 
         # WebSocket upgrade
@@ -236,14 +236,14 @@ server {
 
     # Health check
     location /health {
-        proxy_pass http://omspbase_server;
+        proxy_pass http://audemsp_server;
         proxy_http_version 1.1;
         access_log off;
     }
 
     # Metrics (internal only in production)
     location /metrics {
-        proxy_pass http://omspbase_server;
+        proxy_pass http://audemsp_server;
         proxy_http_version 1.1;
         # 生产环境建议 IP 白名单或 basic auth:
         # allow 10.0.0.0/8;
@@ -329,15 +329,15 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./letsencrypt:/letsencrypt"
 
-  omspbase-server:
-    image: omspbase-server:latest
+  audemsp-server:
+    image: audemsp-server:latest
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.omspbase.rule=Host(`omsp.example.com`)"
-      - "traefik.http.routers.omspbase.entrypoints=websecure"
-      - "traefik.http.routers.omspbase.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.audemsp.rule=Host(`omsp.example.com`)"
+      - "traefik.http.routers.audemsp.entrypoints=websecure"
+      - "traefik.http.routers.audemsp.tls.certresolver=letsencrypt"
       # WebSocket handled automatically by Traefik 2.x+
-      - "traefik.http.services.omspbase.loadbalancer.server.port=9800"
+      - "traefik.http.services.audemsp.loadbalancer.server.port=9800"
 ```
 
 ## 19.5 证书管理
@@ -348,7 +348,7 @@ services:
 # 生成自签 CA
 openssl req -x509 -newkey rsa:4096 -days 365 -nodes \
   -keyout ca-key.pem -out ca-cert.pem \
-  -subj "/CN=OMSPBase Dev CA"
+  -subj "/CN=AUDEMSP Dev CA"
 
 # 生成服务端证书
 openssl req -newkey rsa:4096 -nodes \
@@ -373,7 +373,7 @@ openssl x509 -req -in server-req.pem -days 90 \
 | certbot (nginx) | `certbot --nginx` 自动配置 | 裸金属 nginx |
 | Caddy 内建 | 自动获取+续期，零配置 | 小规模部署 |
 | Traefik ACME | Docker labels 配置 | Docker 部署 |
-| rustls-acme (Phase 3) | 内建 ACME 客户端 | OMSPBase 自身处理 |
+| rustls-acme (Phase 3) | 内建 ACME 客户端 | AUDEMSP 自身处理 |
 
 证书策略：
 - 90 天有效期，自动续期（剩余 30 天时触发）
@@ -399,20 +399,20 @@ services:
       - caddy_config:/config
     restart: unless-stopped
 
-  # === OMSPBase Server ===
+  # === AUDEMSP Server ===
   server:
-    image: omspbase-server:latest
+    image: audemsp-server:latest
     environment:
       - OMSP_SERVER_HOST=0.0.0.0
       - OMSP_SERVER_PORT=9800
       - OMSP_JWT_SECRET=${JWT_SECRET}
       - OMSP_CORS_ORIGINS=https://omsp.example.com
-      - RUST_LOG=info,omspbase_server=debug
+      - RUST_LOG=info,audemsp_server=debug
     expose:
       - "9800"
     volumes:
-      - ./data:/var/lib/omspbase
-      - ./config/server.conf:/etc/omspbase/server.conf:ro
+      - ./data:/var/lib/audemsp
+      - ./config/server.conf:/etc/audemsp/server.conf:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9800/health"]

@@ -381,11 +381,11 @@ nginx-rtmp-module 代表了**以通用反向代理为基础，通过模块扩展
 
 ---
 
-## 7. 对 OMSPBase 的参考价值
+## 7. 对 AUDEMSP 的参考价值
 
 ### 7.1 nginx 模块模式 vs Rust Trait 扩展
 
-nginx-rtmp-module 展示了**事件驱动 + 模块钩子 + 配置继承**的架构模式。OMSPBase 作为 Rust 项目，可以借鉴其设计理念，用 Rust 的 trait 系统实现等价的扩展机制：
+nginx-rtmp-module 展示了**事件驱动 + 模块钩子 + 配置继承**的架构模式。AUDEMSP 作为 Rust 项目，可以借鉴其设计理念，用 Rust 的 trait 系统实现等价的扩展机制：
 
 | nginx C 模式 | Rust 等价方案 | 说明 |
 |-------------|--------------|------|
@@ -400,22 +400,22 @@ nginx-rtmp-module 展示了**事件驱动 + 模块钩子 + 配置继承**的架�
 
 ### 7.2 架构决策借鉴
 
-1. **协议无关的应用框架**：nginx-rtmp 证明了 nginx 不仅是 HTTP 服务器，它的核心是一个**可配置的事件循环 + 模块加载器**。HTTP 和 RTMP 都是在此基础上构建的"应用"。OMSPBase 可以类比为：基于 Rust trait 扩展的应用框架，RTMP、WebRTC、SRT 等协议作为 trait 实现者插入。
+1. **协议无关的应用框架**：nginx-rtmp 证明了 nginx 不仅是 HTTP 服务器，它的核心是一个**可配置的事件循环 + 模块加载器**。HTTP 和 RTMP 都是在此基础上构建的"应用"。AUDEMSP 可以类比为：基于 Rust trait 扩展的应用框架，RTMP、WebRTC、SRT 等协议作为 trait 实现者插入。
 
 2. **配置驱动的路由**：RTMP 通过 `application` 名称路由流，等价于 HTTP 的 `location` 路由。这种模式非常适合流媒体——不同的 `app` 可以有完全不同的处理管线（录制、转码、推送到 CDN）。
 
-3. **中继模型的普适性**：Push/Pull 模式是流媒体分发的基础原语。OMSPBase 应将这些作为一等公民设计，而非仅在应用层实现。
+3. **中继模型的普适性**：Push/Pull 模式是流媒体分发的基础原语。AUDEMSP 应将这些作为一等公民设计，而非仅在应用层实现。
 
-4. **声明式管线组合**：exec 指令体现了"流事件 → 外部程序 → 流输出"的声明式管线。OMSPBase 可以用 Rust 的类型安全 + 编译期检查实现类似但更可靠的管线组合。
+4. **声明式管线组合**：exec 指令体现了"流事件 → 外部程序 → 流输出"的声明式管线。AUDEMSP 可以用 Rust 的类型安全 + 编译期检查实现类似但更可靠的管线组合。
 
 ### 7.3 技术演进方向
 
-nginx-rtmp-module 的历史局限为 OMSPBase 指明了方向：
+nginx-rtmp-module 的历史局限为 AUDEMSP 指明了方向：
 
 - **从编译时扩展到运行时扩展**：支持动态加载协议模块（Rust 的 `libloading` 或 WASM 嵌入）
 - **从单协议到多协议**：RTMP + WebRTC + SRT + RIST 统一在同一个框架中
 - **从配置硬编码到服务发现**：中继端点应支持动态注册和健康检查
 - **从 C 到 Rust**：内存安全、并发安全在高吞吐流媒体场景中至关重要
 
-> **总结**：nginx-rtmp-module 是"如何在一个成熟基础设施上构建流媒体应用"的经典案例。OMSPBase 应取其架构精髓（模块化、事件驱动、配置分层、管线组合），用 Rust 的现代语言特性重新实现，避免其维护性陷阱。
+> **总结**：nginx-rtmp-module 是"如何在一个成熟基础设施上构建流媒体应用"的经典案例。AUDEMSP 应取其架构精髓（模块化、事件驱动、配置分层、管线组合），用 Rust 的现代语言特性重新实现，避免其维护性陷阱。
 **相关决策**: D152 (录制hooks), D-STREAM-TOPOLOGY

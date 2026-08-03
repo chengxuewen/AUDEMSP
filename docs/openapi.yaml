@@ -1,13 +1,13 @@
 openapi: 3.0.3
 info:
-  title: OMSPBase Server API
+  title: AUDEMSP Server API
   description: |
-    Signaling relay, room management, health, and monitoring API for OMSPBase.
+    Signaling relay, room management, health, and monitoring API for AUDEMSP.
     WebSocket signaling at `/ws` is not described here (handled separately).
   version: 0.1.0
   contact:
-    name: OMSPBase Team
-    email: team@omspbase.dev
+    name: AUDEMSP Team
+    email: team@audemsp.dev
 
 servers:
   - url: http://localhost:9800
@@ -88,9 +88,9 @@ paths:
               schema:
                 type: string
               example: |
-                # HELP omspbase_active_connections Number of active WebSocket connections
-                # TYPE omspbase_active_connections gauge
-                omspbase_active_connections 12
+                # HELP audemsp_active_connections Number of active WebSocket connections
+                # TYPE audemsp_active_connections gauge
+                audemsp_active_connections 12
 
 components:
   schemas:

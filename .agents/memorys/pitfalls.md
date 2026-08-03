@@ -1,4 +1,4 @@
-# OMSPBase Pitfalls & Gotchas
+# AUDEMSP Pitfalls & Gotchas
 
 ## PIT-01: macOS -ObjC linker flag (2026-07-20)
 
@@ -98,7 +98,7 @@ compile_error!("Only one backend can be enabled at a time.");
 
 ## PIT-11: mediasoup-sys 0.13.0 与 meson >=0.64 buildtype 参数冲突 (2026-07-28)
 
-**症状**: `cargo check -p omspbase-server --features sfu-mediasoup` 失败：
+**症状**: `cargo check -p audemsp-server --features sfu-mediasoup` 失败：
 `ERROR: Got argument buildtype as both -Dbuildtype and --buildtype. Pick one.`
 
 **根因**: mediasoup-sys 0.13.0 的 `tasks.py` 在 meson setup 命令中同时传入 `--buildtype debug`（命令行参数），而 `meson.build` 的 `default_options` 也设置了 `buildtype=release`。meson >=0.64 拒绝重复的 buildtype 参数。
@@ -231,9 +231,9 @@ compile_error!("Only one backend can be enabled at a time.");
 
 **根因**: `static_files.rs` 使用 `env!("ADMIN_DIST_DIR")` 编译时确定路径。如果 server 先编译、dashboard 后构建，二进制中的路径指向不存在的目录。
 
-**解法**: 必须先 `pnpm build:admin`，再 `cargo build -p omspbase-server --features sfu-mediasoup`。顺序不可颠倒。
+**解法**: 必须先 `pnpm build:admin`，再 `cargo build -p audemsp-server --features sfu-mediasoup`。顺序不可颠倒。
 
-**验证**: `curl -s http://localhost:9800/admin | grep 'OMSPBase Admin'` 应返回完整 HTML。
+**验证**: `curl -s http://localhost:9800/admin | grep 'AUDEMSP Admin'` 应返回完整 HTML。
 
 ## PIT-24: TypeScript 编辑后必须立即 typecheck (2026-07-30)
 
@@ -253,7 +253,7 @@ compile_error!("Only one backend can be enabled at a time.");
 
 **解法**: 创建 `default_router_options()` 函数，包含 Opus + VP8 + H264 三个 codec。所有 Router 创建必须使用此函数而非 `RouterOptions::default()`。
 
-**验证**: `cargo test -p omspbase-server --features sfu-mediasoup -- e2e_sfu_consume_pipeline` 通过。
+**验证**: `cargo test -p audemsp-server --features sfu-mediasoup -- e2e_sfu_consume_pipeline` 通过。
 
 ## PIT-26: signaling.rs SFU 消息中 peer_id 不一致导致 "Peer not found" (2026-07-30)
 
@@ -263,7 +263,7 @@ compile_error!("Only one backend can be enabled at a time.");
 
 **解法**: `handle_sfu_message` 中所有 SFU 操作统一使用 session 的 `peer_id`（函数参数），忽略消息中的 `peer_id` 字段。
 
-**验证**: `cargo test -p omspbase-server --features sfu-mediasoup -- e2e_sfu_consume_pipeline` 通过。
+**验证**: `cargo test -p audemsp-server --features sfu-mediasoup -- e2e_sfu_consume_pipeline` 通过。
 ---
 
 ---
@@ -276,7 +276,7 @@ compile_error!("Only one backend can be enabled at a time.");
 
 **解法**: 使用 `#[cfg(feature = "sfu-mediasoup")]` 和 `#[cfg(not(feature = "sfu-mediasoup"))]` 两个版本的 test helper。async 版本调用 `SfuManager::new().await.unwrap()`。
 
-**验证**: `cargo test -p omspbase-server --features sfu-mediasoup` 编译通过。
+**验证**: `cargo test -p audemsp-server --features sfu-mediasoup` 编译通过。
 
 ## PIT-28: mediasoup RtpCodecParameters 是 untagged enum (2026-07-30)
 
@@ -290,7 +290,7 @@ compile_error!("Only one backend can be enabled at a time.");
 ```
 注意：`payloadType` 必须匹配 Router 的 codec 列表中的值。
 
-**验证**: `cargo test -p omspbase-server --features sfu-mediasoup -- e2e_sfu_consume_pipeline` 通过。
+**验证**: `cargo test -p audemsp-server --features sfu-mediasoup -- e2e_sfu_consume_pipeline` 通过。
 
 ## PIT-29: SDP BUNDLE MID 必须与 a=mid 匹配 (2026-07-30)
 
@@ -310,7 +310,7 @@ compile_error!("Only one backend can be enabled at a time.");
 
 **解法**: 1) Server 在 Consumer 进入 forward loop 时调用 `list_producers()` 查询已有 producer，主动发送 `NewProducer`。2) Browser 端需要排队 pending producer（`new_producer` 可能在 `web_rtc_transport_created` 之前到达，此时 `transportId` 未设置）。
 
-**验证**: `cargo test -p omspbase-server --features sfu-mediasoup -- e2e_sfu` 通过。
+**验证**: `cargo test -p audemsp-server --features sfu-mediasoup -- e2e_sfu` 通过。
 
 ## 参见
 
@@ -342,7 +342,7 @@ compile_error!("Only one backend can be enabled at a time.");
 
 ## PIT-33: mediasoup-sys flatbuffers subproject 构建失败 (2026-07-31)
 
-**症状**: `cargo check -p omspbase-server --features sfu-mediasoup` 报 `ERROR: Subproject flatbuffers is buildable: NO` / `Subproject exists but has no meson.build file`。手动解压 flatbuffers tar.gz 后仍无 meson.build。
+**症状**: `cargo check -p audemsp-server --features sfu-mediasoup` 报 `ERROR: Subproject flatbuffers is buildable: NO` / `Subproject exists but has no meson.build file`。手动解压 flatbuffers tar.gz 后仍无 meson.build。
 
 **根因**: flatbuffers 的 meson.build 来自 wrapdb.mesonbuild.com 的 patch zip（`flatbuffers_24.3.25-1_patch.zip`），wrapdb 不可达时 patch 下载失败。flatbuffers 源码 tarball 本身只有 CMake，无 meson.build。
 
@@ -372,7 +372,7 @@ compile_error!("Only one backend can be enabled at a time.");
 
 ## PIT-36: Docker builder dummy→COPY 层 mtime 坑 — cargo fingerprint 误判源码未变 (2026-08-03)
 
-**症状**: `docker build --target builder` 最终构建报 `cannot find protocol in omspbase_common` + `str::clone` 系列连锁错误，但源码明显正确（grep 确认 pub mod protocol 存在）。
+**症状**: `docker build --target builder` 最终构建报 `cannot find protocol in audemsp_common` + `str::clone` 系列连锁错误，但源码明显正确（grep 确认 pub mod protocol 存在）。
 
 **根因**: Dockerfile 模式「dummy src 编译依赖 → `rm -rf crates/*/src` → `COPY . .` 真实源码 → 最终构建」。**COPY 保留宿主文件 mtime**，宿主 .rs 文件 mtime 早于 dummy 构建时间 → cargo fingerprint 按 mtime 判断源码未变更 → 链接 dummy 阶段编译的**空 common rlib** → 连锁类型错误。
 
@@ -380,16 +380,16 @@ compile_error!("Only one backend can be enabled at a time.");
 ```dockerfile
 COPY . .
 RUN find crates -name '*.rs' -exec touch {} +
-RUN cargo build --release --bin omspbase-server --features sfu-mediasoup
+RUN cargo build --release --bin audemsp-server --features sfu-mediasoup
 ```
 
-**验证**: 最终构建输出显示 `Compiling omspbase-common`（真实重编）而非跳过。
+**验证**: 最终构建输出显示 `Compiling audemsp-common`（真实重编）而非跳过。
 
 ## PIT-37: cargo fetch 要求全部 workspace member 有 targets + [[example]] 文件 (2026-08-03)
 
 **症状**: manifests-first 模式的 `cargo fetch` 报 `no targets specified in the manifest`（缺 src 的 member）或 `can't find square-gen-egui example`（声明了 [[example]] 的 crate 缺 examples/ 文件）。
 
-**根因**: cargo fetch 解析 workspace 时**检查所有 member 的 manifest targets 完整性**（非仅构建目标）。`[[example]]` 显式声明（如 omspbase-media 的 square-gen-egui/viewer/square-gen）会校验文件存在性；自动发现的 examples/*.rs 不校验。
+**根因**: cargo fetch 解析 workspace 时**检查所有 member 的 manifest targets 完整性**（非仅构建目标）。`[[example]]` 显式声明（如 audemsp-media 的 square-gen-egui/viewer/square-gen）会校验文件存在性；自动发现的 examples/*.rs 不校验。
 
 **解法**: dummy 阶段全建：所有 member `touch src/lib.rs`（bin crate 建 main.rs）+ 显式声明的 example 文件 `touch`。builder 与 dev 两处都需。
 
@@ -411,11 +411,11 @@ compose build args 从宿主环境读：`HTTP_PROXY: ${http_proxy:-}`。pip 另�
 
 **⚠️ 修复必须双路径（2026-08-03 补充）**: build 阶段（Dockerfile ARG/ENV）**和** run 阶段（compose `environment:`）都要传代理——`docker compose run server cargo check` 容器内编译 mediasoup-sys 同样需要。只修 build 路径，docker-cargo.sh 第二步仍会 wrapdb 超时。
 
-**验证**: meson 日志显示 wrapdb patch 下载成功；`Failed to build libmediasoup-worker` 消失；`scripts/docker-cargo.sh check -p omspbase-server --features sfu-mediasoup` EXIT 0。
+**验证**: meson 日志显示 wrapdb patch 下载成功；`Failed to build libmediasoup-worker` 消失；`scripts/docker-cargo.sh check -p audemsp-server --features sfu-mediasoup` EXIT 0。
 
 **验证**: meson 日志显示 wrapdb patch 下载成功；`Failed to build libmediasoup-worker` 消失。
 
-## PIT-39: omspbase-server 从未被真实编译 — Docker dev 链路历史故障 (2026-08-03)
+## PIT-39: audemsp-server 从未被真实编译 — Docker dev 链路历史故障 (2026-08-03)
 
 **症状**: 冒烟构建暴露 main.rs:75 `if/else 类型不一致`（String vs &str）——任何真实编译都会报的错。
 

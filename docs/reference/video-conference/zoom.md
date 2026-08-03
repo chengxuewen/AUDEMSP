@@ -254,36 +254,36 @@ Zoom 的「it just works」声誉建立在其自适应传输引擎之上。这�
 4. **UCaaS + CCaaS 双引擎协同**：同一平台覆盖内部协作和外部客户服务。AI 双场景共享知识库——内部会议和客户电话的 AI 洞察可以在同一系统中流转。ZCX 高双位数增长证明了平台的协同效应
 5. **从视频会议先驱到 AI 工作系统先锋**：Zoom 的品牌认知转型是科技行业最果断的战略转向之一。$48.7 亿年收入的商业体量验证了视频会议的市场天花板远比想象的高——前提是有能力持续扩展产品边界
 
-## 7. 对 OMSPBase 的参考价值
+## 7. 对 AUDEMSP 的参考价值
 
 ### [Adopt] 可直接借鉴
 
-1. **GCC→ZC→SFU Node 三层调度模型**：OMSPBase 的 Conference Controller 应实现类似的分层路由——`GlobalRouteManager`（区域选择）→ `ZoneRouter`（节点选择）→ `SfuWorkerNode`（媒体转发）。每层独立扩缩容，职责明确
-2. **自适应传输策略**：UDP 优先 → TCP fallback → TLS 443 最后保障。OMSPBase 的 WebRTC Transport 应实现此降级链，确保企业防火墙环境连通性
-3. **音频优先的 QoS 策略**：带宽竞争时先降帧率 → 分辨率 → 最后才降音频。OMSPBase PipelineEngine 的 QoS 控制器应内置此优先级排序
-4. **云端录制双层架构**：会议中实时分离轨道独立存储（音/视/屏各一轨）。会议后异步 GPU/CPU 批量合成。OMSPBase 录制插件应采用相同架构
-5. **Webinar CDN 分离**：大规模场景中 Speaker 走 SFU（低延迟），观看者走 HLS/DASH CDN。OMSPBase 应从架构期设计此分流能力
-6. **Zoom Node 混合部署**：本地 SFU + 云 SFU 共存。OMSPBase 的多形态部署（Embed/Sidecar/Standalone/AUDEBase）应原生支持 Hybrid 模式——同区域走本地，跨区域 fallback 到云
+1. **GCC→ZC→SFU Node 三层调度模型**：AUDEMSP 的 Conference Controller 应实现类似的分层路由——`GlobalRouteManager`（区域选择）→ `ZoneRouter`（节点选择）→ `SfuWorkerNode`（媒体转发）。每层独立扩缩容，职责明确
+2. **自适应传输策略**：UDP 优先 → TCP fallback → TLS 443 最后保障。AUDEMSP 的 WebRTC Transport 应实现此降级链，确保企业防火墙环境连通性
+3. **音频优先的 QoS 策略**：带宽竞争时先降帧率 → 分辨率 → 最后才降音频。AUDEMSP PipelineEngine 的 QoS 控制器应内置此优先级排序
+4. **云端录制双层架构**：会议中实时分离轨道独立存储（音/视/屏各一轨）。会议后异步 GPU/CPU 批量合成。AUDEMSP 录制插件应采用相同架构
+5. **Webinar CDN 分离**：大规模场景中 Speaker 走 SFU（低延迟），观看者走 HLS/DASH CDN。AUDEMSP 应从架构期设计此分流能力
+6. **Zoom Node 混合部署**：本地 SFU + 云 SFU 共存。AUDEMSP 的多形态部署（Embed/Sidecar/Standalone/AUDEBase）应原生支持 Hybrid 模式——同区域走本地，跨区域 fallback 到云
 
 ### [Adapt] 需修改后采用
 
-1. **自研传输协议 → 标准 WebRTC**：Zoom 的自研协议无法直接借鉴代码，但设计理念可保留。OMSPBase 使用标准 WebRTC 协议栈（str0m 或 webrtc-rs），确保与浏览器和标准 WebRTC 端点互操作
-2. **闭源 AI Companion → 开放 AI 管线**：Zoom AI Companion 的核心架构不可见。OMSPBase PipelineEngine 应提供 `trait MediaProcessor` 作为可插拔 AI 节点——连接开放 LLM/ASR/TTS 服务，不锁定任何单一供应商
-3. **Cloud Controller → 自托管编排**：GCC/ZC 是 Zoom 专有技术。OMSPBase 使用 etcd/NATS 实现服务发现 + 简化版 Zone Router。开源编排 > 闭源黑盒
-4. **Contact Center 路径预留**：ZCX 的成功验证了统一平台的战略价值。OMSPBase 会议室架构设计应预留 `omspbase-contact` crate 的扩展点——即使 Phase 0 不实现
-5. **Custom AI Companion → PipelineEngine Node Graph**：Zoom 的 No-Code 工作流构建器的理念值得借鉴。OMSPBase PipelineEngine 应支持 DAG（有向无环图）定义媒体处理链——Audio→ASR→LLM→TTS→Audio 是一个 5 节点管线
+1. **自研传输协议 → 标准 WebRTC**：Zoom 的自研协议无法直接借鉴代码，但设计理念可保留。AUDEMSP 使用标准 WebRTC 协议栈（str0m 或 webrtc-rs），确保与浏览器和标准 WebRTC 端点互操作
+2. **闭源 AI Companion → 开放 AI 管线**：Zoom AI Companion 的核心架构不可见。AUDEMSP PipelineEngine 应提供 `trait MediaProcessor` 作为可插拔 AI 节点——连接开放 LLM/ASR/TTS 服务，不锁定任何单一供应商
+3. **Cloud Controller → 自托管编排**：GCC/ZC 是 Zoom 专有技术。AUDEMSP 使用 etcd/NATS 实现服务发现 + 简化版 Zone Router。开源编排 > 闭源黑盒
+4. **Contact Center 路径预留**：ZCX 的成功验证了统一平台的战略价值。AUDEMSP 会议室架构设计应预留 `audemsp-contact` crate 的扩展点——即使 Phase 0 不实现
+5. **Custom AI Companion → PipelineEngine Node Graph**：Zoom 的 No-Code 工作流构建器的理念值得借鉴。AUDEMSP PipelineEngine 应支持 DAG（有向无环图）定义媒体处理链——Audio→ASR→LLM→TTS→Audio 是一个 5 节点管线
 
 ### [Avoid] 已知坑 / 不适用场景
 
-1. **Web SDK RTCDataChannel 传视频 = 冻结地狱**：Zoom Web SDK 的最大技术债务。OMSPBase Web 客户端必须使用标准 WebRTC UDP SRTP 媒体通道——永远不要用 RTCDataChannel 传输视频
-2. **自研非标准协议 = 生态孤立**：Zoom 的壁垒也是它的枷锁——无法与标准 WebRTC 端点互通。OMSPBase 必须基于标准协议（SDP/JSEP/ICE/DTLS/SRTP），确保互操作性
-3. **闭源不可审计 = 安全盲盒**：Zoom 的安全事件历史（Zoombombing、E2EE 虚假宣传）证明了闭源软件的安全透明性局限。OMSPBase 开源 + 可审计
-4. **AI 功能过度绑定商业生态**：Zoom 的 AI Companion 完全是其商业 SaaS 的一部分。OMSPBase AI 管线保持 Provider 无关——LLM 可以是 OpenAI/Claude/本地部署，ASR 可以是 Deepgram/Whisper/自研
-5. **Enterprise License 成本模型不适用自建场景**：Zoom 商业模式的本质是「用许可证锁定客户」。OMSPBase 的核心商业价值恰恰相反——提供无需许可证费用的自建方案
+1. **Web SDK RTCDataChannel 传视频 = 冻结地狱**：Zoom Web SDK 的最大技术债务。AUDEMSP Web 客户端必须使用标准 WebRTC UDP SRTP 媒体通道——永远不要用 RTCDataChannel 传输视频
+2. **自研非标准协议 = 生态孤立**：Zoom 的壁垒也是它的枷锁——无法与标准 WebRTC 端点互通。AUDEMSP 必须基于标准协议（SDP/JSEP/ICE/DTLS/SRTP），确保互操作性
+3. **闭源不可审计 = 安全盲盒**：Zoom 的安全事件历史（Zoombombing、E2EE 虚假宣传）证明了闭源软件的安全透明性局限。AUDEMSP 开源 + 可审计
+4. **AI 功能过度绑定商业生态**：Zoom 的 AI Companion 完全是其商业 SaaS 的一部分。AUDEMSP AI 管线保持 Provider 无关——LLM 可以是 OpenAI/Claude/本地部署，ASR 可以是 Deepgram/Whisper/自研
+5. **Enterprise License 成本模型不适用自建场景**：Zoom 商业模式的本质是「用许可证锁定客户」。AUDEMSP 的核心商业价值恰恰相反——提供无需许可证费用的自建方案
 
 **总体评分**：★★★★★ (5/5)
 
-> 评价：Zoom 是商业视频会议的巅峰之作。MMR 三层调度、音频优先 QoS、Webinar CDN 分流、混合云部署、AI Companion 跨产品线融合——每个设计决策都是 OMSPBase 项目的直接灵感来源。虽然闭源使其代码不可用，但其架构设计理念和商业战略演进是所有大规模实时通信系统的通用最佳实践。OMSPBase 应逐条消化 Zoom 的设计智慧，但在实现上走开放标准路线：WebRTC 替代自研协议，Rust 开源替代闭源 C++，可插拔 AI 管线替代封闭 AI Companion，无许可证费替代按席订阅。
+> 评价：Zoom 是商业视频会议的巅峰之作。MMR 三层调度、音频优先 QoS、Webinar CDN 分流、混合云部署、AI Companion 跨产品线融合——每个设计决策都是 AUDEMSP 项目的直接灵感来源。虽然闭源使其代码不可用，但其架构设计理念和商业战略演进是所有大规模实时通信系统的通用最佳实践。AUDEMSP 应逐条消化 Zoom 的设计智慧，但在实现上走开放标准路线：WebRTC 替代自研协议，Rust 开源替代闭源 C++，可插拔 AI 管线替代封闭 AI Companion，无许可证费替代按席订阅。
 
 ---
 
@@ -296,14 +296,14 @@ Zoom 的「it just works」声誉建立在其自适应传输引擎之上。这�
 > Zoom AI Companion 3.0 Press Release（Dec 2025）
 > Zoom Node Architecture: Zoom Blog, "Hybrid Deployment with Zoom Node"（2023）
 > Zoom Web SDK Architecture: WebRTC Hacks, "How Zoom's Web Client Works"（2020）
-> OMSPBase: docs/research/video-conference.md
+> AUDEMSP: docs/research/video-conference.md
 
 ---
 **相关决策**: D-QOS-AUDIO, D50
 
-## 附录 A：Zoom Web SDK 架构与 OMSPBase 教训
+## 附录 A：Zoom Web SDK 架构与 AUDEMSP 教训
 
-Zoom Web SDK 的技术架构是 OMSPBase Web 端设计中「不要做什么」的最佳教材：
+Zoom Web SDK 的技术架构是 AUDEMSP Web 端设计中「不要做什么」的最佳教材：
 
 **Zoom Web SDK 的媒体路径**：
 ```
@@ -327,7 +327,7 @@ Zoom Web SDK 的技术架构是 OMSPBase Web 端设计中「不要做什么」�
 3. 在 WiFi 丢包场景下：丢失的 SCTP 包会被重传 → 后续包被阻塞 → 视频冻结 → 用户体验灾难
 4. Zoom 这样做是因为早期 WebRTC 标准在某些浏览器上不支持屏幕共享 + 标准视频编码的组合
 
-**OMSPBase 的正确路径**：
+**AUDEMSP 的正确路径**：
 1. **永远不要用 RTCDataChannel 传输实时视频**。RTCDataChannel 用于信令、控制消息、遥操作指令
 2. **视频始终走标准 WebRTC UDP SRTP 媒体通道**。丢包时依赖 FEC/PLC/NACK 而非 TCP 重传
 3. **使用标准 WebRTC codec（VP8/VP9/H.264/AV1）**——浏览器内置硬件编解码支持，无需 WASM
@@ -338,12 +338,12 @@ Zoom Web SDK 的技术架构是 OMSPBase Web 端设计中「不要做什么」�
 
 ---
 
-## 附录 B：Zoom MMR 三层调度在 OMSPBase 中的映射
+## 附录 B：Zoom MMR 三层调度在 AUDEMSP 中的映射
 
-Zoom 的 GCC→ZC→MMR 三层调度可以直接映射到 OMSPBase 的 Conference Controller：
+Zoom 的 GCC→ZC→MMR 三层调度可以直接映射到 AUDEMSP 的 Conference Controller：
 
 ```rust
-// OMSPBase Conference Controller 架构
+// AUDEMSP Conference Controller 架构
 
 // Layer 1: Global Route Manager (对应 Zoom GCC)
 struct GlobalRouteManager {
@@ -399,13 +399,13 @@ impl SfuWorkerNode {
 - 每层职责单一——Global Route Manager 管路由、Zone Router 管分配、Worker 管媒体
 - 每层可独立扩缩容——不需要因为增加 Worker 而修改 Zone Router
 - trait 接口化——每层的选择策略可插拔替换（参考 Jitsi BridgeSelectionStrategy）
-- Rust trait 而非 Java interface（与 OMSPBase 技术栈一致）
+- Rust trait 而非 Java interface（与 AUDEMSP 技术栈一致）
 
 ---
 
 ## 附录 C：Zoom 的战略转型启示
 
-Zoom 从「视频会议公司」转型为「AI 工作系统公司」对 OMSPBase 的战略定位有重要启示：
+Zoom 从「视频会议公司」转型为「AI 工作系统公司」对 AUDEMSP 的战略定位有重要启示：
 
 **关键数据点**：
 - AI Companion 付费用户 YoY +184%——AI 功能有真实的付费意愿
@@ -413,13 +413,13 @@ Zoom 从「视频会议公司」转型为「AI 工作系统公司」对 OMSPBase
 - 前 10 CX 交易 10/10 附带 AI——企业客户将 AI 视为采购必备项
 - Custom AI Companion 允许企业自定义 Agent 工作流——平台化 > 功能化
 
-**对 OMSPBase 的战略建议**：
+**对 AUDEMSP 的战略建议**：
 1. **Phase 0 就预留 AI 接口**——即使不实现具体 AI 功能。PipelineEngine 的 `trait MediaProcessor` 应支持
    - ASR Node（音频→文本）
    - LLM Node（文本→文本）
    - TTS Node（文本→音频）
    - Video Analysis Node（视频帧→元数据）
-2. **不锁定任何单一 AI 提供商**——Zoom 绑定自己的 AI Companion。OMSPBase 应保持 Provider 无关
+2. **不锁定任何单一 AI 提供商**——Zoom 绑定自己的 AI Companion。AUDEMSP 应保持 Provider 无关
 3. **AI 作为平台能力而非特定功能**——AI 是管线中的一个节点类型，而非独立的「AI 功能」开关
 4. **录制 + AI 摘要 = 会后价值闭环**——这是 Zoom AI Companion 3.0 的核心价值
    - 会议中：实时转录 + 动作项提取
@@ -455,7 +455,7 @@ Zoom 在 2020 年安全危机后（Zoombombing + E2EE 虚假宣传）于 2021 �
 - 解决方案：只加密 RTP payload，保留 header 明文。这就是 Zoom 和 Jitsi 的共同做法
 - 这被称为「E2EE-Lite」或「Selective Header Encryption」
 
-**对 OMSPBase 的 E2EE 策略建议**：
+**对 AUDEMSP 的 E2EE 策略建议**：
 1. 默认模式（SRTP over DTLS）：服务器可以解密内容，所有功能可用
 2. E2EE 可选模式：Insertable Streams API 加密 payload。开启后禁用云录制、AI 分析、PSTN 桥接
 3. 录制使用本地录制 + 会后加密上传替代云录制
@@ -466,7 +466,7 @@ Zoom 在 2020 年安全危机后（Zoombombing + E2EE 虚假宣传）于 2021 �
 
 ## 附录 E：Zoom 的安全事件历史与教训
 
-Zoom 在 2020 年经历了一系列安全危机，这些教训对所有视频会议产品（包括 OMSPBase）都有参考价值：
+Zoom 在 2020 年经历了一系列安全危机，这些教训对所有视频会议产品（包括 AUDEMSP）都有参考价值：
 
 **2020 年 Zoom 安全危机时间线**：
 1. **Zoombombing**：未受邀请的用户通过猜测会议 ID（9-11 位数字）加入会议实施骚扰。原因：默认配置允许任何人加入，会议 ID 可被暴力枚举
@@ -483,12 +483,12 @@ Zoom 在 2020 年经历了一系列安全危机，这些教训对所有视频会
 - 发布真正的 E2EE（2021 年）
 - 发布透明度报告和安全白皮书
 
-**对 OMSPBase 的安全教训**：
+**对 AUDEMSP 的安全教训**：
 1. **安全不能是事后补丁**——Phase 0 就设计安全。AuthProvider trait、Bearer Token、Permission Matrix、Rate Limiter——从架构期就内置
 2. **默认安全 > 默认开放**——等候室、密码、审批入会默认开启。用户主动选择降低安全等级
 3. **诚实营销**——「点对点加密」和「端到端加密」有严格的技术定义。不要给 SRTP 贴上 E2EE 的标签
-4. **数据路由透明**——如果 OMSPBase 有跨区域节点，让用户明确知道数据经过哪些区域。提供数据驻留选项
-5. **依赖管理安全**——Zoom 的 Windows UNC 漏洞暴露了第三方库依赖的风险。OMSPBase 的 `cargo audit` / `cargo deny` 是 CI/CD 必经环节
+4. **数据路由透明**——如果 AUDEMSP 有跨区域节点，让用户明确知道数据经过哪些区域。提供数据驻留选项
+5. **依赖管理安全**——Zoom 的 Windows UNC 漏洞暴露了第三方库依赖的风险。AUDEMSP 的 `cargo audit` / `cargo deny` 是 CI/CD 必经环节
 
 
 
@@ -508,9 +508,9 @@ Zoom 在 2020 年经历了一系列安全危机，这些教训对所有视频会
 | 自建可行性 | ★★★★★ | ★★★★★ | ★★★★★ | ☆☆☆☆☆ |
 | Rust 生态 | ★★★★★ | ★★★★☆ | ☆☆☆☆☆ | ☆☆☆☆☆ |
 | 生产验证 | ★★★★☆ | ★★★☆☆ | ★★★★★ | ★★★★★ |
-| 对 OMSPBase 参考价值 | ★★★★★ | ★★★★★ | ★★★★☆ | ★★★★☆ |
+| 对 AUDEMSP 参考价值 | ★★★★★ | ★★★★★ | ★★★★☆ | ★★★★☆ |
 
-OMSPBase 推荐策略：
+AUDEMSP 推荐策略：
 - **SFU 引擎**：借鉴 mediasoup（性能模型）+ LiveKit（架构抽象）
 - **信令协议**：借鉴 Colibri2（RESTful 资源建模）+ 自研 WebSocket
 - **分布式架构**：借鉴 Zoom MMR 三层调度 + Jitsi Pools 星型拓扑
@@ -519,7 +519,7 @@ OMSPBase 推荐策略：
 - **安全合规**：借鉴 Jitsi 全开源可审计 + Zoom 安全教训
 - **部署体验**：借鉴 LiveKit 单二进制 + Jitsi Docker Compose
 
-取每一个参考项目中最优秀的设计思想，构建 OMSPBase 自己的最优架构。
+取每一个参考项目中最优秀的设计思想，构建 AUDEMSP 自己的最优架构。
 
 ### 7.9 [Adapt] 深入参考：自适应传输的 Rust 实现
 
@@ -531,7 +531,7 @@ Zoom 的自适应传输决策逻辑可在 PipelineEngine 中以 Rust 实现：
 
 ### 7.10 [Adopt] 深入参考：Zoom Node 混合部署的 Rust 实现
 
-OMSPBase 的 Hybrid 部署模式设计要点：
+AUDEMSP 的 Hybrid 部署模式设计要点：
 - 本地 SFU 和云 SFU 使用相同代码（Rust 单二进制），配置决定角色
 - 本地 SFU 自动发现最近的云 SFU 节点（通过 DNS SRV 或 Redis 注册表）
 - 连接迁移机制：参与者从本地网络切换到互联网时，ICE 连接自动迁移到云 SFU
@@ -539,17 +539,17 @@ OMSPBase 的 Hybrid 部署模式设计要点：
 
 ### 7.11 [Avoid] 深入参考：商业产品闭源风险的工程启示
 
-Zoom 的闭源策略对 OMSPBase 的启示：
-- 互操作性：Zoom 非标准协议的教训——OMSPBase 必须保持与标准 WebRTC 的完全兼容
-- 供应商锁定：Zoom 客户的迁移困境——OMSPBase 使用开放协议确保用户可控
-- 不可审计：闭源代码的安全风险——OMSPBase 开源策略允许用户审计和安全加固
+Zoom 的闭源策略对 AUDEMSP 的启示：
+- 互操作性：Zoom 非标准协议的教训——AUDEMSP 必须保持与标准 WebRTC 的完全兼容
+- 供应商锁定：Zoom 客户的迁移困境——AUDEMSP 使用开放协议确保用户可控
+- 不可审计：闭源代码的安全风险——AUDEMSP 开源策略允许用户审计和安全加固
 
 ### 7.12 [Adopt] 深入参考：AI Companion 的会议集成模式
 
-Zoom AI Companion 的集成模式为 OMSPBase 的 AI 能力设计提供了方向：
+Zoom AI Companion 的集成模式为 AUDEMSP 的 AI 能力设计提供了方向：
 - 实时字幕：基于 ASR 的实时语音转文字，显示在会议界面
 - 智能摘要：会后自动生成会议摘要，发送给所有参与者
 - 动作项提取：基于 LLM 自动识别会议中的待办事项
 - 实时翻译：跨语言会议的实时语音翻译
-- OMSPBase 应在 PipelineEngine 中预留 AI 节点接口，Phase 0 定义 API，后续版本实现
+- AUDEMSP 应在 PipelineEngine 中预留 AI 节点接口，Phase 0 定义 API，后续版本实现
 

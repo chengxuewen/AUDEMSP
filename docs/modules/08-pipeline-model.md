@@ -317,7 +317,7 @@ Phase 2+ 目标：将 GStreamer 降级为可插拔协议适配器，核心管线
 
 ## 六、参考项目映射
 
-| OMSPBase 概念 | LVQR | GStreamer | OBS | MediaMTX |
+| AUDEMSP 概念 | LVQR | GStreamer | OBS | MediaMTX |
 |---------------|------|-----------|-----|----------|
 | InternalPacket | Fragment | GstBuffer | — | unit.Unit |
 | FragmentBroadcaster | FragmentBroadcaster (broadcast::Sender) | tee element | — | — |

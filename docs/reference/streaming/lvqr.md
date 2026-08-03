@@ -351,34 +351,34 @@ Fragment {
 4. **单二进制零配置启动**：`lvqr serve` 一行命令，自动绑定 RTMP (1935)/WHIP (443)/SRT (UDP)/RTSP (TCP) 输入和 LL-HLS (8888)/DASH/WHEP/MoQ (4443)/WS fMP4 (8080) 输出。没有外部 Redis、Kafka、segmenter、signaling 服务器依赖。从克隆仓库到推流播放不到 5 分钟
 5. **Mesh P2P 带宽卸载 94%**：浏览器端 WebRTC RTCDataChannel 网状中继。前 30 个 viewer 直连服务器，后续 viewer 从其他 viewer 中继。树形拓扑自平衡、心跳检测死节点、自动重新连接。500 viewer 时从约 2000 Mbps 降至约 120 Mbps 服务器带宽
 
-## 7. 对 OMSPBase 的参考价值
+## 7. 对 AUDEMSP 的参考价值
 
 ### [Adopt] 可直接借鉴
-1. **Unified Fragment Model 是 OMSPBase 管线模型的 D5 蓝图**：Fragment 类型定义（包括 track_id, group_id, object_id, pts/dts, flags, payload 的字段语义）可直接映射到 OMSPBase 的 `MediaFragment` 类型。FragmentBroadcasterRegistry 的 `(broadcast, track)` 键设计映射到 PipelineEngine 的多流管理。FragmentObserver trait 映射到插件间的观察者模式
-2. **数据平面 / 控制平面分离策略**：LVQR 的原则是控制平面用 `async-trait`（允许每连接一次的动态分配），数据平面用具体类型和 enum dispatch（每 Fragment 零堆分配）。OMSPBase 的 `Plugin` trait（控制面）和 `MediaFrame` 处理（数据面）应遵循完全相同的分离
-3. **Cargo workspace 组织方式**：29 crate 遵循的依赖原则（无循环依赖、`lvqr-core` 零内部依赖、`lvqr-cli` 是唯一组合根）为 OMSPBase 的 workspace 结构提供了经过验证的模板。`lvqr-moq` facade crate 隔离外部依赖版本变更的模式也应采纳
-4. **chitchat gossip 集群模型**：比 Raft/Paxos 简单但足够用。广播所有权 = 租约而非锁。对于 OMSPBase 的流媒体分发场景（不需要线性一致性），最终一致性模型是正确的选择
-5. **玻璃到玻璃延迟的 SLO 体系**：每 transport 独立的三层 SLO 阈值（p50/p95/p99）。按 transport 特性设定不同的延迟容忍度（MoQ 80ms vs HLS 500ms）。OMSPBase 可以直接复用这套 SLO 指标设计
+1. **Unified Fragment Model 是 AUDEMSP 管线模型的 D5 蓝图**：Fragment 类型定义（包括 track_id, group_id, object_id, pts/dts, flags, payload 的字段语义）可直接映射到 AUDEMSP 的 `MediaFragment` 类型。FragmentBroadcasterRegistry 的 `(broadcast, track)` 键设计映射到 PipelineEngine 的多流管理。FragmentObserver trait 映射到插件间的观察者模式
+2. **数据平面 / 控制平面分离策略**：LVQR 的原则是控制平面用 `async-trait`（允许每连接一次的动态分配），数据平面用具体类型和 enum dispatch（每 Fragment 零堆分配）。AUDEMSP 的 `Plugin` trait（控制面）和 `MediaFrame` 处理（数据面）应遵循完全相同的分离
+3. **Cargo workspace 组织方式**：29 crate 遵循的依赖原则（无循环依赖、`lvqr-core` 零内部依赖、`lvqr-cli` 是唯一组合根）为 AUDEMSP 的 workspace 结构提供了经过验证的模板。`lvqr-moq` facade crate 隔离外部依赖版本变更的模式也应采纳
+4. **chitchat gossip 集群模型**：比 Raft/Paxos 简单但足够用。广播所有权 = 租约而非锁。对于 AUDEMSP 的流媒体分发场景（不需要线性一致性），最终一致性模型是正确的选择
+5. **玻璃到玻璃延迟的 SLO 体系**：每 transport 独立的三层 SLO 阈值（p50/p95/p99）。按 transport 特性设定不同的延迟容忍度（MoQ 80ms vs HLS 500ms）。AUDEMSP 可以直接复用这套 SLO 指标设计
 
 ### [Adapt] 需修改后采用
-1. **Fragment payload 格式选择**：LVQR 统一使用 CMAF/fMP4 作为 Fragment payload。OMSPBase 需要评估两种路径：(a) CMAF/fMP4（与 LVQR 一致，通用性好），(b) 原始编码帧（raw H.264 NAL units / raw AAC frames，GPU 编码零拷贝路径）。可能的方案是 Fragment 携带 `payload_format` 枚举字段，支持两种 payload 格式
-2. **WASM 过滤器 → Rust 原生插件**：OMSPBase 的插件体系基于 Rust trait，不需要 WASM 沙箱。但如果多租户场景需要用户自定义过滤器，WASM 沙箱的热重载和隔离能力更有价值。可考虑预留 `WasmFilterPlugin` trait 作为未来扩展点
-3. **AI Agent 框架适配**：LVQR 的 Agent trait + runner 模式提供了进程内 AI 计算的参考实现。OMSPBase 的 AI 需求可能包括：画面内容识别（安全监控）、音频事件检测、实时翻译字幕。Agent 的注入点应该在 Fragment 流上（消费 Fragment，产出 metadata + 新的 Fragment track）
-4. **MoQ facade crate 模式**：LVQR 的 `lvqr-moq` facade crate 隔离 moq-lite 版本变更的策略必须采纳。OMSPBase 的任何外部协议依赖都应该通过 facade crate 隔离，避免版本变更扩散到整个 workspace
-5. **C2PA 签名 → ProvenancePlugin**：LVQR 录制时签名是好模式。OMSPBase 应该设计 `ProvenancePlugin` trait，支持多种签名后端（C2PA 是首选，但也要支持未来可能的标准）。初期可以作为可选 feature，不影响核心管线
-6. **Mesh P2P → 可选高级特性**：带宽成本节省显著（94%），但增加了客户端复杂度（需要维护 WebRTC RTCDataChannel 网状拓扑）。OMSPBase 应该将其作为 feature-gated 的可选模块。参考 LVQR 的 `lvqr-mesh` 拓扑规划器（Rust 端生成拓扑分配，浏览器端执行数据中继）
+1. **Fragment payload 格式选择**：LVQR 统一使用 CMAF/fMP4 作为 Fragment payload。AUDEMSP 需要评估两种路径：(a) CMAF/fMP4（与 LVQR 一致，通用性好），(b) 原始编码帧（raw H.264 NAL units / raw AAC frames，GPU 编码零拷贝路径）。可能的方案是 Fragment 携带 `payload_format` 枚举字段，支持两种 payload 格式
+2. **WASM 过滤器 → Rust 原生插件**：AUDEMSP 的插件体系基于 Rust trait，不需要 WASM 沙箱。但如果多租户场景需要用户自定义过滤器，WASM 沙箱的热重载和隔离能力更有价值。可考虑预留 `WasmFilterPlugin` trait 作为未来扩展点
+3. **AI Agent 框架适配**：LVQR 的 Agent trait + runner 模式提供了进程内 AI 计算的参考实现。AUDEMSP 的 AI 需求可能包括：画面内容识别（安全监控）、音频事件检测、实时翻译字幕。Agent 的注入点应该在 Fragment 流上（消费 Fragment，产出 metadata + 新的 Fragment track）
+4. **MoQ facade crate 模式**：LVQR 的 `lvqr-moq` facade crate 隔离 moq-lite 版本变更的策略必须采纳。AUDEMSP 的任何外部协议依赖都应该通过 facade crate 隔离，避免版本变更扩散到整个 workspace
+5. **C2PA 签名 → ProvenancePlugin**：LVQR 录制时签名是好模式。AUDEMSP 应该设计 `ProvenancePlugin` trait，支持多种签名后端（C2PA 是首选，但也要支持未来可能的标准）。初期可以作为可选 feature，不影响核心管线
+6. **Mesh P2P → 可选高级特性**：带宽成本节省显著（94%），但增加了客户端复杂度（需要维护 WebRTC RTCDataChannel 网状拓扑）。AUDEMSP 应该将其作为 feature-gated 的可选模块。参考 LVQR 的 `lvqr-mesh` 拓扑规划器（Rust 端生成拓扑分配，浏览器端执行数据中继）
 
 ### [Avoid] 已知坑 / 不适用场景
-1. **AGPL-3.0 许可风险**：LVQR 是 AGPL-3.0，OMSPBase 是 Apache 2.0。不能直接复制任何 LVQR 代码。但参考其架构设计、接口定义、类型结构不构成版权问题。关键是要独立编写实现代码
-2. **单开发者依赖风险**：LVQR 是个人项目，设计决策未经社区审查。某些设计选择（如 chitchat 的 10s lease 间隔）可能只是作者偏好。OMSPBase 应对每个设计决策保持独立的工程判断
-3. **性能数据未经验证**：LVQR 的 SLO 数值是设计目标，不是实测数据。OMSPBase 必须建立自己的性能基准测试体系（参考 `lvqr-soak` 的结构，但编写独立的 Rust benchmark）
-4. **MoQ 协议稳定性风险**：MoQ 目前是 IETF 草案（draft-ietf-moq-transport），wire 格式可能发生破坏性变更。OMSPBase 如果集成 MoQ 支持，必须通过 facade crate（`omspbase-moq-bridge`）隔离版本变更
-5. **GStreamer 耦合风险**：LVQR 将 GStreamer 绑定为 ABR 转码的唯一实现。OMSPBase 应该设计 `Transcoder` trait，支持多种后端：GStreamer（通用）、FFmpeg（CLI 兼容）、自定义 NVENC/VAAPI 桥接（零拷贝）。GStreamer 是首选但不是唯一选择
-6. **29 crate 的编译开销**：对于 OMSPBase 的 Phase 0-1 阶段，29 个 crate 可能过多。每个 crate 都有编译时间、API 文档维护、依赖版本管理的成本。初期建议 10-15 个 crate，随着功能增加逐步拆分
+1. **AGPL-3.0 许可风险**：LVQR 是 AGPL-3.0，AUDEMSP 是 Apache 2.0。不能直接复制任何 LVQR 代码。但参考其架构设计、接口定义、类型结构不构成版权问题。关键是要独立编写实现代码
+2. **单开发者依赖风险**：LVQR 是个人项目，设计决策未经社区审查。某些设计选择（如 chitchat 的 10s lease 间隔）可能只是作者偏好。AUDEMSP 应对每个设计决策保持独立的工程判断
+3. **性能数据未经验证**：LVQR 的 SLO 数值是设计目标，不是实测数据。AUDEMSP 必须建立自己的性能基准测试体系（参考 `lvqr-soak` 的结构，但编写独立的 Rust benchmark）
+4. **MoQ 协议稳定性风险**：MoQ 目前是 IETF 草案（draft-ietf-moq-transport），wire 格式可能发生破坏性变更。AUDEMSP 如果集成 MoQ 支持，必须通过 facade crate（`audemsp-moq-bridge`）隔离版本变更
+5. **GStreamer 耦合风险**：LVQR 将 GStreamer 绑定为 ABR 转码的唯一实现。AUDEMSP 应该设计 `Transcoder` trait，支持多种后端：GStreamer（通用）、FFmpeg（CLI 兼容）、自定义 NVENC/VAAPI 桥接（零拷贝）。GStreamer 是首选但不是唯一选择
+6. **29 crate 的编译开销**：对于 AUDEMSP 的 Phase 0-1 阶段，29 个 crate 可能过多。每个 crate 都有编译时间、API 文档维护、依赖版本管理的成本。初期建议 10-15 个 crate，随着功能增加逐步拆分
 
 **总体评分**：★★★★★ (5/5)
 
-LVQR 的 Unified Fragment Model 是 OMSPBase 管线模型的 **D5 优先参考** — 在架构设计层面具有最高优先级。尽管项目处于极早期阶段（5 stars，2026年4月创建），且 AGPL-3.0 许可与 OMSPBase 的 Apache 2.0 不兼容，但其核心设计思想 — 单一内部媒体类型（Fragment）、协议作为投影、N+M 复杂度替代 N×M — 是当前开源流媒体领域唯一真正解决了多协议互转问题的架构方案。
+LVQR 的 Unified Fragment Model 是 AUDEMSP 管线模型的 **D5 优先参考** — 在架构设计层面具有最高优先级。尽管项目处于极早期阶段（5 stars，2026年4月创建），且 AGPL-3.0 许可与 AUDEMSP 的 Apache 2.0 不兼容，但其核心设计思想 — 单一内部媒体类型（Fragment）、协议作为投影、N+M 复杂度替代 N×M — 是当前开源流媒体领域唯一真正解决了多协议互转问题的架构方案。
 
 ---
 **相关决策**: D5 (Unified Fragment Model), D21 (时间戳)
@@ -433,20 +433,20 @@ Fragment.payload (CMAF chunk)
 
 ## 附录 B: 架构决策记录 (ADR) 参考
 
-LVQR 的 tracking/ROADMAP.md 列出 10 条架构决策。以下是对 OMSPBase
+LVQR 的 tracking/ROADMAP.md 列出 10 条架构决策。以下是对 AUDEMSP
 最有参考价值的 5 条：
 
 ### B.1 Unified Fragment Model 是唯一最重要的决策
 **决策**：所有轨道是 Fragment 序列，所有协议是投影。
-**对 OMSPBase**：这条决策必须在 Phase 0 确定。Fragment 类型定义贯穿
+**对 AUDEMSP**：这条决策必须在 Phase 0 确定。Fragment 类型定义贯穿
 所有 crate。一旦确定，添加协议变成机械性桥接工作。
 
 ### B.2 CMAF segmenter 是数据平面根节点
 **决策**：CMAF segmenter 是数据平面的根。HLS/DASH/MoQ/WHEP/Recording/DVR
 都是同一 Fragment 流的不同投影。
-**对 OMSPBase**：omspbase-segmenter crate 应对应 LVQR 的 lvqr-cmaf，
-LVQR 的 29 个 crate 在发布时保持版本对齐 — 所有 crate 在 v1.1.0 release 中均为 1.1.0 版本（lvqr-core, lvqr-fragment, lvqr-moq, lvqr-ingest, lvqr-whip, lvqr-srt, lvqr-rtsp, lvqr-hls, lvqr-dash, lvqr-whep, lvqr-relay, lvqr-mesh, lvqr-cluster, lvqr-wasm, lvqr-agent, lvqr-transcode, lvqr-cli 等 17 个核心 crate）。单体版本策略的优势在于无需担心兼容性，代价是即使单 crate 修改也需重新发布全部。OMSPBase 初期可采用此策略，Phase 3+ 后可独立版本化高频迭代 crate。
-单体版本策略的优势：用户不必担心 crate 间兼容性，workspace 内所有 crate 版本对齐。缺点是：即使只修改了一个 crate，所有 29 个 crate 都需要重新发布。对于 OMSPBase，初期可以采用单体版本策略（Phase 0-1），后期（Phase 3+）可以独立版本化高频迭代的 crate（如 `omspbase-ingest-rtmp` vs `omspbase-cluster`）。
+**对 AUDEMSP**：audemsp-segmenter crate 应对应 LVQR 的 lvqr-cmaf，
+LVQR 的 29 个 crate 在发布时保持版本对齐 — 所有 crate 在 v1.1.0 release 中均为 1.1.0 版本（lvqr-core, lvqr-fragment, lvqr-moq, lvqr-ingest, lvqr-whip, lvqr-srt, lvqr-rtsp, lvqr-hls, lvqr-dash, lvqr-whep, lvqr-relay, lvqr-mesh, lvqr-cluster, lvqr-wasm, lvqr-agent, lvqr-transcode, lvqr-cli 等 17 个核心 crate）。单体版本策略的优势在于无需担心兼容性，代价是即使单 crate 修改也需重新发布全部。AUDEMSP 初期可采用此策略，Phase 3+ 后可独立版本化高频迭代 crate。
+单体版本策略的优势：用户不必担心 crate 间兼容性，workspace 内所有 crate 版本对齐。缺点是：即使只修改了一个 crate，所有 29 个 crate 都需要重新发布。对于 AUDEMSP，初期可以采用单体版本策略（Phase 0-1），后期（Phase 3+）可以独立版本化高频迭代的 crate（如 `audemsp-ingest-rtmp` vs `audemsp-cluster`）。
 
 ### 依赖关系图分析
 
@@ -481,33 +481,33 @@ lvqr-core (零依赖层)
 4. lvqr-cli 是唯一的组合根，其他所有 crate 都是 library target
 5. 测试 crate (test-utils/conformance/soak) 在底层，不污染依赖图
 
-OMSPBase 的 workspace 结构应遵循完全相同的 DAG 原则。omspbase-core 对应 lvqr-core，omspbase-fragment 对应 lvqr-fragment，omspbase-cli 是唯一的组合根。这条原则在 Phase 0 就必须确定，因为一旦 crate 间出现循环依赖，Rust 编译器会直接拒绝编译。
+AUDEMSP 的 workspace 结构应遵循完全相同的 DAG 原则。audemsp-core 对应 lvqr-core，audemsp-fragment 对应 lvqr-fragment，audemsp-cli 是唯一的组合根。这条原则在 Phase 0 就必须确定，因为一旦 crate 间出现循环依赖，Rust 编译器会直接拒绝编译。
 
 作为所有输出协议的统一分片引擎。
 
 ### B.3 无循环依赖图
 **决策**：lvqr-core 零内部依赖。其他 crate 仅依赖 core 或协议根 crate。
-**对 OMSPBase**：workspace 依赖图必须是有向无环的 (DAG)。
-omspbase-core 不依赖任何其他 crate。
+**对 AUDEMSP**：workspace 依赖图必须是有向无环的 (DAG)。
+audemsp-core 不依赖任何其他 crate。
 
 ### B.4 lvqr-cli 是唯一组合根
 **决策**：仅 lvqr-cli 将 crate 组装成可执行文件。其他 crate 都是 library。
-**对 OMSPBase**：应有单一的 omspbase-server (Host) 和 omspbase-client
+**对 AUDEMSP**：应有单一的 audemsp-server (Host) 和 audemsp-client
 (Client) 组合根。其他 crate 保持 library 可测试性。
 
 ### B.5 MoQ facade crate 隔离版本变更
 **决策**：lvqr-moq 是 moq-lite 的 facade。所有 MoQ 用法通过 newtype 导出。
-**对 OMSPBase**：任何外部协议依赖都应通过 facade crate 隔离。
+**对 AUDEMSP**：任何外部协议依赖都应通过 facade crate 隔离。
 避免外部库版本变更在 workspace 内扩散。
 
 ---
 
-## 附录 C: 与 OMSPBase Plugin Trait 的映射
+## 附录 C: 与 AUDEMSP Plugin Trait 的映射
 
 ```rust
-// OMSPBase 架构中的对应关系
+// AUDEMSP 架构中的对应关系
 
-// LVQR                           -> OMSPBase
+// LVQR                           -> AUDEMSP
 // Fragment                       -> MediaFragment
 // FragmentStream trait           -> MediaSource trait
 // FragmentObserver trait         -> MediaProcessor/MediaSink trait
@@ -515,12 +515,12 @@ omspbase-core 不依赖任何其他 crate。
 // FragmentBroadcaster            -> PipelineEngine StreamBroadcaster
 // ingest (rtmp/whip/srt)         -> Protocol plugins
 // egress (hls/dash/whep)         -> Protocol plugins
-// lvqr-moq facade                -> omspbase-moq facade
+// lvqr-moq facade                -> audemsp-moq facade
 // chitchat cluster               -> ClusterPlugin (Phase 3+)
 // SLO observability              -> MetricsPlugin
 ```
 
-OMSPBase 的 MediaFragment 定义应增加 ingest_time_ms 字段用于
+AUDEMSP 的 MediaFragment 定义应增加 ingest_time_ms 字段用于
 延迟计算，以及 FragmentFlags bitmask 用于标志控制。
 
 ---
@@ -544,14 +544,14 @@ lvqr serve
 
 所有四种输入协议进，所有输出协议出，通过同一 Fragment 管线。
 
-对 OMSPBase 的启示：OMSPBase 的 omspbase-server 也应该追求
-类似的零配置体验。omspbase serve 应该绑定所有协议默认端口，
+对 AUDEMSP 的启示：AUDEMSP 的 audemsp-server 也应该追求
+类似的零配置体验。audemsp serve 应该绑定所有协议默认端口，
 提供一条推流即可所有协议播放的体验。
 
 LVQR 的架构设计文档 (docs/architecture.md) 是理解 Fragment Model 的
 最佳入口。29 crate 的 workspace 结构 (tracking/ROADMAP.md) 是 Rust
 项目组织的重要参考。虽然项目处于早期，但设计理念的前瞻性足以使其成为
-OMSPBase Phase 0 管线模型定义阶段的 D5 优先级参考。
+AUDEMSP Phase 0 管线模型定义阶段的 D5 优先级参考。
 
 核心结论：Fragment Model 不是更好的 RTMP 归一化，而是从根本上不同的
 架构范式 — 统一中间表示取代协议矩阵，投影取代转换。
@@ -560,9 +560,9 @@ OMSPBase Phase 0 管线模型定义阶段的 D5 优先级参考。
 
 ---
 
-## 附录 E: LVQR 的 SLO 体系对 OMSPBase 的指标设计参考
+## 附录 E: LVQR 的 SLO 体系对 AUDEMSP 的指标设计参考
 
-LVQR 为每种传输协议定义了独立的三级 SLO 阈值。这是 OMSPBase 流媒体质量监控
+LVQR 为每种传输协议定义了独立的三级 SLO 阈值。这是 AUDEMSP 流媒体质量监控
 体系的最直接参考：
 
 核心指标: Glass-to-Glass Delay = egress_emit_time - ingest_time（Fragment.ingest_time_ms 携带摄入时间戳，各 egress observer 记录发射时间戳）
@@ -588,11 +588,11 @@ LVQR 提供了两个延迟采样端点：
 1. **服务端内部 histogram**：`lvqr_core::metrics::glass_to_glass_delay_seconds` Prometheus histogram，在 ingest/egress 点埋点自动计算差值
 2. **客户端采样端点**：`POST /api/v1/slo/client-sample` — 客户端上报端到端延迟（`performance.now()`），服务端合并客户端报告+内部延迟形成完整端到端视角
 
-OMSPBase 相似机制：PipelineEngine 在 Fragment 路径 inject/egress 埋点，StreamSubscriber 上报客户端延迟到 `/metrics/client`，合并形成完整玻璃到玻璃视角。
+AUDEMSP 相似机制：PipelineEngine 在 Fragment 路径 inject/egress 埋点，StreamSubscriber 上报客户端延迟到 `/metrics/client`，合并形成完整玻璃到玻璃视角。
 
 ### [Adopt] 补充 — Fragment 工厂模式与 Pipeline 组合
 
-**7. Fragment 工厂模式**：输入协议 crate 即 "Fragment 工厂"，映射 OMSPBase `MediaSource` trait（`bind`/`start`/`stop`/`supported_codecs`/`protocol`）。每个实现注册到 `PipelineEngine` 后自动成为管线一部分。
+**7. Fragment 工厂模式**：输入协议 crate 即 "Fragment 工厂"，映射 AUDEMSP `MediaSource` trait（`bind`/`start`/`stop`/`supported_codecs`/`protocol`）。每个实现注册到 `PipelineEngine` 后自动成为管线一部分。
 
 **8. FragmentObserver 作为 MediaSink 基础**：输出协议通过 `FragmentObserver` 消费 Fragment，映射 `MediaSink` trait（`init`/`on_fragment`/`on_stream_end`/`protocol`）。`on_fragment` 必须零堆分配。
 
@@ -602,11 +602,11 @@ OMSPBase 相似机制：PipelineEngine 在 Fragment 路径 inject/egress 埋点�
 
 **7. 零拷贝 Fragment 数据路径**：payload 使用 `Bytes`（引用计数），整个路径从网络 recv 到输出协议不经过拷贝。`Bytes::slice()` 和 `Arc::clone()` 均为 O(1)。
 
-**8. 内存池化**：LVQR 未显式使用内存池。OMSPBase 高吞吐场景（多 4K 流）建议 Phase 3+ 引入 `Bytes` 内存池化。
+**8. 内存池化**：LVQR 未显式使用内存池。AUDEMSP 高吞吐场景（多 4K 流）建议 Phase 3+ 引入 `Bytes` 内存池化。
 
 **9. Fragment 批处理**：高帧率场景（60fps+48kHz）可考虑批处理 — 合并多个 Fragment 为一个批次，减少函数调用和 cache miss。默认批次大小 1。
 
-## 附录 F: LVQR 集群 Gossip 协议对 OMSPBase 集群设计的参考
+## 附录 F: LVQR 集群 Gossip 协议对 AUDEMSP 集群设计的参考
 
 LVQR 使用 chitchat 作为集群 gossip 协议。以下是与主流集群协议的技术对比：
 
@@ -625,19 +625,19 @@ LVQR 的 gossip 实现关键特征：
 - **重定向而非迁移**：非 owner 节点接收 viewer 请求 → HTTP 302 重定向到 owner 节点
 - **跨集群联邦**：feature-gated, 通过 chitchat 交换集群路由信息, 递归 DNS CNAME 发现
 
-OMSPBase 的 ClusterPlugin 应设计 `ClusterBackend` trait（claim_ownership/renew_lease/lookup_owner/discover_members），支持 ChitchatCluster(UDP gossip)、RedisCluster(Pub/Sub)、EtcdCluster(Watch+Lease) 三种后端实现。
+AUDEMSP 的 ClusterPlugin 应设计 `ClusterBackend` trait（claim_ownership/renew_lease/lookup_owner/discover_members），支持 ChitchatCluster(UDP gossip)、RedisCluster(Pub/Sub)、EtcdCluster(Watch+Lease) 三种后端实现。
 struct ChitchatCluster { /* UDP gossip */ }
 struct RedisCluster { /* Redis Pub/Sub */ }
 struct EtcdCluster { /* etcd Watch + Lease */ }
 ```
 *本文档基于 LVQR v1.1.0 及 GitHub 公开文档编写。*
-## 附录 G: Fragment 与 OMSPBase Plugin Trait 深度映射
+## 附录 G: Fragment 与 AUDEMSP Plugin Trait 深度映射
 
-### G.1 LVQR 九种 Observer 类型与 OMSPBase 的对应关系
+### G.1 LVQR 九种 Observer 类型与 AUDEMSP 的对应关系
 
-LVQR 定义了九种 Observer tap，每种对应一种输出路径。以下是它们在 OMSPBase 架构中的直接映射：
+LVQR 定义了九种 Observer tap，每种对应一种输出路径。以下是它们在 AUDEMSP 架构中的直接映射：
 
-| LVQR Observer | 功能 | OMSPBase 等效 | 实现方式 |
+| LVQR Observer | 功能 | AUDEMSP 等效 | 实现方式 |
 |---------------|------|----------------|----------|
 | HlsObserver | 生成 LL-HLS partials + playlist | `HlsSink` | CMAF chunk → HTTP partial segment |
 | DashObserver | 生成 DASH segments + MPD | `DashSink` | CMAF chunk → HTTP segment + MPD |
@@ -649,10 +649,10 @@ LVQR 定义了九种 Observer tap，每种对应一种输出路径。以下是�
 | AgentObserver | AI Agent 处理 | `AiAgentPlugin` | Fragment → AI inference → metadata |
 | MeshObserver | P2P 网状中继 | `MeshRelayPlugin` | Fragment → WebRTC RTCDataChannel → peer |
 
-### G.2 OMSPBase 的 PipelineEngine 数据流
+### G.2 AUDEMSP 的 PipelineEngine 数据流
 
 ```
-// OMSPBase 组合根的数据流
+// AUDEMSP 组合根的数据流
 //                   ┌─────────────────┐
 //                   │  PipelineEngine  │
 //                   │  (控制平面)       │
@@ -686,12 +686,12 @@ LVQR 定义了九种 Observer tap，每种对应一种输出路径。以下是�
 //          HLS viewer  DASH viewer  WebRTC viewer
 ```
 
-### G.3 OMSPBase 的 MediaFragment 完整定义
+### G.3 AUDEMSP 的 MediaFragment 完整定义
 
-结合 LVQR Fragment 的设计经验，OMSPBase 的 MediaFragment 定义如下：
+结合 LVQR Fragment 的设计经验，AUDEMSP 的 MediaFragment 定义如下：
 
 ```rust
-/// OMSPBase 内部媒体数据统一表示
+/// AUDEMSP 内部媒体数据统一表示
 /// 所有输入协议产生此类型，所有输出协议消费此类型
 #[derive(Clone, Debug)]
 pub struct MediaFragment {
@@ -763,27 +763,27 @@ LVQR 将 N×M 协议转换问题简化为 N+M。以下量化对比显示两种�
 
 **结论**：在 10 种协议（5 入 5 出）的情况下，Fragment Model 的桥接器数量仅为传统方案的 40%。随着协议数量增加，优势进一步扩大（10 入 10 出：20 个桥接器 vs 100 个转换器，节省 80%）。
 
-### G.5 OMSPBase 的 Phase 0 crate 拆分建议
+### G.5 AUDEMSP 的 Phase 0 crate 拆分建议
 
-基于 LVQR 的 29-crate 工作空间模板，OMSPBase 的初期 crate 拆分（10-15 个）：
+基于 LVQR 的 29-crate 工作空间模板，AUDEMSP 的初期 crate 拆分（10-15 个）：
 
 | 优先级 | Crate 名称 | 对应 LVQR | 功能 | Phase |
 |--------|-----------|-----------|------|-------|
-| P0 | omspbase-core | lvqr-core | 共享类型 (StreamId, TrackId, ProtocolKind, 错误类型) | 0 |
-| P0 | omspbase-fragment | lvqr-fragment | MediaFragment 类型 + FragmentBroadcaster + Observer trait | 0 |
-| P0 | omspbase-ingest-rtmp | lvqr-ingest | RTMP 输入桥接 (FLV→MediaFragment) | 1 |
-| P0 | omspbase-egress-hls | lvqr-hls | LL-HLS 输出 (MediaFragment→CMAF→HTTP partial) | 1 |
-| P1 | omspbase-segmenter | lvqr-cmaf | CMAF segmenter (Fragment→CMAF chunk) | 1 |
-| P1 | omspbase-ingest-whip | lvqr-whip | WHIP/WebRTC 输入 (str0m→MediaFragment) | 1 |
-| P1 | omspbase-egress-whep | lvqr-whep | WHEP/WebRTC 输出 (MediaFragment→RTP→str0m) | 1 |
-| P1 | omspbase-ingest-srt | lvqr-srt | SRT 输入 (MPEG-TS→MediaFragment) | 2 |
-| P2 | omspbase-ingest-rtsp | lvqr-rtsp | RTSP 输入 (RTP→MediaFragment) | 2 |
-| P2 | omspbase-egress-dash | lvqr-dash | MPEG-DASH 输出 (MediaFragment→CMAF→MPD) | 2 |
-| P2 | omspbase-record | lvqr-record | 录制引擎 (MediaFragment→fMP4→LocalFS/S3) | 2 |
-| P2 | omspbase-cli | lvqr-cli | 组合根 (二进制入口) | 1 |
-| P3 | omspbase-egress-moq | lvqr-relay | MoQ/QUIC relay | 3 |
-| P3 | omspbase-cluster | lvqr-cluster | chitchat gossip 集群 | 3 |
-| P3 | omspbase-mesh | lvqr-mesh | P2P 网状中继 | 4 |
+| P0 | audemsp-core | lvqr-core | 共享类型 (StreamId, TrackId, ProtocolKind, 错误类型) | 0 |
+| P0 | audemsp-fragment | lvqr-fragment | MediaFragment 类型 + FragmentBroadcaster + Observer trait | 0 |
+| P0 | audemsp-ingest-rtmp | lvqr-ingest | RTMP 输入桥接 (FLV→MediaFragment) | 1 |
+| P0 | audemsp-egress-hls | lvqr-hls | LL-HLS 输出 (MediaFragment→CMAF→HTTP partial) | 1 |
+| P1 | audemsp-segmenter | lvqr-cmaf | CMAF segmenter (Fragment→CMAF chunk) | 1 |
+| P1 | audemsp-ingest-whip | lvqr-whip | WHIP/WebRTC 输入 (str0m→MediaFragment) | 1 |
+| P1 | audemsp-egress-whep | lvqr-whep | WHEP/WebRTC 输出 (MediaFragment→RTP→str0m) | 1 |
+| P1 | audemsp-ingest-srt | lvqr-srt | SRT 输入 (MPEG-TS→MediaFragment) | 2 |
+| P2 | audemsp-ingest-rtsp | lvqr-rtsp | RTSP 输入 (RTP→MediaFragment) | 2 |
+| P2 | audemsp-egress-dash | lvqr-dash | MPEG-DASH 输出 (MediaFragment→CMAF→MPD) | 2 |
+| P2 | audemsp-record | lvqr-record | 录制引擎 (MediaFragment→fMP4→LocalFS/S3) | 2 |
+| P2 | audemsp-cli | lvqr-cli | 组合根 (二进制入口) | 1 |
+| P3 | audemsp-egress-moq | lvqr-relay | MoQ/QUIC relay | 3 |
+| P3 | audemsp-cluster | lvqr-cluster | chitchat gossip 集群 | 3 |
+| P3 | audemsp-mesh | lvqr-mesh | P2P 网状中继 | 4 |
 
 比 LVQR 减少的 crate：WASM 过滤器（Phase 4+ 考虑）、AI Agent（Phase 4+ 考虑）、GStreamer 转码（Phase 3+ 考虑）、测试 crate（合并为 `tests/` 目录而非独立 crate）。
 

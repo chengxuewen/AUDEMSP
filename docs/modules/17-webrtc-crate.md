@@ -1,14 +1,14 @@
-# 17. WebRTC Crate — omspbase-webrtc
+# 17. WebRTC Crate — audemsp-webrtc
 
 > 状态：Phase 0-1 | 关联决策：D11, D31, D139–D151 | 参考：webrtc-kit trait 抽象模式
 
 ## 定位
 
-`omspbase-webrtc` 是 OMSPBase 的 WebRTC 传输层 crate，对外暴露标准 W3C WebRTC API trait，内部通过编译期 feature gate 支持多后端分发。当前默认后端 `webrtc-sys`（libwebrtc C++ FFI）。
+`audemsp-webrtc` 是 AUDEMSP 的 WebRTC 传输层 crate，对外暴露标准 W3C WebRTC API trait，内部通过编译期 feature gate 支持多后端分发。当前默认后端 `webrtc-sys`（libwebrtc C++ FFI）。
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                 omspbase-webrtc                     │
+│                 audemsp-webrtc                     │
 │                                                     │
 │  RTCEngine::create_factory()                        │
 │    └→ RTCPeerConnectionFactory                      │
@@ -212,7 +212,7 @@ libwebrtc on_track 事件
 
 ### FrameSink trait
 
-对标 `omspbase-media::VideoSink<F>` 的回调模式：
+对标 `audemsp-media::VideoSink<F>` 的回调模式：
 
 ```rust
 pub trait FrameSink: Send + Sync {
@@ -264,7 +264,7 @@ pub trait RTCPeerConnectionFactory: Send + Sync {
 使用示例：
 
 ```rust
-use omspbase_webrtc::{RTCEngine, RTCConfiguration};
+use audemsp_webrtc::{RTCEngine, RTCConfiguration};
 
 let factory = RTCEngine::create_factory();
 let pc = factory.create_peer_connection(RTCConfiguration::default()).await?;
@@ -277,7 +277,7 @@ pc.onTrack(|receiver| {
 ## 文件结构
 
 ```
-crates/omspbase-webrtc/
+crates/audemsp-webrtc/
 ├── src/
 │   ├── lib.rs              re-exports
 │   ├── engine.rs           RTCEngine::create_factory()

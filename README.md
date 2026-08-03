@@ -1,6 +1,6 @@
-# OMSPBase
+# AUDEMSP
 
-OMSPBase — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入、WebRTC 遥操作等能力。
+AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入、WebRTC 遥操作等能力。
 
 ## 功能范围
 
@@ -15,7 +15,7 @@ OMSPBase — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一�
 
 ```
 ┌──────────────────────────────────────────────┐
-│           OMSPBase 后台服务                 │
+│           AUDEMSP 后台服务                 │
 │   用户管理 · 权限控制 · License · 信令       │
 └──────────────────┬───────────────────────────┘
                    │ gRPC / REST
@@ -30,7 +30,7 @@ OMSPBase — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一�
 
 - **Client**：桌面 GUI 全功能应用（Tauri v2），可控制他人也可被控制
 - **Host**：无 GUI 守护进程，适合边缘设备/服务器/车端，纯产出媒体流
-- **微内核 + 插件**：omspbase-common 微内核，领域功能以插件形式加载
+- **微内核 + 插件**：audemsp-common 微内核，领域功能以插件形式加载
 - **Auth 双模式**：独立部署自带账户系统；作为 AUDEBase 模块时委托平台 RBAC/LDAP
 
 详见 [`docs/architecture.md`](docs/architecture.md)。

@@ -1,7 +1,7 @@
 # Docker & Network Constraints
 
 > Split from [constraints.md](constraints.md) per D202 (OpenCode config optimization).
-> This file: Docker, network, and container-specific constraints for OMSPBase development.
+> This file: Docker, network, and container-specific constraints for AUDEMSP development.
 
 ## Docker Constraints
 

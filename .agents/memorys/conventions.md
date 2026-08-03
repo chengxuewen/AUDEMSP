@@ -1,4 +1,4 @@
-# OMSPBase 约定与约束
+# AUDEMSP 约定与约束
 
 ## C1: 架构决策对比格式
 
@@ -16,7 +16,7 @@
 
 ## C2: 三层抽象模型
 
-OMSPBase 采用三层抽象模型：
+AUDEMSP 采用三层抽象模型：
 
 | 层级 | 概念 | 职责 |
 |------|------|------|
@@ -32,7 +32,7 @@ OMSPBase 采用三层抽象模型：
 
 ## C3: 术语"三层"消歧
 
-**约束**：OMSPBase 使用"三层"描述两个不同维度的分层模型，阅读/引用时必须区分：
+**约束**：AUDEMSP 使用"三层"描述两个不同维度的分层模型，阅读/引用时必须区分：
 - **D1 三层部署拓扑架构**：部署维度——控制面（Server） / 数据面（Host+Remote） / SDK 层（napi-binding）
 - **D126 三层逻辑抽象模型**：代码维度——Plugin（管线层） / Component（服务层） / Process（部署层）
 
@@ -45,11 +45,11 @@ D1 和 D126 是互补关系，不是替代关系。
 ## C4: crate 命名: host/client 对称
 
 **约束**：远程控制场景的 crate 命名遵循 host/client 对称模式：
-- **host** = 被控侧 → 推流端 → field/vehicle 侧 → `omspbase-host`
-- **client** = 主控侧 → 拉流端 → cockpit/operator 侧 → `omspbase-client`
+- **host** = 被控侧 → 推流端 → field/vehicle 侧 → `audemsp-host`
+- **client** = 主控侧 → 拉流端 → cockpit/operator 侧 → `audemsp-client`
 
 命名对应关系：
-| OMSPBase | Parsec | RustDesk | Moonlight/Sunshine |
+| AUDEMSP | Parsec | RustDesk | Moonlight/Sunshine |
 |----------|--------|----------|-------------------|
 | `remote-host` | `ParsecHost` | Controlled host (server.rs) | Sunshine (Host) |
 | `remote-client` | `ParsecClient` | Controller (client.rs) | Moonlight (Client) |
@@ -68,7 +68,7 @@ GStreamer pipeline (C, glib)
                        ↓
               H.264 byte buffer (&[u8])
                        ↓
-omspbase-webrtc (Rust wrapper)
+audemsp-webrtc (Rust wrapper)
   TrackLocal::write_frame(&[u8])
                        ↓
 webrtc-sys (C++, libwebrtc)
@@ -86,9 +86,9 @@ webrtc-sys (C++, libwebrtc)
 
 ---
 
-## C6: omspbase-webrtc 命名规范
+## C6: audemsp-webrtc 命名规范
 
-**约束**：omspbase-webrtc crate 遵循以下命名规范：
+**约束**：audemsp-webrtc crate 遵循以下命名规范：
 - **类型名**: 对外 pub 类型全大写 RTC 前缀 (RTCPeerConnection, RTCDataChannel...)，内部类型不加前缀
 - **方法名**: 全部 snake_case (create_offer, add_track, on_track)，禁止 camelCase W3C 包装
 - **目录名**: backend/ (uniform singular)
@@ -213,17 +213,17 @@ webrtc-sys (C++, libwebrtc)
 
 ---
 
-## C12: 仅通过 omspbase-webrtc 使用 WebRTC
+## C12: 仅通过 audemsp-webrtc 使用 WebRTC
 
-**约束**：所有 client 端 crate（host/client）禁止直接依赖 webrtc-rs（`webrtc = "0.12"`），必须通过 `omspbase-webrtc` 抽象层使用 WebRTC 能力。P2P 和 SFU 路径统一经此抽象层。Server 端 SFU 路径不依赖 omspbase-webrtc（WebRTC 来自 mediasoup），webrtc feature 为 P2P relay 保留。
+**约束**：所有 client 端 crate（host/client）禁止直接依赖 webrtc-rs（`webrtc = "0.12"`），必须通过 `audemsp-webrtc` 抽象层使用 WebRTC 能力。P2P 和 SFU 路径统一经此抽象层。Server 端 SFU 路径不依赖 audemsp-webrtc（WebRTC 来自 mediasoup），webrtc feature 为 P2P relay 保留。
 
 **后端策略**：
-- 默认/当前后端 = `backend-webrtc-sys`（libwebrtc C++ via webrtc-sys FFI），不依赖 omspbase-codec
-- `backend-webrtc-rs` 为备选后端（Phase 2+），需额外依赖 omspbase-codec
+- 默认/当前后端 = `backend-webrtc-sys`（libwebrtc C++ via webrtc-sys FFI），不依赖 audemsp-codec
+- `backend-webrtc-rs` 为备选后端（Phase 2+），需额外依赖 audemsp-codec
 
 **Reason**：
-- `omspbase-webrtc` 已封装 W3C API（RTCPeerConnection + TrackSender + DataChannel）
-- 三后端抽象（stub/webrtc-rs/webrtc-sys）由 omspbase-webrtc 统一控制
+- `audemsp-webrtc` 已封装 W3C API（RTCPeerConnection + TrackSender + DataChannel）
+- 三后端抽象（stub/webrtc-rs/webrtc-sys）由 audemsp-webrtc 统一控制
 - 直接依赖绕过抽象层破坏后端切换能力和可测试性
 
 **禁止**：
@@ -235,7 +235,7 @@ webrtc = "0.12"
 **允许**：
 ```toml
 # Cargo.toml — 正确
-omspbase-webrtc = { path = "../omspbase-webrtc", features = ["backend-webrtc-sys"] }
+audemsp-webrtc = { path = "../audemsp-webrtc", features = ["backend-webrtc-sys"] }
 ```
 
 **来源**：用户显式要求（2026-07-31 Host SFU 评审后）
@@ -244,14 +244,14 @@ omspbase-webrtc = { path = "../omspbase-webrtc", features = ["backend-webrtc-sys
 
 ## C13: Server 统一 Docker 构建
 
-**约束**：omspbase-server 统一通过 Docker 编译（mediasoup C++ Worker 需要 Linux x86_64 + meson/ninja）。原生 `cargo check --workspace` 排除 server crate。
+**约束**：audemsp-server 统一通过 Docker 编译（mediasoup C++ Worker 需要 Linux x86_64 + meson/ninja）。原生 `cargo check --workspace` 排除 server crate。
 
 **pixi 任务映射**：
 | 任务 | 命令 | 说明 |
 |------|------|------|
-| `check` | `cargo check --workspace --exclude omspbase-server` | 原生 |
-| `check-server` | `scripts/docker-cargo.sh check -p omspbase-server --features sfu-mediasoup` | Docker |
-| `build-server` | `scripts/docker-cargo.sh build -p omspbase-server --features sfu-mediasoup` | Docker |
+| `check` | `cargo check --workspace --exclude audemsp-server` | 原生 |
+| `check-server` | `scripts/docker-cargo.sh check -p audemsp-server --features sfu-mediasoup` | Docker |
+| `build-server` | `scripts/docker-cargo.sh build -p audemsp-server --features sfu-mediasoup` | Docker |
 | `check-native` | `scripts/cargo-sfu.sh check --workspace` | 原生备选 |
 
 **原因**：

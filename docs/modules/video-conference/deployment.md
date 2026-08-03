@@ -2,7 +2,7 @@
 
 ## 1. 部署形态
 
-视频会议模块支持四种部署形态，与 OMSPBase 总体架构一致：
+视频会议模块支持四种部署形态，与 AUDEMSP 总体架构一致：
 
 ### 1.1 Embed (Rust crate)
 
@@ -11,8 +11,8 @@
 
 ```
 AUDESYS binary
-  └── omspbase-core
-      └── omspbase-conference (crate)
+  └── audemsp-core
+      └── audemsp-conference (crate)
           └── mediasoup (静态链接)
 
 部署: single binary, no external deps
@@ -26,9 +26,9 @@ AUDESYS binary
 
 ```
 AUDEBase Docker
-  └── omspbase-service
+  └── audemsp-service
       ├── napi-rs binding
-      └── omspbase-conference
+      └── audemsp-conference
           └── mediasoup Worker pool
 
 部署: Docker container, sidecar 模式
@@ -41,7 +41,7 @@ AUDEBase Docker
 **特点**: 完整后端 + Web UI，独立进程
 
 ```
-omspbase-server
+audemsp-server
   ├── Conference Controller (Rust)
   ├── Signaling (WebSocket)
   ├── mediasoup Worker pool
@@ -59,7 +59,7 @@ omspbase-server
 
 ```
 AUDEBase Platform
-  └── Container: omspbase-conference
+  └── Container: audemsp-conference
       ├── 委托 AUDEBase RBAC/LDAP
       └── 独立 SFU Worker 池
 
@@ -77,8 +77,8 @@ conference:
   signaling:
     port: 8000
     tls: true
-    cert_path: "/etc/omspbase/certs/server.pem"
-    key_path: "/etc/omspbase/certs/server.key"
+    cert_path: "/etc/audemsp/certs/server.pem"
+    key_path: "/etc/audemsp/certs/server.key"
     max_connections: 10000
     rate_limit: 1000  # 每秒最大请求数
 
@@ -117,7 +117,7 @@ conference:
   # 录制
   recording:
     enabled: true
-    storage_path: "/var/omspbase/recordings"
+    storage_path: "/var/audemsp/recordings"
     format: "mp4"
     max_duration_sec: 43200  # 12h
     retention_days: 90
@@ -151,7 +151,7 @@ conference:
 | `CONFERENCE_SFU_MAX_PORT` | 49999 | RTC 最大端口 |
 | `CONFERENCE_REDIS_URL` | - | Redis 连接 |
 | `CONFERENCE_REGION` | default | 部署区域 |
-| `CONFERENCE_RECORDING_PATH` | /var/omspbase/recordings | 录制存储路径 |
+| `CONFERENCE_RECORDING_PATH` | /var/audemsp/recordings | 录制存储路径 |
 | `CONFERENCE_RECORDING_ENABLED` | true | 启用录制 |
 | `CONFERENCE_DEFAULT_CODEC` | vp9 | 默认视频编码 |
 | `CONFERENCE_MAX_BITRATE` | 5000 | 最大码率 (kbps) |
@@ -172,13 +172,13 @@ FROM base AS build
 RUN apt-get install -y --no-install-recommends \
     build-essential cmake clang libclang-dev \
     && rm -rf /var/lib/apt/lists/*
-# ... build omspbase-conference ...
+# ... build audemsp-conference ...
 
 FROM base
-COPY --from=build /opt/oomspbase/bin/omspbase-conference /usr/local/bin/
-COPY config.yaml /etc/omspbase/config.yaml
+COPY --from=build /opt/audemsp/bin/audemsp-conference /usr/local/bin/
+COPY config.yaml /etc/audemsp/config.yaml
 EXPOSE 8000 40000-49999
-CMD ["omspbase-conference", "--config", "/etc/omspbase/config.yaml"]
+CMD ["audemsp-conference", "--config", "/etc/audemsp/config.yaml"]
 ```
 
 ### docker-compose
@@ -187,14 +187,14 @@ CMD ["omspbase-conference", "--config", "/etc/omspbase/config.yaml"]
 version: "3.8"
 services:
   conference:
-    image: omspbase/conference:latest
+    image: audemsp/conference:latest
     ports:
       - "8000:8000"
       - "40000-49999:40000-49999/udp"
     volumes:
-      - ./config.yaml:/etc/omspbase/config.yaml
-      - ./recordings:/var/omspbase/recordings
-      - ./certs:/etc/omspbase/certs
+      - ./config.yaml:/etc/audemsp/config.yaml
+      - ./recordings:/var/audemsp/recordings
+      - ./certs:/etc/audemsp/certs
     environment:
       - CONFERENCE_REGION=beijing
       - RUST_LOG=info

@@ -6,10 +6,10 @@
 
 ```bash
 # All tests pass without SFU
-cargo test -p omspbase-server --tests  # 42 pass
+cargo test -p audemsp-server --tests  # 42 pass
 
 # SFU feature compiles but no runtime (mediasoup C++ Worker unavailable)
-cargo check -p omspbase-server --features sfu-mediasoup  # clean
+cargo check -p audemsp-server --features sfu-mediasoup  # clean
 ```
 
 ## Linux (full verification)
@@ -22,7 +22,7 @@ sudo apt-get install -y pkg-config cmake ninja-build libssl-dev libuv1-dev pytho
 pip3 install meson
 
 # Full test suite (4 new SFU E2E tests)
-cargo test -p omspbase-server --features sfu-mediasoup  # expect 44+ pass
+cargo test -p audemsp-server --features sfu-mediasoup  # expect 44+ pass
 
 # All workspace tests
 cargo test --workspace --features sfu-mediasoup
@@ -35,7 +35,7 @@ cargo test --workspace --features sfu-mediasoup
 docker compose build server
 
 # Run SFU tests
-docker compose run --rm server cargo test -p omspbase-server --features sfu-mediasoup
+docker compose run --rm server cargo test -p audemsp-server --features sfu-mediasoup
 
 # Run full workspace tests
 docker compose run --rm server cargo test --workspace --features sfu-mediasoup
@@ -43,8 +43,8 @@ docker compose run --rm server cargo test --workspace --features sfu-mediasoup
 
 ## Verification Checklist
 
-- [ ] `cargo check -p omspbase-server --features sfu-mediasoup` — clean
-- [ ] `cargo test -p omspbase-server --tests --features sfu-mediasoup` — all pass (44+)
+- [ ] `cargo check -p audemsp-server --features sfu-mediasoup` — clean
+- [ ] `cargo test -p audemsp-server --tests --features sfu-mediasoup` — all pass (44+)
 - [ ] `e2e_sfu_lifecycle` — create room, transports, produce, consume, cleanup
 - [ ] `e2e_sfu_cleanup_on_disconnect` — WS close triggers SFU room destruction
 - [ ] No mediasoup-specific warnings in clippy

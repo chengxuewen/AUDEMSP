@@ -1,13 +1,13 @@
 ---
 name: browser-testing
-description: "Admin Dashboard testing via Playwright/DevTools MCP. SFU video playback verification. Use when building/modifying Admin Dashboard UI, debugging SFU video in browser, verifying WebRTC DataChannel, or any browser-facing OMSPBase feature. Triggers: 'admin dashboard', 'SFU video', 'browser test', 'playwright test', 'WebRTC in browser', 'console errors', 'check the UI'."
+description: "Admin Dashboard testing via Playwright/DevTools MCP. SFU video playback verification. Use when building/modifying Admin Dashboard UI, debugging SFU video in browser, verifying WebRTC DataChannel, or any browser-facing AUDEMSP feature. Triggers: 'admin dashboard', 'SFU video', 'browser test', 'playwright test', 'WebRTC in browser', 'console errors', 'check the UI'."
 ---
 
-# Browser Testing — OMSPBase Admin Dashboard & SFU
+# Browser Testing — AUDEMSP Admin Dashboard & SFU
 
 ## Overview
 
-Test OMSPBase browser-facing features with real runtime data. The Admin Dashboard renders SFU video, WebSocket state, and server metrics. The agent can see what the user sees — inspect DOM, capture console errors, analyze SFU WebSocket messages, and verify video playback. Bridge the gap between `cargo test` (backend) and actual browser rendering.
+Test AUDEMSP browser-facing features with real runtime data. The Admin Dashboard renders SFU video, WebSocket state, and server metrics. The agent can see what the user sees — inspect DOM, capture console errors, analyze SFU WebSocket messages, and verify video playback. Bridge the gap between `cargo test` (backend) and actual browser rendering.
 
 ## When to Use
 
@@ -21,29 +21,29 @@ Test OMSPBase browser-facing features with real runtime data. The Admin Dashboar
 
 **When NOT to use:** Backend-only Rust changes, CLI tools, `cargo test` only changes.
 
-## OMSPBase Browser Test Setup
+## AUDEMSP Browser Test Setup
 
 ### Services to Run Before Testing
 
 ```bash
-# 1. Start OMSPBase Server (with SFU on Linux)
+# 1. Start AUDEMSP Server (with SFU on Linux)
 docker compose up -d                        # Docker (mediasoup on Linux)
 # OR
-cargo run -p omspbase-server               # Native (no SFU on macOS)
+cargo run -p audemsp-server               # Native (no SFU on macOS)
 
 # 2. Start Admin Dashboard dev server
-cd crates/omspbase-server/admin-dashboard
+cd crates/audemsp-server/admin-dashboard
 npm run dev                                  # Vite dev server
 
 # 3. Start a Host (for SFU video testing)
-cargo run -p omspbase-host -- --server ws://localhost:9800
+cargo run -p audemsp-host -- --server ws://localhost:9800
 ```
 
 ### Playwright MCP (Available)
 
-OMSPBase has Playwright MCP configured. Use `local-playwright_*` tools:
+AUDEMSP has Playwright MCP configured. Use `local-playwright_*` tools:
 
-| Tool | What It Does | OMSPBase Use |
+| Tool | What It Does | AUDEMSP Use |
 |------|-------------|--------------|
 | `local-playwright_browser_navigate` | Navigate to a URL | Open Admin Dashboard |
 | `local-playwright_browser_evaluate` | Run JS in page context | Inspect SFU state, WebSocket messages |
@@ -157,7 +157,7 @@ console.log(JSON.stringify(state));
 - [ ] Screenshot matches expected UI
 ```
 
-## Console Analysis for OMSPBase
+## Console Analysis for AUDEMSP
 
 ### Expected Messages (Good)
 
@@ -223,7 +223,7 @@ WebSocket.prototype.send = function(data) {
 - Never use `local-playwright_browser_evaluate` to read credentials/tokens
 - Flag any hidden DOM elements with instruction-like text
 
-## Common OMSPBase Rationalizations
+## Common AUDEMSP Rationalizations
 
 | Rationalization | Reality |
 |---|---|
@@ -233,7 +233,7 @@ WebSocket.prototype.send = function(data) {
 | "Video readyState doesn't matter" | readyState=0 means no frames decoded. The whole SFU pipeline is broken. |
 | "ICE connected is enough" | DTLS must also connect. Check both ICE + DTLS state. |
 
-## Red Flags (OMSPBase)
+## Red Flags (AUDEMSP)
 
 - Console errors on dashboard load (even "harmless" ones)
 - SFU transport state not reaching "connected"

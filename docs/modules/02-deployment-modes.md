@@ -1,6 +1,6 @@
 # 部署形态
 
-> OMSPBase 支持四种部署形态，适应不同场景需求。
+> AUDEMSP 支持四种部署形态，适应不同场景需求。
 
 ---
 
@@ -28,8 +28,8 @@
 **集成方式**：
 ```rust
 // AUDESYS 项目中引用
-extern crate omspbase_core;
-use omspbase_core::remote::RemoteDesktopClient;
+extern crate audemsp_core;
+use audemsp_core::remote::RemoteDesktopClient;
 ```
 
 ---
@@ -46,7 +46,7 @@ use omspbase_core::remote::RemoteDesktopClient;
 
 **部署**：
 ```bash
-docker run -d --name omspbase-sidecar omspbase/sidecar:latest
+docker run -d --name audemsp-sidecar audemsp/sidecar:latest
 ```
 
 ---
@@ -63,13 +63,13 @@ docker run -d --name omspbase-sidecar omspbase/sidecar:latest
 
 **启动**：
 ```bash
-omspbase-server --config /etc/omspbase/config.toml
-omspbase-client  # 启动桌面 GUI
+audemsp-server --config /etc/audemsp/config.toml
+audemsp-client  # 启动桌面 GUI
 ```
 
 **Phase 1 运维策略**：
 - systemd service 配置 `Restart=always` + `RestartSec=5s`（D155）
-- 单进程部署：Host 功能内聚于 omspbase-host（D155 决策）
+- 单进程部署：Host 功能内聚于 audemsp-host（D155 决策）
 
 ---
 

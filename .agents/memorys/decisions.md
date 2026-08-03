@@ -1,4 +1,4 @@
-# OMSPBase 架构决策记录
+# AUDEMSP 架构决策记录
 
 > **说明**: 本文件包含活跃决策（D196+）。历史决策（D1-D195）归档在 `decisions-archived.md`。
 > 决策格式: `## D{N}: 标题` — 决策 + 日期 + 原因 + 影响
@@ -16,14 +16,14 @@
 
 ## D197: D87 Scope Limitation — Client GUI Only
 
-**Decision**: D87 (React + Ant Design for Server management panel) applies only to omspbase-client GUI. OMSPBase Server admin dashboard uses CSS Modules for zero-dependency lightweight panel.
+**Decision**: D87 (React + Ant Design for Server management panel) applies only to audemsp-client GUI. AUDEMSP Server admin dashboard uses CSS Modules for zero-dependency lightweight panel.
 **Date**: 2026-07-24
 **Reason**:
 - D87's rationale (share components with AUDEBase Admin UI) is irrelevant for embedded server admin
 - Admin dashboard is a monitoring tool, not a user-facing application
 - CSS Modules = zero runtime, smaller bundle, no framework lock-in
 - Ponytail principle: don't add Ant Design for a few cards and a table
-**Limits**: D87 remains in effect for omspbase-client (Tauri desktop app) and any AUDEBase-shared UI
+**Limits**: D87 remains in effect for audemsp-client (Tauri desktop app) and any AUDEBase-shared UI
 ## D198: SFU Video Playback — Server-Offer Architecture
 
 **决策**: 浏览器视频播放使用 mediasoup 的 Server-Offer 模式（SFU 创建 transport offer，客户端创建 answer）。Host 通过 SFU Produce 推流（非 P2P WebRTC）。
@@ -55,7 +55,7 @@
 
 **决策**: metis 保持 fast；momus 从 fast 升级到 premium；prometheus 从 premium 升级到 premium-max；explore 温度从 0.0 调整到 0.1。
 **日期**: 2026-07-28
-**修订**: 2026-07-29（参考 OMSPBase+AUDEBase 联合评估）
+**修订**: 2026-07-29（参考 AUDEMSP+AUDEBase 联合评估）
 **原因**:
 - metis（度量/数据分析）本质是 pattern matching，复杂度低，调用频率高 → fast 足够
 - momus（计划批评家）是质量门禁，对抗性审查需要深度推理 → premium
@@ -94,14 +94,14 @@
 **原因**:
 - prometheus（计划生成）是最高杠杆 agent — 计划错误 = 下游全部返工
 - metis（度量分析）本质是 pattern matching，复杂度低，调用频率高 → fast 足够
-- 参考 OMSPBase+AUDEBase 联合评估：oracle + prometheus 为 premium-max 双高杠杆
+- 参考 AUDEMSP+AUDEBase 联合评估：oracle + prometheus 为 premium-max 双高杠杆
 **影响**: oh-my-openagent.jsonc 已更新，agent-model-tiers.md 已同步
 
 **Phase**: System
 
 ## D204: ecosystem-scan 技能体系
 
-**决策**: 创建 ecosystem-scan 技能（双层 Quick/Full + 社区对比 + 安全门禁），同时创建 doc-audit OMSPBase 适配版。
+**决策**: 创建 ecosystem-scan 技能（双层 Quick/Full + 社区对比 + 安全门禁），同时创建 doc-audit AUDEMSP 适配版。
 **日期**: 2026-07-29
 **原因**:
 - .agents/ 体系需要定期审计和外部对标
@@ -133,7 +133,7 @@
 
 ## D207: 预构建 dev 镜像推送 ghcr.io (B 方案)
 
-**决策**: 构建一次含全部编译依赖的 dev 镜像，推送 `ghcr.io/{org}/omspbase-server-dev:latest`，后续 Dockerfile FROM 直接拉取。
+**决策**: 构建一次含全部编译依赖的 dev 镜像，推送 `ghcr.io/{org}/audemsp-server-dev:latest`，后续 Dockerfile FROM 直接拉取。
 **日期**: 2026-07-31
 **原因**:
 - mediasoup C++ Worker 编译 15-30min 无法在每次构建时重复（OpenVidu pre-built binary 模式）
@@ -153,11 +153,21 @@
 - 实测发现：pixi 无国内镜像（最慢层）、rsproxy sparse URL 失效、tuna 不镜像 cargo 二进制、ghproxy 停运
 **修订**:
 - **D206 部分修订**：apt/rustup 清华镜像保留；cargo 镜像 tuna → rsproxy（tuna 只镜像 index，.crate 二进制 404）
-- **D207 机制修订**：FROM 预构建 base → compose `image:` + `pull_policy: always`（本地零构建，命名卷 copy-on-first-use 灌入烘焙产物）；镜像命名统一 `omspbase-server-dev` / `omspbase-server-builder`
+- **D207 机制修订**：FROM 预构建 base → compose `image:` + `pull_policy: always`（本地零构建，命名卷 copy-on-first-use 灌入烘焙产物）；镜像命名统一 `audemsp-server-dev` / `audemsp-server-builder`
 **关键约束**（审核修正，实施时强制执行）:
-- 卷 copy-on-first-use 仅空卷生效 → 落地必须显式 `docker volume rm omspbase_cargo-cache`
+- 卷 copy-on-first-use 仅空卷生效 → 落地必须显式 `docker volume rm audemsp_cargo-cache`
 - 预烘焙镜像 amd64 only，Apple Silicon 走仿真，dev service 显式声明 platform
 - GHCR 清理 workflow（sha tag 保留 N=10）+ path-filter（仅依赖变更时推 dev 镜像）
 - ghcr 可达性未实测前不实施预烘焙（PIT-14/31 背景下可能 30min+）
 - 生产 runtime 缺口是 admin dist 产物（非 feature）→ Docker 构建需 `pnpm build:admin` 先于 cargo build（PIT-23）
 **影响**: 本地首次构建 15-28 min → 2-5 min（预计）；日常增量每轮省 30-60s。实施细节见 docs/reference/build-optimization-strategy.md。
+
+---
+
+## D209: 项目重命名 OMSPBase → AUDEMSP (2026-08-03)
+
+**决策**: 项目对外名称与全部标识符统一由 OMSPBase 更名为 AUDEMSP（AUDE 生态多媒体系统）。范围：crates/ 7 个目录与包名（audemsp-*）、Rust 代码标识符（281 处 import 路径）、环境变量（OMSPBASE_PSK→AUDEMSP_PSK）、Docker 镜像/服务/卷名、www npm 包名、docs（73 文件）+ .agents 记忆/规则/技能（20 文件）+ README/AGENTS.md + 脚本/CI（含 /opt/omspbase→/opt/audemsp 及 oomspbase 笔误修正）。
+**日期**: 2026-08-03
+**原因**: 项目归属 AUDESYS/AUDEBase 生态，统一 AUDEMSP 命名消除「OMSPBase 是独立项目」歧义，与生态命名体系一致。团队 4 分析师交叉验证（217 文件/2363 处）。
+**例外（保留原名）**: decisions-archived.md 历史档案（136 处）、git 历史/commit 消息、.omo/.sisyphus 归档快照、node_modules 生成物。
+**影响**: ① 改名后 Docker 镜像层缓存全部失效（路径变化），首次构建回滚全量编译（一次性成本）；② 旧 env（OMSPBASE_PSK）与 localStorage 键失效——项目未发布，接受破坏；③ git mv 保留历史，单 commit 可 revert 回滚；④ 后续所有文档/命令使用 audemsp-* 命名。

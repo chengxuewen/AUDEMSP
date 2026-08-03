@@ -214,7 +214,7 @@ Parsec 方案 (GPU零拷贝 — 0次GPU↔CPU拷贝):
 - **GPU 零拷贝流水线**：从帧捕获到编码到网络发送，视频帧数据永不离开 GPU 显存。DXGI Desktop Duplication → NVENC 硬件编码 → BUD 协议直接读取编码器输出缓冲区 —— 零次 CPU 拷贝。这是 Parsec 实现 LAN 下仅 7ms 延迟的核心技术。相比之下，传统远程桌面方案在每次 GPU↔CPU 拷贝中损失 10-15ms
 - **BUD 协议与编码器的深度耦合**：拥塞控制算法实时将网络状态（丢包率/RTT/带宽）反馈给视频编码器，编码器动态调整 QP 参数（量化参数，控制码率和画质的平衡点）以响应网络变化。这种传输层与应用层的紧密耦合是 TCP 方案（如 RDP/TeamViewer 的 TCP fallback）无法模拟的
 - **Flip-Sequential 显示器同步**：客户端渲染使用 DirectX Flip-Sequential 交换效果。每一帧在显示器 VSync 脉冲到来时精确交换，消除画面撕裂（Tearing）和额外的缓冲延迟
-- **数据驱动的性能优化方法论**：Parsec 公开了基于 250,000+ 真实用户会话的编码器性能数据。NVENC 中位数 5.8ms vs AMD VCE 15.06ms vs Intel QSV 7.4ms —— 用真实用户数据而非实验室数据指导性能优化。这种工程文化值得 OMSPBase 学习
+- **数据驱动的性能优化方法论**：Parsec 公开了基于 250,000+ 真实用户会话的编码器性能数据。NVENC 中位数 5.8ms vs AMD VCE 15.06ms vs Intel QSV 7.4ms —— 用真实用户数据而非实验室数据指导性能优化。这种工程文化值得 AUDEMSP 学习
 - **虚拟游戏手柄的多人游戏架构**：Host 端模拟出 Xbox 360/Xbox One/DualShock 4 虚拟手柄设备。每个远程玩家获得独立的虚拟手柄。主机游戏（如《煮糊了》、《双人成行》等仅支持本地多人的游戏）无需任何修改即可支持远程多人。这是远程桌面 + 游戏场景的独特创新
 - **直接鼠标控制 + 指针捕获双模式**：游戏场景使用"指针捕获"（类似全屏游戏的光标控制），办公场景使用"直接鼠标控制"（类似本地桌面的光标行为），两种模式无缝切换
 
@@ -268,12 +268,12 @@ Parsec 方案 (GPU零拷贝 — 0次GPU↔CPU拷贝):
   - 硬件兼容性指南：根据 GPU 型号推荐分辨率和帧率设置
 - **已知缺陷或限制**：
   1. **仅硬件编码**：这是性能极致化的必然选择，但也意味着没有硬件编码器的设备（老旧笔记本、办公台式机、虚拟桌面、无 GPU 的云服务器）完全无法作为 Host 使用
-  2. **H.264 许可风险**：硬件编码器的 H.264 许可由 GPU 厂商覆盖，但一旦需要软件 H.264 fallback 则面临 MPEG LA 专利池收费。Parsec 选择回避这个问题，OMSPBase 不能回避
+  2. **H.264 许可风险**：硬件编码器的 H.264 许可由 GPU 厂商覆盖，但一旦需要软件 H.264 fallback 则面临 MPEG LA 专利池收费。Parsec 选择回避这个问题，AUDEMSP 不能回避
   3. **Windows-only Host**：DXGI Desktop Duplication API 是 Windows 独占的 GPU 零拷贝捕获方案。macOS 和 Linux 无等效 API，因此 Parsec Host 仅支持 Windows。这是其性能优势的根本原因，也是其最大的平台限制
   4. **BUD 协议封闭性**：协议完全私有，无法被第三方安全审计或独立实现。依赖 Parsec 公司持续维护。如果公司消失，协议变为遗产代码
   5. **延迟优先策略对生产力场景的牺牲**：BUD 的优先级是延迟 > 帧率 > 画质。在游戏场景合理，但在设计/色彩分级等场景中，文字清晰度和色彩准确性的重要性超过延迟的微小差异
 
-  6. **Unity收购至分拆带来的信任裂痕**：2021年被Unity收购后，Unreal Engine和自定义引擎开发商对Parsec的中立性产生严重质疑。2024年分拆是对这一质疑的补救，但3年的品牌信任损失难以完全恢复。OMSPBase作为开源基础设施，从设计上就是平台中立的
+  6. **Unity收购至分拆带来的信任裂痕**：2021年被Unity收购后，Unreal Engine和自定义引擎开发商对Parsec的中立性产生严重质疑。2024年分拆是对这一质疑的补救，但3年的品牌信任损失难以完全恢复。AUDEMSP作为开源基础设施，从设计上就是平台中立的
   7. **Web客户端的延迟妥协**：Web客户端通过WebAssembly+WebRTC适配层运行，但浏览器无法直接访问GPU编码器，只能使用浏览器内置解码器。Web客户端的解码延迟比原生客户端高30-50%
   8. **Linux Host的长期缺失**：DXGI Desktop Duplication API是GPU零拷贝的必需前提，Linux的DRM/KMS+DMA-BUF理论上可实现等效零拷贝路径，但Linux生态碎片化使Parsec至今未出Linux Host
   9. **macOS完全不可作为Host**：macOS无公开的GPU帧缓冲直接访问API。Apple Silicon的统一内存架构理论上可实现共享内存零拷贝，但Apple未开放必要的API
@@ -314,11 +314,11 @@ Parsec 方案 (GPU零拷贝 — 0次GPU↔CPU拷贝):
 ## 6. 产品特色
 1. **7ms 延迟标杆 —— 远程桌面的性能天花板**：Parsec 在 LAN 环境下端到端增量延迟仅 7ms（不含显示器刷新延迟）。这是通过 GPU 零拷贝流水线实现的 —— 从桌面捕获→编码→发包→解码→渲染，全链路数据滞留于 GPU 显存。任何经过 CPU RAM 中转的环节都会增加 10-15ms。这一路径对其他远程桌面方案来说就是最高目标。
 2. **BUD 协议的创新 —— 传输层与编码器的深度耦合**：自研 UDP 协议（Better User Datagrams）专为视频流传输设计，核心创新在于拥塞控制与编码器的实时联动 —— 编码器根据网络反馈动态调整 QP 参数。TCP 的队头阻塞（Head-of-Line Blocking）和慢启动（Slow Start）在这个应用场景中是致命的，这也是为什么 Parsec 以及行业共识都选择 UDP 为第一优先级传输协议。
-3. **数据驱动的工程文化 —— 用真实数据代替直觉**：Parsec 团队公开了基于 250,000+ 真实用户会话的性能分析数据。这种"用户数据驱动"的方法论让性能调优从艺术变成科学。对 OMSPBase 的性能基准建立有直接参考价值 —— 在开发阶段就应该设计性能埋点和延迟分解可视化。
+3. **数据驱动的工程文化 —— 用真实数据代替直觉**：Parsec 团队公开了基于 250,000+ 真实用户会话的性能分析数据。这种"用户数据驱动"的方法论让性能调优从艺术变成科学。对 AUDEMSP 的性能基准建立有直接参考价值 —— 在开发阶段就应该设计性能埋点和延迟分解可视化。
 4. **多人协作游戏的架构创新 —— 虚拟手柄的多租户实例化**：Parsec 的初始产品愿景是"给你朋友你电脑上的第二个控制器"。虚拟手柄技术让本地多人游戏可远程游玩，这是远程桌面产品中独特的游戏场景创新。
 5. **拒绝依赖的极简哲学 —— 核心 SDK 依赖数 <20**：Parsec 明确拒绝 Google WebRTC 的庞大依赖树（200+ 依赖），核心 SDK 用跨平台 C 编写。这种"依赖最小化"策略降低了集成冲突风险、减小了二进制体积（SDK <5MB）、提高了性能可控性。
 
-## 7. 对 OMSPBase 的参考价值
+## 7. 对 AUDEMSP 的参考价值
 ### [Adopt] 可直接借鉴
 - GPU 零拷贝流水线的全链路设计思路：视频帧尽量留在 GPU 显存中流转（捕获→编码→发包→解码→渲染）。每个环节排查是否有 GPU↔CPU 拷贝
 - Desktop Duplication API 作为 Windows 平台最低延迟捕获方案（与 RustDesk DXGI 路径一致）
@@ -338,16 +338,16 @@ Parsec 方案 (GPU零拷贝 — 0次GPU↔CPU拷贝):
   - 设计/色彩：画质 > 延迟 > 帧率
 
 ### [Avoid] 已知坑 / 不适用场景
-- **仅硬件编码的兼容性陷阱**：老旧设备、虚拟桌面、无独立 GPU 的云服务器无法使用。OMSPBase 必须保留软件编码路径（VP8/VP9/AV1）
-- **H.264 软件编码的 MPEG LA 专利费**：如使用软件 H.264，需向 MPEG LA 缴纳专利费。OMSPBase 软件编码方案必须优先使用 VP8/VP9/AV1（全免版税）
-- **BUD 协议的不开放性**：封闭协议限制安全审计和第三方集成。OMSPBase 应基于 DTLS-SRTP (WebRTC 标准) 或 TLS 1.3 等公开标准加密方案
-- **Windows 平台的强绑定**：DXGI Desktop Duplication API 是 Windows 独占，OMSPBase 需为 Linux (PipeWire/DMA-BUF) 和 macOS (ScreenCaptureKit) 设计等效的低延迟捕获路径
+- **仅硬件编码的兼容性陷阱**：老旧设备、虚拟桌面、无独立 GPU 的云服务器无法使用。AUDEMSP 必须保留软件编码路径（VP8/VP9/AV1）
+- **H.264 软件编码的 MPEG LA 专利费**：如使用软件 H.264，需向 MPEG LA 缴纳专利费。AUDEMSP 软件编码方案必须优先使用 VP8/VP9/AV1（全免版税）
+- **BUD 协议的不开放性**：封闭协议限制安全审计和第三方集成。AUDEMSP 应基于 DTLS-SRTP (WebRTC 标准) 或 TLS 1.3 等公开标准加密方案
+- **Windows 平台的强绑定**：DXGI Desktop Duplication API 是 Windows 独占，AUDEMSP 需为 Linux (PipeWire/DMA-BUF) 和 macOS (ScreenCaptureKit) 设计等效的低延迟捕获路径
 
 **总体评分**：★★★★★ (5/5)
-**评语**：远程桌面低延迟领域的性能天花板。GPU 零拷贝流水线、编码器与传输层联动、数据驱动优化方法论是 OMSPBase 性能管线设计的核心参考。但要警惕其对硬件编码的强依赖和协议封闭性 —— OMSPBase 应在追求极致性能的同时保持平台兼容性和协议开放性。
+**评语**：远程桌面低延迟领域的性能天花板。GPU 零拷贝流水线、编码器与传输层联动、数据驱动优化方法论是 AUDEMSP 性能管线设计的核心参考。但要警惕其对硬件编码的强依赖和协议封闭性 —— AUDEMSP 应在追求极致性能的同时保持平台兼容性和协议开放性。
 
-### 对OMSPBase性能测试基准的启示
-Parsec的编码器性能数据（250,000+会话采样）建立了最优实践：用真实用户数据驱动性能优化，而非实验室合成数据。OMSPBase应在开发阶段设计以下性能测试基准：
+### 对AUDEMSP性能测试基准的启示
+Parsec的编码器性能数据（250,000+会话采样）建立了最优实践：用真实用户数据驱动性能优化，而非实验室合成数据。AUDEMSP应在开发阶段设计以下性能测试基准：
 1. 编码延迟基准测试：每种编码器的中位数/95分位延迟（类似NVENC 5.8ms/11.2ms）
 2. 端到端延迟分解：编码+网络+解码+渲染四个环节各自的延迟贡献
 3. 不同GPU厂商的编码性能差异：NVIDIA vs AMD vs Intel的编码延迟对比
@@ -367,7 +367,7 @@ Parsec 2018年获得的美国专利（US10951890）是其技术的核心保护�
 - 专利名称：Systems and methods for low-latency video streaming
 - 核心技术声明：GPU零拷贝流程——从帧捕获到编码到网络发送，数据永不离GPU显存
 - 保护范围：使用GPU硬件编码器+DMA（Direct Memory Access）绕过CPU RAM实现视频帧传输
-- 对OMSPBase的影响：不能直接复制Parsec的专利实现路径。但GPU零拷贝的设计思想（让数据留在GPU显存）是公共领域的工程实践，可以通过独立实现达到类似性能
+- 对AUDEMSP的影响：不能直接复制Parsec的专利实现路径。但GPU零拷贝的设计思想（让数据留在GPU显存）是公共领域的工程实践，可以通过独立实现达到类似性能
 
 ### 专利与工程实践的边界
 | 专利保护（不能做） | 工程实践（可以做） | 实现路径 |
@@ -376,10 +376,10 @@ Parsec 2018年获得的美国专利（US10951890）是其技术的核心保护�
 | BUD协议的具体算法参数 | 自适应UDP拥塞控制 | 独立实现GCC/BBR算法（RFC标准） |
 | 编码器QP与网络状态的特定联动公式 | 网络反馈到编码器的通用设计 | 通过Plugin trait实现编码器参数动态调整 |
 
-## 附录：Parsec对OMSPBase传输协议设计的影响
-BUD协议的核心设计原则可以直接映射到OMSPBase的传输层设计：
+## 附录：Parsec对AUDEMSP传输协议设计的影响
+BUD协议的核心设计原则可以直接映射到AUDEMSP的传输层设计：
 ```
-BUD设计原则                    OMSPBase实现方案
+BUD设计原则                    AUDEMSP实现方案
 ─────────────────────────────────────────────────────
 UDP为基础传输层     →          WebRTC RTP/RTCP（标准UDP传输）
 自定义FEC前向纠错    →          WebRTC内置ULP FEC或FlexFEC
@@ -389,10 +389,10 @@ UDP为基础传输层     →          WebRTC RTP/RTCP（标准UDP传输）
 延迟>帧率>画质优先级  →          场景可配置：PriorityPolicy enum
 ```
 
-OMSPBase的优势：使用WebRTC标准栈意味着这些能力是内置的（ICE/STUN/TURN、RTP/RTCP、FEC、GCC），不需要像Parsec那样从零自研BUD协议。但代价是失去了Parsec级别的深度编码器联动控制——WebRTC的GCC是为通用视频会议设计的，不如BUD对远程桌面场景的优化精细。Phase 2+可考虑在WebRTC基础上添加自定义的编码器联动层（通过Plugin trait实现）
+AUDEMSP的优势：使用WebRTC标准栈意味着这些能力是内置的（ICE/STUN/TURN、RTP/RTCP、FEC、GCC），不需要像Parsec那样从零自研BUD协议。但代价是失去了Parsec级别的深度编码器联动控制——WebRTC的GCC是为通用视频会议设计的，不如BUD对远程桌面场景的优化精细。Phase 2+可考虑在WebRTC基础上添加自定义的编码器联动层（通过Plugin trait实现）
 
 ## 附录：Parsec延迟分解方法论
-Parsec的性能叠加层是OMSPBase性能诊断工具的参考模板：
+Parsec的性能叠加层是AUDEMSP性能诊断工具的参考模板：
 ```
 Performance Overlay 显示结构:
 ┌─────────────────────────────────────────┐
@@ -407,7 +407,7 @@ Performance Overlay 显示结构:
 └─────────────────────────────────────────┘
 ```
 
-OMSPBase应在开发阶段实现类似的性能叠加层：
+AUDEMSP应在开发阶段实现类似的性能叠加层：
 - 编码延迟：从frame.capture()返回到encode()返回
 - 网络延迟：RTT的一半（通过RTCP SR/RR计算）
 - 解码延迟：从receive()到decode()返回
@@ -418,10 +418,10 @@ OMSPBase应在开发阶段实现类似的性能叠加层：
 优点（应继承）：每个依赖有不可替代的理由；零成本抽象优于运行时开销；小型核心库便于安全审计
 代价（应权衡）：自研取代成熟库的维护成本高；社区贡献门槛高
 
-OMSPBase平衡方案：信令+传输层用WebRTC标准栈（约30依赖）；核心编解码+屏幕捕获自研或轻包装
+AUDEMSP平衡方案：信令+传输层用WebRTC标准栈（约30依赖）；核心编解码+屏幕捕获自研或轻包装
 
 ## 附录：Parsec跨平台策略局限性
-| 平台 | Parsec Host | Parsec Client | OMSPBase目标 |
+| 平台 | Parsec Host | Parsec Client | AUDEMSP目标 |
 |------|-----------|--------------|-------------|
 | Windows | 支持（DXGI零拷贝） | 支持 | 全支持 Host+Client |
 | Linux | 不支持 | 支持 | 全支持（DMA-BUF/VAAPI） |
@@ -429,30 +429,30 @@ OMSPBase平衡方案：信令+传输层用WebRTC标准栈（约30依赖）；核
 | Android/iOS | 不支持 | 支持 | Client（Host受限） |
 | Web | 不支持 | 支持（WebAssembly） | 支持 Client（WebRTC） |
 
-OMSPBase的核心优势：Rust跨平台能力+WebRTC标准栈使全平台Host/Client成为比Parsec更可达的目标。
+AUDEMSP的核心优势：Rust跨平台能力+WebRTC标准栈使全平台Host/Client成为比Parsec更可达的目标。
 
-### Parsec技术债务清单（OMSPBase应避免）
-1. 仅硬件编码：老旧设备、无GPU云服务器完全不可用。OMSPBase保留软件编码路径
-2. H.264 MPEG LA专利费：软件H.264的收费专利池。OMSPBase用VP8/VP9/AV1
-3. Windows-only Host：DXGI是Windows独占。OMSPBase用Rust跨平台+各平台最佳捕获API
-4. BUD协议封闭性：不可审计、不可独立实现。OMSPBase基于WebRTC标准
-5. 延迟优先牺牲画质：设计/色彩场景不适用。OMSPBase提供场景可配置策略
+### Parsec技术债务清单（AUDEMSP应避免）
+1. 仅硬件编码：老旧设备、无GPU云服务器完全不可用。AUDEMSP保留软件编码路径
+2. H.264 MPEG LA专利费：软件H.264的收费专利池。AUDEMSP用VP8/VP9/AV1
+3. Windows-only Host：DXGI是Windows独占。AUDEMSP用Rust跨平台+各平台最佳捕获API
+4. BUD协议封闭性：不可审计、不可独立实现。AUDEMSP基于WebRTC标准
+5. 延迟优先牺牲画质：设计/色彩场景不适用。AUDEMSP提供场景可配置策略
 6. Unity收购分拆的信任裂痕：平台中立性是基础设施的核心要求
 7. Web客户端延迟妥协：浏览器无法访问GPU编码器，解码延迟+30-50%
 8. Linux Host长期缺失：Linux生态碎片化
 9. macOS完全不可作Host：Apple未开放GPU帧缓冲API
 
-### 总结：Parsec对OMSPBase的核心价值
-Parsec是远程桌面低延迟领域的性能天花板——7ms端到端延迟、GPU零拷贝流水线、编码器与传输层联动的深度耦合。OMSPBase应从Parsec学习：
+### 总结：Parsec对AUDEMSP的核心价值
+Parsec是远程桌面低延迟领域的性能天花板——7ms端到端延迟、GPU零拷贝流水线、编码器与传输层联动的深度耦合。AUDEMSP应从Parsec学习：
 - 性能优化用真实数据驱动（非实验室合成数据）
 - 在开发阶段设计延迟分解可视化和性能基准测试
 - UDP+自定义拥塞控制取代TCP（行业共识）
 - 依赖最小化原则（核心SDK只引入不可替代的依赖）
 
-但OMSPBase不应复制Parsec的局限性：仅硬件编码、Windows-only Host、闭源BUD协议。OMSPBase应在开放协议（WebRTC）的基础上追求性能，而非在闭源协议的基础上锁定性能。
+但AUDEMSP不应复制Parsec的局限性：仅硬件编码、Windows-only Host、闭源BUD协议。AUDEMSP应在开放协议（WebRTC）的基础上追求性能，而非在闭源协议的基础上锁定性能。
 
-## 附录：Parsec对OMSPBase功能优先级的影响
-基于Parsec的性能优先级和场景验证，OMSPBase性能架构建议：
+## 附录：Parsec对AUDEMSP功能优先级的影响
+基于Parsec的性能优先级和场景验证，AUDEMSP性能架构建议：
 
 Phase 0（架构定义）：延迟分解可视化架构设计、性能基准测试框架定义、GPU零拷贝路径概念验证
 Phase 1（MVP）：编码延迟基准测试、端到端延迟分解、UDP+RTP媒体传输、NAT穿透成功率统计
@@ -460,7 +460,7 @@ Phase 2（性能优化）：GPU零拷贝DXGI路径实现、编码器与传输层
 Phase 3（场景适配）：游戏模式（延迟>帧率>画质）、办公模式（画质=延迟>帧率）、设计模式（画质>延迟>帧率）
 Phase 4（极致性能）：自定义拥塞控制替代WebRTC GCC、编码器QP实时联动、GPU Direct RDMA实验
 
-Parsec证明了一个核心理念：在远程桌面领域，性能是最好的功能。OMSPBase应从Phase 0就将性能作为首要设计约束。
+Parsec证明了一个核心理念：在远程桌面领域，性能是最好的功能。AUDEMSP应从Phase 0就将性能作为首要设计约束。
 
 ## 附录：参考数据来源说明
 本文档分析基于以下数据来源：
@@ -473,28 +473,28 @@ Parsec证明了一个核心理念：在远程桌面领域，性能是最好的�
 
 数据时效性：所有技术细节截至2026年7月。Parsec持续每月发布更新。
 
-技术注意：OMSPBase不直接使用Parsec的BUD协议或GPU零拷贝专利实现。本文档中的分析仅供架构设计参考。OMSPBase的GPU零拷贝路径将通过独立研发实现（使用公开的DXGI/DMA-BUF/IOSurface API）。
+技术注意：AUDEMSP不直接使用Parsec的BUD协议或GPU零拷贝专利实现。本文档中的分析仅供架构设计参考。AUDEMSP的GPU零拷贝路径将通过独立研发实现（使用公开的DXGI/DMA-BUF/IOSurface API）。
 
 ---
 
-> 本文档为OMSPBase Phase 0架构定义阶段的参考资料。
+> 本文档为AUDEMSP Phase 0架构定义阶段的参考资料。
 > 随着项目推进，部分分析和建议可能根据实际需求和约束调整。
 > 所有外部产品数据、版本信息截至2026年7月。
 > Parsec是Parsec Cloud, Inc.的注册商标。Parsec BUD协议和GPU零拷贝技术受专利US10951890保护。
 > 本文档中的技术分析仅供架构设计参考，不构成任何专利侵权。
 
-> 架构设计借鉴：本文档对Parsec的技术分析旨在为OMSPBase架构设计提供参考。
+> 架构设计借鉴：本文档对Parsec的技术分析旨在为AUDEMSP架构设计提供参考。
 
-> 性能基准建议：OMSPBase应建立类似Parsec的数据驱动性能优化方法论（编码延迟中位数/95分位、端到端延迟分解、NAT穿透成功率统计）。
+> 性能基准建议：AUDEMSP应建立类似Parsec的数据驱动性能优化方法论（编码延迟中位数/95分位、端到端延迟分解、NAT穿透成功率统计）。
 
-> 依赖策略：OMSPBase应在Parsec极小依赖和WebRTC标准栈之间找到平衡点——标准协议引入必要的依赖，核心算法保持依赖最小化。
+> 依赖策略：AUDEMSP应在Parsec极小依赖和WebRTC标准栈之间找到平衡点——标准协议引入必要的依赖，核心算法保持依赖最小化。
  
-> 架构设计借鉴：本文档对Parsec的技术分析旨在为OMSPBase架构设计提供参考。
+> 架构设计借鉴：本文档对Parsec的技术分析旨在为AUDEMSP架构设计提供参考。
  
 > 技术验证：Parsec证明了GPU零拷贝在远程桌面中的决定性性能优势（7ms vs 25-50ms的传统方案差距）。
  
-> 安全警告：闭源BUD协议不可审计，OMSPBase应基于DTLS-SRTP/TLS 1.3等公开标准实现等价功能。
+> 安全警告：闭源BUD协议不可审计，AUDEMSP应基于DTLS-SRTP/TLS 1.3等公开标准实现等价功能。
  
-> 最终结论：Parsec是性能天花板，OMSPBase应学习其极致优化精神，但不复制其平台限制和闭源路线。
+> 最终结论：Parsec是性能天花板，AUDEMSP应学习其极致优化精神，但不复制其平台限制和闭源路线。
  
-> 注：Parsec对OMSPBase最大的贡献是数据驱动的性能优化方法论——用真实用户数据而非实验室合成数据指导性能调优。
+> 注：Parsec对AUDEMSP最大的贡献是数据驱动的性能优化方法论——用真实用户数据而非实验室合成数据指导性能调优。

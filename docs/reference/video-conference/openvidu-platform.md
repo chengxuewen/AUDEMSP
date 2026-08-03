@@ -778,53 +778,53 @@ npm start
 └────────────────────────────────────────────────────────────────┘
 ```
 
-## 12. 对 OMSPBase 的参考价值
+## 12. 对 AUDEMSP 的参考价值
 
 ### [Adopt] 可直接借鉴
 
-1. **Master-Worker 架构**：openvidu-server 的 Java 控制面 + Kurento/LiveKit 媒体面分离模式。OMSPBase 的 omspbase-server (控制面) + media node (媒体面) 的架构设计可直接参考此模式
+1. **Master-Worker 架构**：openvidu-server 的 Java 控制面 + Kurento/LiveKit 媒体面分离模式。AUDEMSP 的 audemsp-server (控制面) + media node (媒体面) 的架构设计可直接参考此模式
 
-2. **Session/Connection/Token 三层抽象**：Session (房间) → Connection (参与者) → Token (认证) 的模型设计简洁且实用。OMSPBase 的信令层可直接复用此抽象层次
+2. **Session/Connection/Token 三层抽象**：Session (房间) → Connection (参与者) → Token (认证) 的模型设计简洁且实用。AUDEMSP 的信令层可直接复用此抽象层次
 
-3. **PUBLISHER/SUBSCRIBER 角色模型**：简洁的双角色权限模型——发布者拥有全部权限，订阅者仅可观看。OMSPBase 的远程桌面和监控场景天然适配此模型（Host=PUBLISHER, Client=SUBSCRIBER）
+3. **PUBLISHER/SUBSCRIBER 角色模型**：简洁的双角色权限模型——发布者拥有全部权限，订阅者仅可观看。AUDEMSP 的远程桌面和监控场景天然适配此模型（Host=PUBLISHER, Client=SUBSCRIBER）
 
-4. **COMPOSED/INDIVIDUAL 录制模式**：两种录制模式覆盖了绝大多数场景——COMPOSED 用于会议回放，INDIVIDUAL 用于后期编辑。OMSPBase 的录制模块应直接支持这两种模式
+4. **COMPOSED/INDIVIDUAL 录制模式**：两种录制模式覆盖了绝大多数场景——COMPOSED 用于会议回放，INDIVIDUAL 用于后期编辑。AUDEMSP 的录制模块应直接支持这两种模式
 
-5. **CDR (Call Detail Record)**：通话详情记录是运维和计费的基础设施。OMSPBase 的 Telemetry 模块应内置 CDR 采集
+5. **CDR (Call Detail Record)**：通话详情记录是运维和计费的基础设施。AUDEMSP 的 Telemetry 模块应内置 CDR 采集
 
-6. **API 密钥认证 (OPENVIDU_SECRET)**：简单但有效的服务端认证方案。OMSPBase 的 Server API 认证可直接参考此模式
+6. **API 密钥认证 (OPENVIDU_SECRET)**：简单但有效的服务端认证方案。AUDEMSP 的 Server API 认证可直接参考此模式
 
 ### [Adapt] 需修改后采用
 
-1. **Token 生成流程**：OpenVidu 的 Token 包含 role (PUBLISHER/SUBSCRIBER) 和自定义数据。OMSPBase 应扩展为更丰富的访问控制——支持轨道级权限（某个用户只能订阅某路视频流）、时间约束、IP 白名单
+1. **Token 生成流程**：OpenVidu 的 Token 包含 role (PUBLISHER/SUBSCRIBER) 和自定义数据。AUDEMSP 应扩展为更丰富的访问控制——支持轨道级权限（某个用户只能订阅某路视频流）、时间约束、IP 白名单
 
-2. **弹性集群扩缩容**：CPU 驱动的扩缩容策略是基础方案。OMSPBase 应增加更多维度——内存使用率、连接数、网络带宽、自定义指标。同时支持基于预测的 proactive 扩容
+2. **弹性集群扩缩容**：CPU 驱动的扩缩容策略是基础方案。AUDEMSP 应增加更多维度——内存使用率、连接数、网络带宽、自定义指标。同时支持基于预测的 proactive 扩容
 
-3. **录制管理器**：OpenVidu 的录制管理器是 Server 的一部分。OMSPBase 应设计为独立录制服务（类似 LiveKit Egress），避免录制 CPU 负载影响信令响应
+3. **录制管理器**：OpenVidu 的录制管理器是 Server 的一部分。AUDEMSP 应设计为独立录制服务（类似 LiveKit Egress），避免录制 CPU 负载影响信令响应
 
-4. **Media Node 生命周期**：launching → running → draining → terminated 四阶段模型很好。OMSPBase 应增加 health check 和 auto-recovery 机制——节点故障时自动迁移会话
+4. **Media Node 生命周期**：launching → running → draining → terminated 四阶段模型很好。AUDEMSP 应增加 health check 和 auto-recovery 机制——节点故障时自动迁移会话
 
-5. **v2compatibility 策略**：OpenVidu v3 的 v2compatibility 模块是供应商迁移的参考模版。OMSPBase 在 API 演进时也应保持至少一个大版本的向后兼容
+5. **v2compatibility 策略**：OpenVidu v3 的 v2compatibility 模块是供应商迁移的参考模版。AUDEMSP 在 API 演进时也应保持至少一个大版本的向后兼容
 
 ### [Avoid] 已知坑与不适用场景
 
-1. **Kurento 的 CPU 密集型 MCU 模式**：OpenVidu v2 的 Kurento 方案 CPU 效率低, 部署镜像 ~1.5GB。OMSPBase 避免 GStreamer 强绑定的 MCU 模式——纯 SFU 是更高效的选择
+1. **Kurento 的 CPU 密集型 MCU 模式**：OpenVidu v2 的 Kurento 方案 CPU 效率低, 部署镜像 ~1.5GB。AUDEMSP 避免 GStreamer 强绑定的 MCU 模式——纯 SFU 是更高效的选择
 
-2. **Java 控制面的高资源消耗**：openvidu-server (Java Spring Boot) 需要 ~512MB-1GB 内存, 启动时间 ~30s。OMSPBase 的 control plane 应以 Rust 实现（omspbase-server 已有骨架）——零 JVM 开销, 毫秒级启动
+2. **Java 控制面的高资源消耗**：openvidu-server (Java Spring Boot) 需要 ~512MB-1GB 内存, 启动时间 ~30s。AUDEMSP 的 control plane 应以 Rust 实现（audemsp-server 已有骨架）——零 JVM 开销, 毫秒级启动
 
-3. **LiveKit 私有信令协议**：OpenVidu v3 使用 LiveKit 的私有二进制 WebSocket 信令, 导致标准 WebRTC 客户端无法直接接入。OMSPBase 应使用标准 SDP offer/answer 模型, 保持互操作性
+3. **LiveKit 私有信令协议**：OpenVidu v3 使用 LiveKit 的私有二进制 WebSocket 信令, 导致标准 WebRTC 客户端无法直接接入。AUDEMSP 应使用标准 SDP offer/answer 模型, 保持互操作性
 
-4. **单点 openvidu-server**：openvidu-server 是单点, 故障时所有会话受影响。OMSPBase 的 Server 设计应原生支持无状态水平扩展——多个 Server 实例共享会话状态
+4. **单点 openvidu-server**：openvidu-server 是单点, 故障时所有会话受影响。AUDEMSP 的 Server 设计应原生支持无状态水平扩展——多个 Server 实例共享会话状态
 
-5. **录制与媒体节点耦合**：OpenVidu 录制在媒体节点上执行, 录制 CPU 负载影响媒体节点性能。OMSPBase 应设计独立的录制服务, 通过 RTP Forwarding 接收流
+5. **录制与媒体节点耦合**：OpenVidu 录制在媒体节点上执行, 录制 CPU 负载影响媒体节点性能。AUDEMSP 应设计独立的录制服务, 通过 RTP Forwarding 接收流
 
-6. **过度依赖 Docker Compose**：OpenVidu 的部署几乎完全绑定 Docker Compose。OMSPBase 应支持多种部署方式——原生二进制、Docker、K8s、systemd 服务
+6. **过度依赖 Docker Compose**：OpenVidu 的部署几乎完全绑定 Docker Compose。AUDEMSP 应支持多种部署方式——原生二进制、Docker、K8s、systemd 服务
 
 ### 核心总结
 
-| 维度 | OpenVidu 经验 | OMSPBase 应用 |
+| 维度 | OpenVidu 经验 | AUDEMSP 应用 |
 |------|-------------|-------------|
-| 架构 | Master-Worker 控制面/媒体面分离 | omspbase-server + media node |
+| 架构 | Master-Worker 控制面/媒体面分离 | audemsp-server + media node |
 | 抽象 | Session/Connection/Token 三层 | 信令层直接复用 |
 | 角色 | PUBLISHER/SUBSCRIBER | Host=发布者, Client=订阅者 |
 | 录制 | COMPOSED/INDIVIDUAL 双模式 | 录制模块直接支持 |
@@ -834,7 +834,7 @@ npm start
 
 **总体评分**：★★★★☆ (4/5)
 
-> 评价：OpenVidu 的价值不在于其媒体引擎能力（Kurento 已老化, LiveKit 是第三方, mediasoup 也是第三方）——而在于其 **Master-Worker 平台架构**和 **Session/Connection/Token 抽象模型**。OpenVidu 证明了「在媒体引擎之上封装完整平台 API」的商业和技术可行性。OMSPBase 的 omspbase-server 应借鉴 OpenVidu 的平台架构设计, 但媒体引擎直接使用 mediasoup (而非 Kurento 或 LiveKit fork), 控制面以 Rust 实现 (而非 Java Spring Boot), 信令使用标准 SDP/JSEP (而非私有协议)。取 OpenVidu 的平台化经验 + mediasoup 的性能 + Rust 的零成本抽象 = OMSPBase Server 的最佳路径。
+> 评价：OpenVidu 的价值不在于其媒体引擎能力（Kurento 已老化, LiveKit 是第三方, mediasoup 也是第三方）——而在于其 **Master-Worker 平台架构**和 **Session/Connection/Token 抽象模型**。OpenVidu 证明了「在媒体引擎之上封装完整平台 API」的商业和技术可行性。AUDEMSP 的 audemsp-server 应借鉴 OpenVidu 的平台架构设计, 但媒体引擎直接使用 mediasoup (而非 Kurento 或 LiveKit fork), 控制面以 Rust 实现 (而非 Java Spring Boot), 信令使用标准 SDP/JSEP (而非私有协议)。取 OpenVidu 的平台化经验 + mediasoup 的性能 + Rust 的零成本抽象 = AUDEMSP Server 的最佳路径。
 
 ---
 
@@ -846,7 +846,7 @@ npm start
 > OpenVidu Pro 架构: docs.openvidu.io/en/stable/openvidu-pro/
 > Kurento/openvidu/kurento-media-server
 > LiveKit: livekit/livekit (forked as openvidu-livekit)
-> OMSPBase: docs/research/video-conference.md
+> AUDEMSP: docs/research/video-conference.md
 
 ---
 

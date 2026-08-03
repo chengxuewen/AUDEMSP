@@ -164,7 +164,7 @@ impl SignalHandler for PairingRelay {
 
 ```protobuf
 syntax = "proto3";
-package omspbase.signaling;
+package audemsp.signaling;
 
 // === 客户端 → 服务端 ===
 message ClientSignal {

@@ -527,36 +527,36 @@ openvidu.rtc.engine = mediasoup
 - **选择 Pion 引擎**：轻量部署、快速启动、社区版默认。适合中小规模会议（<50 参与者）、IoT 设备、快速原型验证
 - **选择 mediasoup 引擎**：高性能场景、大规模会议（100+ 参与者）、需要细粒度编码控制的场景。适合专业视频会议、直播推流、教育平台
 
-## 7. OMSPBase 借鉴
+## 7. AUDEMSP 借鉴
 
 ### 7.1 架构借鉴
 
-| OpenVidu 实践 | OMSPBase 对应 | 借鉴价值 |
+| OpenVidu 实践 | AUDEMSP 对应 | 借鉴价值 |
 |---------------|---------------|----------|
 | 12 容器微服务架构 | 7 crate 工作区 | 容器化边界明确，服务间职责清晰 |
-| Caddy 反向代理做 TLS 终止 | omspbase-server 当前直接暴露 | 引入反向代理层分离证书管理 |
-| Setup 容器做目录初始化 | omspbase-host 启动时初始化 | 分离初始化逻辑，确保容器启动顺序正确 |
-| 引擎可切换（pion/mediasoup） | omspbase-webrtc 三后端抽象 | 后端切换模式一致，可复用 LiveKit 的配置驱动思路 |
-| LiveKit 内嵌模式（无独立 SFU 容器） | omspbase-server SFU 集成 | SFU 与服务同容器减少网络跳数和部署复杂度 |
-| TURN 由 SFU 内置提供 | omspbase-server ICE 候选地址 | 减少独立 TURN 容器的运维开销 |
+| Caddy 反向代理做 TLS 终止 | audemsp-server 当前直接暴露 | 引入反向代理层分离证书管理 |
+| Setup 容器做目录初始化 | audemsp-host 启动时初始化 | 分离初始化逻辑，确保容器启动顺序正确 |
+| 引擎可切换（pion/mediasoup） | audemsp-webrtc 三后端抽象 | 后端切换模式一致，可复用 LiveKit 的配置驱动思路 |
+| LiveKit 内嵌模式（无独立 SFU 容器） | audemsp-server SFU 集成 | SFU 与服务同容器减少网络跳数和部署复杂度 |
+| TURN 由 SFU 内置提供 | audemsp-server ICE 候选地址 | 减少独立 TURN 容器的运维开销 |
 
 ### 7.2 端口规划借鉴
 
 | 端口范围 | 复用方式 |
 |----------|----------|
-| 7900-7999 | 100 端口范围适用于中等规模部署，OMSPBase 当前 40000-40100 范围过窄 |
-| 3478/5349 | LiveKit 内置 TURN 端口，OMSPBase 可参考将 STUN/TURN 集成到 SFU 而非独立部署 |
+| 7900-7999 | 100 端口范围适用于中等规模部署，AUDEMSP 当前 40000-40100 范围过窄 |
+| 3478/5349 | LiveKit 内置 TURN 端口，AUDEMSP 可参考将 STUN/TURN 集成到 SFU 而非独立部署 |
 
 ### 7.3 引入反向代理层
 
-OMSPBase 当前 `omspbase-server` 直接暴露 9800 端口。借鉴 OpenVidu 的 Caddy 模式：
+AUDEMSP 当前 `audemsp-server` 直接暴露 9800 端口。借鉴 OpenVidu 的 Caddy 模式：
 
 ```
 当前：
-  Client → omspbase-server:9800 (直连，无 TLS)
+  Client → audemsp-server:9800 (直连，无 TLS)
 
 借鉴后：
-  Client → Caddy (443 TLS) → omspbase-server:9800 (内网)
+  Client → Caddy (443 TLS) → audemsp-server:9800 (内网)
 ```
 
 优势：
@@ -567,26 +567,26 @@ OMSPBase 当前 `omspbase-server` 直接暴露 9800 端口。借鉴 OpenVidu 的
 
 ### 7.4 引擎切换策略
 
-OpenVidu 的 `openvidu.rtc.engine` 配置驱动切换模式与 OMSPBase 的 `omspbase-webrtc` 三后端抽象不谋而合。OMSPBase 可借鉴其配置方式：
+OpenVidu 的 `openvidu.rtc.engine` 配置驱动切换模式与 AUDEMSP 的 `audemsp-webrtc` 三后端抽象不谋而合。AUDEMSP 可借鉴其配置方式：
 
 ```toml
-# OMSPBase 未来配置
+# AUDEMSP 未来配置
 [webrtc]
 backend = "webrtc-sys"  # webrtc-rs | webrtc-sys | str0m
 ```
 
-社区版默认使用 `webrtc-sys`（libwebrtc 稳定性能），专业版允许切换。切换逻辑在 `omspbase-webrtc/src/backend/` 中由 feature flag 和运行时配置共同决定。
+社区版默认使用 `webrtc-sys`（libwebrtc 稳定性能），专业版允许切换。切换逻辑在 `audemsp-webrtc/src/backend/` 中由 feature flag 和运行时配置共同决定。
 
 ### 7.5 录制架构
 
-OpenVidu 的录制依赖 MinIO + Egress 服务（不再使用 Kurento）。OMSPBase 的录制路径可简化为：
+OpenVidu 的录制依赖 MinIO + Egress 服务（不再使用 Kurento）。AUDEMSP 的录制路径可简化为：
 
 ```
-OMSPBase 录制（当前）：
-  Host → RTP → omspbase-server → 文件写入
+AUDEMSP 录制（当前）：
+  Host → RTP → audemsp-server → 文件写入
 
 OpenVidu 录制（借鉴）：
   LiveKit → Egress 合成/编码 → MinIO S3 存储 → 生命周期管理
 ```
 
-OMSPBase 未来录制可引入 MinIO 兼容层，复用 OpenVidu 的 S3 录制路径和生命周期策略。
+AUDEMSP 未来录制可引入 MinIO 兼容层，复用 OpenVidu 的 S3 录制路径和生命周期策略。

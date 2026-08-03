@@ -49,18 +49,18 @@ pub struct ReadyResponse {
 ## 3. 指标设计 (D99)
 
 ```
-# HELP omspbase_http_requests_total HTTP 请求总数
-# TYPE omspbase_http_requests_total counter
-omspbase_http_requests_total{method="GET",path="/health"} 1024
+# HELP audemsp_http_requests_total HTTP 请求总数
+# TYPE audemsp_http_requests_total counter
+audemsp_http_requests_total{method="GET",path="/health"} 1024
 
-# HELP omspbase_ws_connections WebSocket 连接数
-# TYPE omspbase_ws_connections gauge
-omspbase_ws_connections 2
+# HELP audemsp_ws_connections WebSocket 连接数
+# TYPE audemsp_ws_connections gauge
+audemsp_ws_connections 2
 
-# HELP omspbase_relay_rtt_ms 中继 RTT 毫秒
-# TYPE omspbase_relay_rtt_ms gauge
-omspbase_relay_rtt_ms{peer="host-001"} 45
-omspbase_relay_rtt_ms{peer="remote-001"} 52
+# HELP audemsp_relay_rtt_ms 中继 RTT 毫秒
+# TYPE audemsp_relay_rtt_ms gauge
+audemsp_relay_rtt_ms{peer="host-001"} 45
+audemsp_relay_rtt_ms{peer="remote-001"} 52
 ```
 
 ## 4. 告警规则 (D-OPS-09)

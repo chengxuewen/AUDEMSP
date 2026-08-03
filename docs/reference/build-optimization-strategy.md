@@ -1,4 +1,4 @@
-# OMSPBase 构建优化策略
+# AUDEMSP 构建优化策略
 
 **生成**: 2026-08-03 | **来源**: 团队模式分析（4 并行分析师: docker-cache / mirror / prebake / workflow）+ 团队审核修正（fact-check / tech-review / risk-review / consistency-review，4 审核员） | **状态**: 已审核修正，待实施（关联 D208）
 
@@ -6,7 +6,7 @@
 
 ## 1. 背景
 
-omspbase-server 依赖 mediasoup-sys（C++ Worker，meson/ninja 编译，Linux x86_64 only），首次 Docker 构建需 **15-30 分钟**。本地开发（macOS）通过 `docker compose` 构建 server，痛苦集中在：
+audemsp-server 依赖 mediasoup-sys（C++ Worker，meson/ninja 编译，Linux x86_64 only），首次 Docker 构建需 **15-30 分钟**。本地开发（macOS）通过 `docker compose` 构建 server，痛苦集中在：
 
 - 首次构建（新机器 / `docker volume rm` 后）全量编译
 - dev 镜像不含预编译依赖，`cargo-cache` 卷首次填充 = 全量编译
@@ -72,11 +72,11 @@ omspbase-server 依赖 mediasoup-sys（C++ Worker，meson/ninja 编译，Linux x
 
 1. **Dockerfile dev stage 重写**（L28-33）：
    - manifests-first（7 个 crate 全列）+ dummy src 全建
-   - `cargo fetch && cargo build --bin omspbase-server`（**debug**，features 与 dev compose command 完全一致：`sfu-mediasoup,admin-dashboard`）
+   - `cargo fetch && cargo build --bin audemsp-server`（**debug**，features 与 dev compose command 完全一致：`sfu-mediasoup,admin-dashboard`）
    - 删除 dummy src 后 `COPY . .`（bind mount 覆盖；target/ 被 .dockerignore 排除）
    - mediasoup-sys C++ 产物按 build-script 输入哈希缓存 → **workspace 源码变更不触发 C++ 重编**；仅 mediasoup-sys 版本、其依赖解析或 feature 变更时重跑（~10 min），由 CI 新 sha 镜像兜底（build.rs 无 rerun-if-changed → cargo 按包目录文件跟踪，registry 源码不可变 → 稳态不重跑）
-2. **docker-compose.dev.yml**：`build:` → `image: ghcr.io/org/omspbase-server-dev:latest` + `pull_policy: always`（⚠️ 用 `always` 而非 `missing`：missing 是 compose 默认行为，对已存在的 `:latest` 不刷新——CI 每 commit 推新镜像，本地旧镜像会一直用到显式 pull；`always` 或 `newer`（compose 2.30+）才保证拉到最新烘焙产物）
-   - ⚠️ **卷刷新语义（H2）**：`cargo-cache:/workspace/target` 命名卷的 copy-on-first-use **只在卷首次创建且为空时**把镜像内 target/debug 灌入。对**已存在的非空卷不触发**——升级路径上烘焙缓存会被静默忽略。落地时必须显式 `docker volume rm omspbase_cargo-cache`（或换新卷名），该命令写进执行步骤而非依赖自动灌入。Docker 只会把镜像内容拷入空卷，此后卷内容与镜像完全独立
+2. **docker-compose.dev.yml**：`build:` → `image: ghcr.io/org/audemsp-server-dev:latest` + `pull_policy: always`（⚠️ 用 `always` 而非 `missing`：missing 是 compose 默认行为，对已存在的 `:latest` 不刷新——CI 每 commit 推新镜像，本地旧镜像会一直用到显式 pull；`always` 或 `newer`（compose 2.30+）才保证拉到最新烘焙产物）
+   - ⚠️ **卷刷新语义（H2）**：`cargo-cache:/workspace/target` 命名卷的 copy-on-first-use **只在卷首次创建且为空时**把镜像内 target/debug 灌入。对**已存在的非空卷不触发**——升级路径上烘焙缓存会被静默忽略。落地时必须显式 `docker volume rm audemsp_cargo-cache`（或换新卷名），该命令写进执行步骤而非依赖自动灌入。Docker 只会把镜像内容拷入空卷，此后卷内容与镜像完全独立
    - command 保持与烘焙 feature 集一致，否则缓存失效
 3. **新建 `docker-compose.dev.build.yml`**（回退 override，遵守 PIT-32）：
    ```yaml
@@ -86,7 +86,7 @@ omspbase-server 依赖 mediasoup-sys（C++ Worker，meson/ninja 编译，Linux x
    ```
    用法：`docker compose -f docker-compose.dev.yml -f docker-compose.dev.build.yml up -d --build`
 4. **docker.yml 推送双镜像**（推送顺序：**dev 先推、runtime 最后**，避免中途失败导致双镜像 feature/依赖漂移）：
-   - builder 步骤 `push: true`，tags `ghcr.io/org/omspbase-builder:latest` + `:sha-${{ github.sha }}`，cache-to 加 `type=registry,ref=...,mode=max`
+   - builder 步骤 `push: true`，tags `ghcr.io/org/audemsp-builder:latest` + `:sha-${{ github.sha }}`，cache-to 加 `type=registry,ref=...,mode=max`
    - runtime 步骤 cache-from 加 registry ref；cache-to 也需加 `type=registry`（否则 runtime 自身新层不进入 registry cache）
    - 新增 dev 推送 step（`target: dev`）
    - PIT-32 gate 加一条：dev.yml 不得含 `build:`
@@ -95,13 +95,13 @@ omspbase-server 依赖 mediasoup-sys（C++ Worker，meson/ninja 编译，Linux x
    - **GHCR 清理 workflow**：sha 标签永不清除 → 每 commit 新增 dev(2.5-3.5GB)+builder+runtime ≈ 5-7GB，免费档（500MB-2GB）几天即爆。新增 cleanup job（`gh api` 删除旧 sha tag，保留最近 N=10）
    - **path-filter**：仅当 `Cargo.lock` / `Cargo.toml` / `Dockerfile` / `crates/**` / `pixi.toml` 变更才跑 dev 镜像推送（大部分 commit 跳过，同时砍出口流量）
    - CI 总时长预算：现 docker.yml ~15-20 min/commit，加 dev bake 后 35-45 min，叠加 ci.yml matrix 需核算免费档 2000 min/月
-   - 回退 override（docker-compose.dev.build.yml）可加 `cache_from: [type=registry, ref=ghcr.io/org/omspbase-server-builder:latest]` 让本地 --build 路径也吃到 registry cache
+   - 回退 override（docker-compose.dev.build.yml）可加 `cache_from: [type=registry, ref=ghcr.io/org/audemsp-server-builder:latest]` 让本地 --build 路径也吃到 registry cache
 7. **前置条件（H3 — ghcr 可达性）**：方案价值链依赖本地拉取 2.5-3.5GB 预烘焙镜像。本项目环境 GitHub/ghcr 直连不稳（PIT-14/31，daemon 需镜像加速 + 代理兜底）：
    - 实施前实测 ghcr 拉取可达性与速度（daemon 代理已配置的前提下）
    - 私有仓库：本地首次 pull 需 `gh auth token | docker login ghcr.io -u <user> --password-stdin`，镜像可见性 = 仓库可见性
    - 若 ghcr 实测不可达：改用国内可达 registry（阿里 ACR / 腾讯 TCR）承载 dev 镜像与 registry cache ref
 8. **平台（M4）**：烘焙镜像在 ubuntu-22.04 runner 构建 = **linux/amd64 only**。Apple Silicon 开发者拉取后走 qemu 仿真（与现状本地 build 的 amd64 仿真无回归，但烘焙收益在仿真下打折）。dev service 显式声明 `platform: linux/amd64`，README 文档化仿真前提
-9. **决策承接（M5）**：本方案**承接并扩展 D207**（预构建 dev 镜像），机制从 D207 的 FROM 预构建 base 改为 **compose `image:` + pull**（本地零构建），镜像命名统一为 `omspbase-server-dev` / `omspbase-server-builder`（与现有 prod `omspbase-server` 前缀一致），D207 相应修订（另见 D208）
+9. **决策承接（M5）**：本方案**承接并扩展 D207**（预构建 dev 镜像），机制从 D207 的 FROM 预构建 base 改为 **compose `image:` + pull**（本地零构建），镜像命名统一为 `audemsp-server-dev` / `audemsp-server-builder`（与现有 prod `audemsp-server` 前缀一致），D207 相应修订（另见 D208）
 
 **时间对比（估算）**：
 
@@ -167,7 +167,7 @@ export RUSTUP_UPDATE_ROOT="https://rsproxy.cn/rustup"
 - **features 统一已无必要（H1）**：cargo `--features` 是加性的，builder 实际已含 admin-dashboard（defaults = 两 feature 全开），与 dev 一致。**真正的修复**：Docker 构建流程加 `pnpm build:admin` + COPY dist 步骤（见 §7；PIT-23 顺序约束：dist 必须先于 cargo build 构建，编译期嵌入）
 - **CI 两步构建合并为单步**（docker.yml L33-41 + L42-51）：`target: runtime, push: true, cache-to: type=gha + type=registry` 一次构建即缓存全部中间层；第二步只是重复 cache-restore
 - builder dummy src 泛化：`for d in crates/*/; do mkdir -p $d/src; touch $d/src/lib.rs; done`（幂等）
-- 推送 `ghcr.io/org/omspbase-builder:buildcache` 作 registry cache → **本地首建 15-30 min → 分钟级**（本地可达，替代 gha）
+- 推送 `ghcr.io/org/audemsp-builder:buildcache` 作 registry cache → **本地首建 15-30 min → 分钟级**（本地可达，替代 gha）
 
 ### 4.4 其他优化（ROI 排序）
 
@@ -227,10 +227,10 @@ export RUSTUP_UPDATE_ROOT="https://rsproxy.cn/rustup"
 docker compose -f docker-compose.dev.yml build --progress=plain server
 
 # 依赖 vs 自身编译拆分
-docker compose exec server cargo build --timings -p omspbase-server --features sfu-mediasoup
+docker compose exec server cargo build --timings -p audemsp-server --features sfu-mediasoup
 
 # 端到端（连续 3 次取中位）
-time scripts/docker-cargo.sh check -p omspbase-server --features sfu-mediasoup
+time scripts/docker-cargo.sh check -p audemsp-server --features sfu-mediasoup
 ```
 
 **门禁**：
@@ -241,7 +241,7 @@ time scripts/docker-cargo.sh check -p omspbase-server --features sfu-mediasoup
 ## 7. 附带发现（非构建优化）
 
 - **prod 镜像功能缺口（H1 修正）**：builder 与 dev 的 feature 集实际一致（均含 admin-dashboard，cargo `--features` 加性叠加）；真实缺口是 admin **dist 产物**未构建——build.rs L27 在 dist 缺失时回退 `ADMIN_DIST_DIR=/nonexistent/admin/dist`，编译通过但 /admin 运行时 404（PIT-23）。修复需在 Docker 构建流程加 `pnpm build:admin`（**必须先于 cargo build**）+ COPY dist 步骤（超出本文档范围，仅记录）
-- docs/modules/development/docker-workflow.md 中 `docker volume rm omspbase_cargo-cache` 命令随方案落地后需同步更新
+- docs/modules/development/docker-workflow.md 中 `docker volume rm audemsp_cargo-cache` 命令随方案落地后需同步更新
 
 ## 参考
 

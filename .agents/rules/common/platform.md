@@ -1,13 +1,13 @@
 # Platform Constraints
 
 > Split from [constraints.md](constraints.md) per D202 (OpenCode config optimization).
-> This file: OS/platform-specific constraints for OMSPBase development.
+> This file: OS/platform-specific constraints for AUDEMSP development.
 
 ## Platform Constraints
 
 ### macOS Development — Host/Client Native, Server Docker
-- **Host (`omspbase-host`) and Client (`omspbase-client`)**: Develop and run natively on macOS. These crates do not depend on mediasoup.
-- **Server (`omspbase-server`)**: Compile and run via Docker when `sfu-mediasoup` feature is enabled. The server binary and `cargo check` work natively on macOS, but mediasoup integration requires a Linux container.
+- **Host (`audemsp-host`) and Client (`audemsp-client`)**: Develop and run natively on macOS. These crates do not depend on mediasoup.
+- **Server (`audemsp-server`)**: Compile and run via Docker when `sfu-mediasoup` feature is enabled. The server binary and `cargo check` work natively on macOS, but mediasoup integration requires a Linux container.
 - Use `docker compose up -d` for the server dev container. See `docs/modules/development/docker-workflow.md`.
 
 ### mediasoup Only Builds on Linux x86_64
@@ -19,7 +19,7 @@
 - **CI**: The `test-mediasoup` job runs on `ubuntu-latest` only (see `.github/workflows/ci.yml`).
 
 ### CI: test-mediasoup Runs on ubuntu-latest Only
-- `.github/workflows/ci.yml` defines `test-mediasoup` with `runs-on: ubuntu-latest`. It installs meson, ninja-build, libuv1-dev, and libssl-dev before running `cargo test -p omspbase-server --features sfu-mediasoup`.
+- `.github/workflows/ci.yml` defines `test-mediasoup` with `runs-on: ubuntu-latest`. It installs meson, ninja-build, libuv1-dev, and libssl-dev before running `cargo test -p audemsp-server --features sfu-mediasoup`.
 - The `check` and `test` jobs do run on both `ubuntu-latest` and `macos-latest` (for workspace-level validation without mediasoup features).
 
 ## macOS-Specific Gotchas

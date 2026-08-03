@@ -1,6 +1,6 @@
 # 协议与通信参考
 
-> OMSPBase 采用多协议分层设计，覆盖内部通信、外部接入和媒体传输。
+> AUDEMSP 采用多协议分层设计，覆盖内部通信、外部接入和媒体传输。
 
 ---
 
@@ -86,7 +86,7 @@ MQTT 5.0 is planned for Phase 2+ vehicle-to-cloud signaling scenarios. Phase 1 u
 
 ## 四、WebRTC 后端
 
-OMSPBase 支持三个 WebRTC 后端，通过 Cargo feature gate 切换：
+AUDEMSP 支持三个 WebRTC 后端，通过 Cargo feature gate 切换：
 
 | 后端 | Feature Gate | 用途 | 阶段 |
 |------|-------------|------|------|

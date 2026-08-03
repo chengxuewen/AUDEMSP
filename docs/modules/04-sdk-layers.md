@@ -1,6 +1,6 @@
 # SDK 分层与 API 参考
 
-> OMSPBase SDK 采用分层架构，基于 omspbase-common 微内核构建领域特定 SDK。
+> AUDEMSP SDK 采用分层架构，基于 audemsp-common 微内核构建领域特定 SDK。
 > 关联决策: D65-D69 (SDK命名+Facade), D82 (crate清单)
 
 ---
@@ -11,7 +11,7 @@ Phase 1 MVP 核心：双 SDK facade 模型
 
 ```
                     ┌─────────────────┐
-                    │  omspbase-common │  ← 微内核（所有场景共享）
+                    │  audemsp-common │  ← 微内核（所有场景共享）
                     │  PluginManager  │
                     │  LicenseManager │
                     │  PipelineEngine │
@@ -20,7 +20,7 @@ Phase 1 MVP 核心：双 SDK facade 模型
         ┌────────────────────┼────────────────────┐
         ▼                                         ▼
 ┌───────────────────────┐            ┌───────────────────────┐
-│ omspbase-field        │            │ omspbase-client       │
+│ audemsp-field        │            │ audemsp-client       │
 │ (车端 SDK)             │◄─ WebRTC ─►│ (座舱 SDK)             │
 ├───────────────────────┤            ├───────────────────────┤
 │ CameraCapture (D64)    │            │ VideoDecode (D46)      │
@@ -37,11 +37,11 @@ Phase 1 MVP 核心：双 SDK facade 模型
 └───────────────┘                      └───────────────┘
 ```
 
-Phase 2+: omspbase-streaming, omspbase-conference, omspbase-surveillance
+Phase 2+: audemsp-streaming, audemsp-conference, audemsp-surveillance
 
 ---
 
-## 一、omspbase-common — 微内核
+## 一、audemsp-common — 微内核
 
 所有场景共享的核心引擎，提供：
 
@@ -89,7 +89,7 @@ trait MediaSink: Plugin {
 
 ## 二、Phase 1 MVP SDK
 
-### 2.1 omspbase-field（车端 SDK）
+### 2.1 audemsp-field（车端 SDK）
 
 facade crate，单一入口 re-export 所有车端能力 (D69)
 
@@ -99,9 +99,9 @@ facade crate，单一入口 re-export 所有车端能力 (D69)
 | **WebRTC Push** | libwebrtc 弱网编码推流 (D11) |
 | **RTCDataChannel** | 控制指令双向通道 (D65) |
 | **MQTT Telemetry** | 车端状态上报 (D74) |
-| **C FFI** | omspbase-field-c: .a + .so 静态+动态库 (D79, D83) |
+| **C FFI** | audemsp-field-c: .a + .so 静态+动态库 (D79, D83) |
 
-### 2.2 omspbase-client（座舱 SDK）
+### 2.2 audemsp-client（座舱 SDK）
 
 facade crate，单一入口 re-export 所有座舱能力 (D69)
 
@@ -111,9 +111,9 @@ facade crate，单一入口 re-export 所有座舱能力 (D69)
 | **FFmpeg Decode** | str0m 后端备选 (D70-D71) |
 | **RTCDataChannel** | 控制指令发送 (D66) |
 | **VideoRender** | Phase 1 CPU buffer 渲染 (D47) |
-| **C FFI** | omspbase-client-c: .a 静态链接 FFmpeg (D70) |
+| **C FFI** | audemsp-client-c: .a 静态链接 FFmpeg (D70) |
 
-### 2.3 omspbase-client（GUI 应用）
+### 2.3 audemsp-client（GUI 应用）
 
 Tauri v2 + React 桌面应用 (D76)
 
@@ -132,20 +132,20 @@ Tauri v2 + React 桌面应用 (D76)
 
 ```
 crates/
-├── omspbase-common/          微内核 (PluginManager, PipelineEngine)
-├── omspbase-transport/     传输层 (RTP/SRT/WebRTC, D31-D33)
-├── omspbase-signaling/     信令客户端 (D51-D54)
-├── omspbase-codec/         编解码 (D43-D48)
-├── omspbase-auth/          认证 (D4, D57)
-├── omspbase-pipeline/      管线 (D23-D27)
-├── omspbase-field/          车端 SDK facade (D65, D67, D69)
-├── omspbase-field-c/        车端 C 绑定 .a+.so (D64, D79, D83)
-├── omspbase-client/         座舱 SDK facade (D66, D68-D69)
-├── omspbase-client-c/       座舱 C 绑定 .a+FFmpeg (D70-D72, D79, D83)
-└── omspbase-napi/           Node.js 绑定 (D55-D56)
+├── audemsp-common/          微内核 (PluginManager, PipelineEngine)
+├── audemsp-transport/     传输层 (RTP/SRT/WebRTC, D31-D33)
+├── audemsp-signaling/     信令客户端 (D51-D54)
+├── audemsp-codec/         编解码 (D43-D48)
+├── audemsp-auth/          认证 (D4, D57)
+├── audemsp-pipeline/      管线 (D23-D27)
+├── audemsp-field/          车端 SDK facade (D65, D67, D69)
+├── audemsp-field-c/        车端 C 绑定 .a+.so (D64, D79, D83)
+├── audemsp-client/         座舱 SDK facade (D66, D68-D69)
+├── audemsp-client-c/       座舱 C 绑定 .a+FFmpeg (D70-D72, D79, D83)
+└── audemsp-napi/           Node.js 绑定 (D55-D56)
 
 binaries/
-├── omspbase-host/           Host 应用 (D62-D63, D73)
-├── omspbase-client/         Client 应用 (D76)
-└── omspbase-server/         后台管理服务 (D86-D91)
+├── audemsp-host/           Host 应用 (D62-D63, D73)
+├── audemsp-client/         Client 应用 (D76)
+└── audemsp-server/         后台管理服务 (D86-D91)
 ```

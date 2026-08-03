@@ -154,13 +154,13 @@ struct janus_callbacks {
 - **Windows 不支持**：仅 Linux/macOS
 - **RTP 扩展被核心剥离**：导致部分扩展失效
 
-## 7. 对 OMSPBase 的参考价值
+## 7. 对 AUDEMSP 的参考价值
 
 ### 可采纳
 
-| 概念 | Janus 做法 | OMSPBase 应用 |
+| 概念 | Janus 做法 | AUDEMSP 应用 |
 |------|-----------|--------------|
-| **薄核心+插件** | 核心只处理 WebRTC 协议，全部业务在插件 | omspbase-core 微内核 + 插件体系 |
+| **薄核心+插件** | 核心只处理 WebRTC 协议，全部业务在插件 | audemsp-core 微内核 + 插件体系 |
 | **Session/Handle 隔离** | opaque `janus_plugin_session` + 引用计数 | `Arc<SessionHandle>` + trait object |
 | **异步消息模式** | `handle_message` → 返回结果 → `push_event` | `handle_message()` → `tokio::mpsc::Sender` |
 | **传输层抽象** | transport 也是可加载插件 | `TransportProvider` trait |
@@ -168,7 +168,7 @@ struct janus_callbacks {
 
 ### 需改造
 
-| Janus 做法 | OMSPBase 适配 |
+| Janus 做法 | AUDEMSP 适配 |
 |-----------|--------------|
 | `dlopen .so` 运行时加载 | **编译期 trait** — `Vec<Box<dyn PluginTrait>>`，类型安全 |
 | C 函数指针表 | **Rust trait** — 编译时检查，默认实现可选方法 |

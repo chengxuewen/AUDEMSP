@@ -16,8 +16,8 @@ const worker = await mediasoup.createWorker({
   ],
   rtcMinPort: 40000,
   rtcMaxPort: 49999,
-  dtlsCertificateFile: "/etc/omspbase/certs/dtls.pem",
-  dtlsPrivateKeyFile: "/etc/omspbase/certs/dtls-key.pem",
+  dtlsCertificateFile: "/etc/audemsp/certs/dtls.pem",
+  dtlsPrivateKeyFile: "/etc/audemsp/certs/dtls-key.pem",
 });
 ```
 
@@ -179,7 +179,7 @@ const consumer = await transport.consume({
 接收端估计 (Receiver-Side BWE):
   TWCC (Transport Wide Congestion Control) 反馈 → REMB
 
-OMSPBase 策略:
+AUDEMSP 策略:
   TWCC 优先 (更准确)
   REMB 作为 fallback
   delay-based 算法用于延迟敏感网络
@@ -219,7 +219,7 @@ const client = new ConferenceClient({
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     {
-      urls: "turn:turn.omspbase.io:3478",
+      urls: "turn:turn.audemsp.io:3478",
       username: "user",
       credential: "password",
     },
@@ -251,8 +251,8 @@ net.netfilter.nf_conntrack_max = 1048576
 
 ```bash
 # /etc/security/limits.conf
-omspbase  hard  nofile  1048576
-omspbase  soft  nofile  1048576
+audemsp  hard  nofile  1048576
+audemsp  soft  nofile  1048576
 ```
 
 ### 7.3 Worker 调优
@@ -307,7 +307,7 @@ lsof -i :40000-49999
 ss -uap | wc -l
 
 # 实时日志
-journalctl -u omspbase-conference -f
+journalctl -u audemsp-conference -f
 
 # 内存使用
 ps aux | grep mediasoup-worker | awk '{sum+=$6} END {print sum/1024 " MB"}'

@@ -347,7 +347,7 @@ tether-rally 的架构经历了三个主要阶段：
 3. **HMAC Token 管理缺失**：Token 由手动脚本生成，无自动过期刷新机制，泄露后无法热替换
 4. **多摄像头受限**：仅支持单路主摄像头 + 单路 RTSP 后置 PiP，无多路同步支持
 5. **无自适应码率**：视频编码参数固定，WebRTC 的 GCC 未被利用
-6. **无音频通道**：FPV 驾驶无需语音通信的设计取舍，但 OMSPBase 场景需要双向 Opus 音频
+6. **无音频通道**：FPV 驾驶无需语音通信的设计取舍，但 AUDEMSP 场景需要双向 Opus 音频
 
 ## 5. 市场定位
 - **主要应用行业**：RC 遥控车爱好者社区、WebRTC 遥操作协议参考、教育/研究、机器人入门
@@ -374,63 +374,63 @@ tether-rally 的架构经历了三个主要阶段：
 4. **双核实时控制分离**：专门解决了 WebSocket relay 阶段的控制抖动问题（stuttering）。Core 0 专用于网络 I/O，Core 1 运行 200Hz 硬实时控制循环，证明了实时控制需要专用处理线程
 5. **WebSocket relay → WebRTC RTCDataChannel 的架构演进**：控制延迟从 100-200ms 降至 10-15ms（LAN），展示了直连 P2P 对遥操作延迟的决定性改善 — 中继引入的额外延迟可通过 P2P 直接避免
 
-## 7. 对 OMSPBase 的参考价值
+## 7. 对 AUDEMSP 的参考价值
 ### [Adopt] 可直接借鉴
-- **RTCDataChannel 二进制协议设计**：`seq + cmd + flags + payload` 的紧凑包头格式。OMSPBase 推荐格式：`timestamp(4B) + seq(2B) + cmd(1B) + flags(1B) + payload(N×2B)`，总计 8+N×2 字节
+- **RTCDataChannel 二进制协议设计**：`seq + cmd + flags + payload` 的紧凑包头格式。AUDEMSP 推荐格式：`timestamp(4B) + seq(2B) + cmd(1B) + flags(1B) + payload(N×2B)`，总计 8+N×2 字节
 - **通道分离策略**：四条独立 RTCDataChannel — 控制(unordered)、遥测(unordered)、心跳(unordered)、可靠指令(ordered+reliable)
 - **分级超时安全模型**：L1(80ms 保持) → L2(250ms 回中) → L3(500ms 紧急制动) → L4(2000ms 安全停车) — 作为 teleop SDK 安全基线
-- **边缘端安全执行**：车端验证所有指令，不信任网络数据。OMSPBase 的 Vehicle Agent 应实现 `validateCommand()` 方法，独立于操控站端的 `sanitizeCommand()` 方法
+- **边缘端安全执行**：车端验证所有指令，不信任网络数据。AUDEMSP 的 Vehicle Agent 应实现 `validateCommand()` 方法，独立于操控站端的 `sanitizeCommand()` 方法
 - **HMAC Token 短期授权**：简单有效的按需接入控制，适合单次遥控会话
 - **硬件编码器直通 WebRTC**：H.264 硬件编码器 → MediaMTX/WHEP → WebRTC 的零拷贝流水线
 
 ### [Adapt] 需修改后采用
-- **Pi 桥接层抽象**：当前 Pi 仅做 UDP forward。OMSPBase 需要 `BridgeController` trait 支持多种边缘硬件（Pi/Jetson/ESP32/STM32）
-- **ESP32 双核实时分离**：OMSPBase Vehicle Agent 需要 dedicate 线程：接收线程 + 控制循环线程（Rust `std::thread` + `mpsc::channel`）
+- **Pi 桥接层抽象**：当前 Pi 仅做 UDP forward。AUDEMSP 需要 `BridgeController` trait 支持多种边缘硬件（Pi/Jetson/ESP32/STM32）
+- **ESP32 双核实时分离**：AUDEMSP Vehicle Agent 需要 dedicate 线程：接收线程 + 控制循环线程（Rust `std::thread` + `mpsc::channel`）
 - **稳定性系统插件化**：`DrivingAssist` trait，每个模块实现 `process(command: &mut ControlCommand, state: &VehicleState) -> Result<()>`，控制链通过 PluginManager 串联
 - **EMA 平滑 + 斜率限制**：作为 `ControlSmoother` 的默认策略，支持配置 α 和 rate_limit
 - **7 字节最小包 → 16 字节标准包**：新增 timestamp(u32)、flags(u8)、emergency bit — 参考扩展协议设计
 
 ### [Avoid] 已知坑 / 不适用场景
-- **JSON 遥测低效**：10Hz JSON 遥测比二进制浪费约 4x 带宽 — OMSPBase 采用全二进制遥测格式
-- **WiFi 仅限局域网**：OMSPBase 必须支持 4G/5G 蜂窝和卫星通信
-- **单视频流**：OMSPBase 需支持多路同步视频（前向+侧向+后向）
-- **无音频**：OMSPBase 遥操作场景需要双向 Opus 音频
+- **JSON 遥测低效**：10Hz JSON 遥测比二进制浪费约 4x 带宽 — AUDEMSP 采用全二进制遥测格式
+- **WiFi 仅限局域网**：AUDEMSP 必须支持 4G/5G 蜂窝和卫星通信
+- **单视频流**：AUDEMSP 需支持多路同步视频（前向+侧向+后向）
+- **无音频**：AUDEMSP 遥操作场景需要双向 Opus 音频
 - **无自适应码率**：需集成 WebRTC GCC 和 SVC 可伸缩编码
 - **信令绑定 Cloudflare**：需自研通用信令服务（WebSocket + 消息队列）
-- **DAC 精度教训**：8-bit PWM (256 级) 不够精细 — OMSPBase 需 12-bit+ 精度执行器
-- **HMAC Token 无自动刷新**：OMSPBase 需 Token 过期自动续期机制
-- **硬件选型耦合**：OMSPBase 需构建硬件抽象层(HAL) — `SensorHal` / `ActuatorHal` traits
-- **无多车并发**：OMSPBase 信令服务需支持 `room_id` 多会议室/多车隔离
+- **DAC 精度教训**：8-bit PWM (256 级) 不够精细 — AUDEMSP 需 12-bit+ 精度执行器
+- **HMAC Token 无自动刷新**：AUDEMSP 需 Token 过期自动续期机制
+- **硬件选型耦合**：AUDEMSP 需构建硬件抽象层(HAL) — `SensorHal` / `ActuatorHal` traits
+- **无多车并发**：AUDEMSP 信令服务需支持 `room_id` 多会议室/多车隔离
 
 ### [Adopt] 可直接借鉴 (补充)
 
-- **WebSocket → RTCDataChannel 的架构演进路径**：为 OMSPBase 提供了从快速原型到生产部署的明确演进路线。初期使用轻量信令中继快速验证协议设计，稳定后再引入 P2P 直连优化
-- **bufferedAmount 背压管理**：`bufferedAmountLowThreshold` + `onbufferedamountlow` 事件驱动模式是 WebRTC RTCDataChannel 发送端的标准实践。OMSPBase 的 `DataChannelManager` 组件应内置此背压管理逻辑
-- **ESP32 电源与信号监测**：WiFi RSSI 监测 + 电池 ADC 分压监测提供车端健康状态基本视图。OMSPBase Vehicle Agent 内置 `HealthMonitor` 组件定时上报供电电压和无线信号强度
+- **WebSocket → RTCDataChannel 的架构演进路径**：为 AUDEMSP 提供了从快速原型到生产部署的明确演进路线。初期使用轻量信令中继快速验证协议设计，稳定后再引入 P2P 直连优化
+- **bufferedAmount 背压管理**：`bufferedAmountLowThreshold` + `onbufferedamountlow` 事件驱动模式是 WebRTC RTCDataChannel 发送端的标准实践。AUDEMSP 的 `DataChannelManager` 组件应内置此背压管理逻辑
+- **ESP32 电源与信号监测**：WiFi RSSI 监测 + 电池 ADC 分压监测提供车端健康状态基本视图。AUDEMSP Vehicle Agent 内置 `HealthMonitor` 组件定时上报供电电压和无线信号强度
 - **MCP4728 12-bit DAC 选型**：证明了 12-bit (4096 级) 精度是执行器控制的最低要求，8-bit PWM (256 级) 在转向和油门控制上分辨率严重不足
-- **序列号回绕处理**：`seq.wrapping_sub(last_seq) < 32768` 的模式是 uint16 序列号检测的正确实现，OMSPBase 所有 RTCDataChannel 数据包头部均应采用
+- **序列号回绕处理**：`seq.wrapping_sub(last_seq) < 32768` 的模式是 uint16 序列号检测的正确实现，AUDEMSP 所有 RTCDataChannel 数据包头部均应采用
 
 ### [Adapt] 需修改后采用 (补充)
 
-- **MCP4728 DAC → ActuatorHal trait**：当前使用 I2C DAC 直接输出模拟信号驱动 RC 遥控器 Trainer Port。OMSPBase 需要抽象为 `ActuatorHal` trait，支持 DAC/UART PWM/RC PWM/CAN/CAN-FD 多种物理层接口
-- **Core 0/1 双核固定分工 → 动态线程池**：FreeRTOS 双核固定分工在 ESP32 上高效。OMSPBase 的 Rust Vehicle Agent 需要 `tokio` 异步运行时处理网络 I/O + 专用优先级线程处理实时控制循环
-- **7 种稳定性控制模块 → PluginRegistry 可配置控制链**：当前每个模块硬编码调用顺序。OMSPBase 应实现 `PluginRegistry` 机制，允许通过 YAML/JSON 配置文件动态组装控制链
-- **WiFi UDP 直连 → NetworkHal trait**：OMSPBase Vehicle Agent 需要抽象为 `NetworkHal` trait，支持 WiFi/UART 串口/CAN 总线/Ethernet 多种连接方式
+- **MCP4728 DAC → ActuatorHal trait**：当前使用 I2C DAC 直接输出模拟信号驱动 RC 遥控器 Trainer Port。AUDEMSP 需要抽象为 `ActuatorHal` trait，支持 DAC/UART PWM/RC PWM/CAN/CAN-FD 多种物理层接口
+- **Core 0/1 双核固定分工 → 动态线程池**：FreeRTOS 双核固定分工在 ESP32 上高效。AUDEMSP 的 Rust Vehicle Agent 需要 `tokio` 异步运行时处理网络 I/O + 专用优先级线程处理实时控制循环
+- **7 种稳定性控制模块 → PluginRegistry 可配置控制链**：当前每个模块硬编码调用顺序。AUDEMSP 应实现 `PluginRegistry` 机制，允许通过 YAML/JSON 配置文件动态组装控制链
+- **WiFi UDP 直连 → NetworkHal trait**：AUDEMSP Vehicle Agent 需要抽象为 `NetworkHal` trait，支持 WiFi/UART 串口/CAN 总线/Ethernet 多种连接方式
 - **7 字节最小包 → 16 字节扩展包**：增加 timestamp(u32)、flags(u8, 含 emergency bit)、checksum(u8) 字段，形成 16 字节的标准包格式
-- **单视频流 → MultiStreamManager**：OMSPBase 需要管理 3-6 路同步视频流，支持摄像头动态切换（RTCDataChannel 信令触发）
+- **单视频流 → MultiStreamManager**：AUDEMSP 需要管理 3-6 路同步视频流，支持摄像头动态切换（RTCDataChannel 信令触发）
 
 ### [Avoid] 已知坑 / 不适用场景 (补充)
 
-- **Cloudflare Workers 生态绑定**：OMSPBase 必须自托管信令服务，不绑定任何特定云厂商，支持多云部署和私有化部署
-- **单玩家架构**：OMSPBase 的多用户场景（操作员 + 监督员 + 观察员）需要不同权限层级设计——操作员完整控制权，监督员可覆盖指令，观察员仅可查看
-- **无 RTCDataChannel 主动 QoS 监测**：未在 RTCDataChannel 上实施主动单向延迟测量和可用带宽估算。OMSPBase 需内置 RTCDataChannel 质量探针
-- **ESP32 固件无 OTA**：固件更新需 USB 串口烧录。OMSPBase Vehicle Agent 需内置 OTA 更新机制（支持分片下载 + 校验 + 回滚）
-- **单摄像头局限**：仅单一前向摄像头 + 后置 RTSP PiP。OMSPBase 的车辆遥操作场景需 360° 覆盖——至少前向 + 后向 + 两侧共 4-6 路视频
-- **硬件 BOM 过于定制化**：ARRMA 遥控器 Trainer Port 接口是非常规的 RC 遥控器接口。OMSPBase 应直接通过 CAN/CAN-FD 或工业 PWM 驱动执行器
-- **尾延迟抖动未处理**：仅关注控制延迟均值，未对 P95/P99 尾延迟做针对性优化。OMSPBase 的 jitter buffer 需要遥操作场景专门调优
+- **Cloudflare Workers 生态绑定**：AUDEMSP 必须自托管信令服务，不绑定任何特定云厂商，支持多云部署和私有化部署
+- **单玩家架构**：AUDEMSP 的多用户场景（操作员 + 监督员 + 观察员）需要不同权限层级设计——操作员完整控制权，监督员可覆盖指令，观察员仅可查看
+- **无 RTCDataChannel 主动 QoS 监测**：未在 RTCDataChannel 上实施主动单向延迟测量和可用带宽估算。AUDEMSP 需内置 RTCDataChannel 质量探针
+- **ESP32 固件无 OTA**：固件更新需 USB 串口烧录。AUDEMSP Vehicle Agent 需内置 OTA 更新机制（支持分片下载 + 校验 + 回滚）
+- **单摄像头局限**：仅单一前向摄像头 + 后置 RTSP PiP。AUDEMSP 的车辆遥操作场景需 360° 覆盖——至少前向 + 后向 + 两侧共 4-6 路视频
+- **硬件 BOM 过于定制化**：ARRMA 遥控器 Trainer Port 接口是非常规的 RC 遥控器接口。AUDEMSP 应直接通过 CAN/CAN-FD 或工业 PWM 驱动执行器
+- **尾延迟抖动未处理**：仅关注控制延迟均值，未对 P95/P99 尾延迟做针对性优化。AUDEMSP 的 jitter buffer 需要遥操作场景专门调优
 
 **总体评分**：★★★☆☆ (3/5)
-— 作为 RTCDataChannel 协议设计和边缘安全架构的参考，价值极高。但项目规模和成熟度有限。其 7 字节二进制协议、三级超时安全模型和稳定性控制链架构是最核心的可借鉴资产。对于 OMSPBase 的生产级 teleop SDK，tether-rally 提供了最佳的最小可行实现参考。
+— 作为 RTCDataChannel 协议设计和边缘安全架构的参考，价值极高。但项目规模和成熟度有限。其 7 字节二进制协议、三级超时安全模型和稳定性控制链架构是最核心的可借鉴资产。对于 AUDEMSP 的生产级 teleop SDK，tether-rally 提供了最佳的最小可行实现参考。
 **相关决策**: D117 (紧急停止), D4, D149
 
 
@@ -463,8 +463,8 @@ TELEM 命令 (0x07) — 37 字节:
   Byte 35-36: crc16 (uint16 LE)         — CRC-16/XMODEM
 ```
 
-### B. 与 OMSPBase 控制协议映射建议
-| tether-rally 命令 | OMSPBase 映射 | 说明 |
+### B. 与 AUDEMSP 控制协议映射建议
+| tether-rally 命令 | AUDEMSP 映射 | 说明 |
 |-------------------|---------------|------|
 | CTRL (0x01) | ControlCommand (50Hz) | 方向盘 + 油门 + 模式位 |
 | PING (0x00) | Heartbeat (2Hz) | 心跳请求 + RTT 测量 |

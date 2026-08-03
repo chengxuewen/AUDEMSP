@@ -1,20 +1,20 @@
 ---
 name: api-interface-design
-description: "Contract-first design for OMSPBase: Rust traits (Component/Plugin), WebSocket signaling protocol (SignalingMessage enum), and REST API boundaries (OpenAPI 3.0.3). Enforces protocol backward compatibility, crate-boundary contracts, and serde wire-format discipline. Use BEFORE adding new API endpoints, WS message types, or crate-level trait changes."
+description: "Contract-first design for AUDEMSP: Rust traits (Component/Plugin), WebSocket signaling protocol (SignalingMessage enum), and REST API boundaries (OpenAPI 3.0.3). Enforces protocol backward compatibility, crate-boundary contracts, and serde wire-format discipline. Use BEFORE adding new API endpoints, WS message types, or crate-level trait changes."
 ---
 
 # api-interface-design — Contract-First API Design
 
 > Define the contract BEFORE the implementation. Traits, messages, and endpoints are the architecture — code is decoration.
 
-## OMSPBase API Boundaries
+## AUDEMSP API Boundaries
 
-OMSPBase has three distinct API contract surfaces:
+AUDEMSP has three distinct API contract surfaces:
 
 | Boundary | Form | Location | Contract |
 |----------|------|----------|----------|
-| **Component/Plugin traits** | Rust traits | `omspbase-media` (engine/), `omspbase-host` (host/) | Trait signature stability |
-| **WebSocket signaling** | JSON enum | `omspbase-common/src/protocol.rs` | `#[serde(tag = "type")]` discipline |
+| **Component/Plugin traits** | Rust traits | `audemsp-media` (engine/), `audemsp-host` (host/) | Trait signature stability |
+| **WebSocket signaling** | JSON enum | `audemsp-common/src/protocol.rs` | `#[serde(tag = "type")]` discipline |
 | **REST API** | OpenAPI 3.0.3 | `docs/openapi.yaml` | Schema + validation |
 
 ## Design Protocol
@@ -24,8 +24,8 @@ OMSPBase has three distinct API contract surfaces:
 Which boundary is affected?
 
 ```
-Component trait change → omspbase-media traits
-WS protocol change    → omspbase-common protocol.rs
+Component trait change → audemsp-media traits
+WS protocol change    → audemsp-common protocol.rs
 REST endpoint change  → OpenAPI spec + server routes
 Cross-boundary        → Draft all contracts FIRST
 ```
@@ -145,13 +145,13 @@ Rules:
 
 ### Crate Dependency Direction
 ```
-omspbase-common  ← protocol types (leaf dependency)
+audemsp-common  ← protocol types (leaf dependency)
         ↑
-omspbase-media   ← component traits
+audemsp-media   ← component traits
         ↑
-omspbase-server  ← implements traits, handles WS
-omspbase-host    ← implements traits, sends WS
-omspbase-client  ← implements traits, sends WS
+audemsp-server  ← implements traits, handles WS
+audemsp-host    ← implements traits, sends WS
+audemsp-client  ← implements traits, sends WS
 ```
 
 No circular dependencies. The protocol crate has zero internal deps.
@@ -161,8 +161,8 @@ No circular dependencies. The protocol crate has zero internal deps.
 ### Per Boundary
 
 ```
-[ ] Rust trait:  cargo doc --no-deps -p omspbase-media  (check docs compile)
-[ ] WS protocol: cargo test -p omspbase-common           (serde roundtrip tests)
+[ ] Rust trait:  cargo doc --no-deps -p audemsp-media  (check docs compile)
+[ ] WS protocol: cargo test -p audemsp-common           (serde roundtrip tests)
 [ ] REST API:    python3 -c "import yaml; yaml.safe_load(open('docs/openapi.yaml'))"
 [ ] E2E:         Host → WS → Server → WS → Client test scripts pass
 ```
@@ -213,7 +213,7 @@ No circular dependencies. The protocol crate has zero internal deps.
 >
 > — Hyrum Wright, Google
 
-**每一个可观察行为都会成为事实契约。** 在 OMSPBase 中这尤其重要：
+**每一个可观察行为都会成为事实契约。** 在 AUDEMSP 中这尤其重要：
 
 | 边界 | 可观察行为（隐性契约） | 防护 |
 |------|----------------------|------|
@@ -232,14 +232,14 @@ No circular dependencies. The protocol crate has zero internal deps.
 
 ### 本项目约束
 
-OMSPBase 是 7 crate workspace：
+AUDEMSP 是 7 crate workspace：
 
 ```
-omspbase-common  ← leaf, no workspace deps
+audemsp-common  ← leaf, no workspace deps
         ↑
-omspbase-media / omspbase-codec / omspbase-webrtc
+audemsp-media / audemsp-codec / audemsp-webrtc
         ↑
-omspbase-host / omspbase-client / omspbase-server
+audemsp-host / audemsp-client / audemsp-server
 ```
 
 规则：
@@ -291,12 +291,12 @@ fn connect(room_id: String, peer_id: String, transport_id: String) { /* ... */ }
 
 ### 本项目约定
 
-OMSPBase 关键 ID 类型（推荐品牌化）：
+AUDEMSP 关键 ID 类型（推荐品牌化）：
 
 ```
-omspbase-common/src/protocol.rs:  RoomId, PeerId, SessionId
-omspbase-media/src/engine/:      StreamId, TrackId
-omspbase-server/src/sfu/:        TransportId, ProducerId, ConsumerId
+audemsp-common/src/protocol.rs:  RoomId, PeerId, SessionId
+audemsp-media/src/engine/:      StreamId, TrackId
+audemsp-server/src/sfu/:        TransportId, ProducerId, ConsumerId
 ```
 
 > **ponytail**: 仅对跨模块传递的 ID 做品牌化。内部一次性局部变量不需要。

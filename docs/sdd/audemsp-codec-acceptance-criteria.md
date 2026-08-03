@@ -1,4 +1,4 @@
-# SDD: omspbase-codec Acceptance Criteria
+# SDD: audemsp-codec Acceptance Criteria
 
 **Status:** Draft | **Phase:** pre-implementation | **Generated:** 2026-07-22
 **References:** ITU-T H.264 (06/2019), FFmpeg libavcodec docs, x264 presets, ITU-T J.247 (PSNR/SSIM), RFC 6184 (H.264 RTP), ISO 14496-10
@@ -7,7 +7,7 @@
 
 ## Context
 
-`omspbase-codec` is a planned workspace crate providing a unified encode/decode API over GStreamer (Host) and statically-linked FFmpeg (Remote). The crate must produce byte-compatible H.264 Annex‑B streams from both backends, meet realtime performance thresholds, and never dynamically load a codec at runtime (Remote path).
+`audemsp-codec` is a planned workspace crate providing a unified encode/decode API over GStreamer (Host) and statically-linked FFmpeg (Remote). The crate must produce byte-compatible H.264 Annex‑B streams from both backends, meet realtime performance thresholds, and never dynamically load a codec at runtime (Remote path).
 
 This document defines **concrete pass/fail acceptance criteria** for each spec axis. Every criterion is testable via automated integration tests in CI.
 
@@ -265,10 +265,10 @@ With `backend-ffmpeg` feature enabled:
 ```
 1. cargo build --release --features backend-ffmpeg
 2. Verify with:
-   nm target/release/omspbase-client | grep " U " | grep -E "avcodec_|avformat_|avutil_|sws_"
+   nm target/release/audemsp-client | grep " U " | grep -E "avcodec_|avformat_|avutil_|sws_"
    # Should be empty — all FFmpeg symbols resolved (no Undefined)
 3. Verify no dlopen:
-   strings target/release/omspbase-client | grep -E "dlopen|dlclose|dlsym"
+   strings target/release/audemsp-client | grep -E "dlopen|dlclose|dlsym"
    # Should be empty
 4. Check with objdump -T | grep UND for dynamic FFmpeg symbols
 ```
@@ -450,7 +450,7 @@ pub enum CodecError {
 
 ## 11. Non-Requirements (explicitly out of scope)
 
-- **Audio codec** support (OPUS, AAC) — belongs to `omspbase-webrtc::rtp` layer.
+- **Audio codec** support (OPUS, AAC) — belongs to `audemsp-webrtc::rtp` layer.
 - **H.265/HEVC** — separate SDD; this is H.264-only.
 - **Dynamic codec negotiation** — this is SDP/WebRTC layer concern.
 - **Bitrate adaptation (GCC/REMB)** — belongs to transport layer.
@@ -472,4 +472,4 @@ pub enum CodecError {
 | FFmpeg libavcodec 7.x | H.264 decoder/parser/BSF |
 | `docs/reference/ffmpeg-static-build-strategy.md` | Project build strategy for FFmpeg |
 | `docs/sdd/02-webrtc-push.md` | EncodeConfig schema origin |
-| `docs/superpowers/specs/2026-07-20-omspbase-media-crate-design.md` | Base types and traits |
+| `docs/superpowers/specs/2026-07-20-audemsp-media-crate-design.md` | Base types and traits |

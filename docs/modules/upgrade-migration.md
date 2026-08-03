@@ -34,12 +34,12 @@ host.conf 使用 JSON Schema 加 `version` 字段：
 systemd service 控制：
 
 ```
-1. systemctl stop omspbase-host
-2. 替换 /usr/local/bin/omspbase-host
-3. systemctl start omspbase-host
+1. systemctl stop audemsp-host
+2. 替换 /usr/local/bin/audemsp-host
+3. systemctl start audemsp-host
 ```
 
-Host 启动时检查 `version` 字段，自动执行 schema 迁移。Remote 通过 `omspbase-server` 推送更新包。
+Host 启动时检查 `version` 字段，自动执行 schema 迁移。Remote 通过 `audemsp-server` 推送更新包。
 
 ## 数据库迁移 (Server)
 
@@ -51,7 +51,7 @@ migrations/
   20260715000002_add_room_config.sql
 ```
 
-Server 启动时自动执行未应用的迁移。生产环境需先备份 `omspbase.db`。
+Server 启动时自动执行未应用的迁移。生产环境需先备份 `audemsp.db`。
 
 ## 功能开关迁移
 
