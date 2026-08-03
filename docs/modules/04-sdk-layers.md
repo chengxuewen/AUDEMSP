@@ -128,7 +128,7 @@ Tauri v2 + React 桌面应用 (D76)
 
 ## 三、Cargo Workspace 结构 (D82)
 
-**Phase 2+ 目标结构 (D82)**: 当前 Phase 0-1 实际 workspace 为 5 crate (remote-host/remote-client/server/core/webrtc)，详见 `Cargo.toml`。
+**Phase 2+ 目标结构 (D82)**: 当前 Phase 3 完成, workspace 为 7 crate (audemsp-host/client/server/common/webrtc/media/codec)，详见 `Cargo.toml`。
 
 ```
 crates/

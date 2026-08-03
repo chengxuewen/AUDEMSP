@@ -518,7 +518,7 @@ Phase 2+ 计划 crates: audemsp-component, audemsp-transport, audemsp-signaling,
 | **SDK 构建** | cbindgen + 手写 CMake/pc (D109, Phase 2: cargo-c) | .a + .so + .h (cbindgen) + .pc (pkg-config) |
 | **SDK 安装** | /usr/local (D106) | FHS 标准, pkg-config 默认搜索 |
 - Phase 2+: Alertmanager 用于 Prometheus 告警路由
-| **SFU 引擎** | mediasoup-sys v0.22 | 生产级 Rust 绑定, Router/Transport/Producer/Consumer 模型 (D138) |
+| **SFU 引擎** | mediasoup-sys 0.14.1 (mediasoup 0.24.1) | 生产级 Rust 绑定, Router/Transport/Producer/Consumer 模型 (D138) |
 | **Component Bus** | tokio::mpsc (Phase 1) → Zenoh (Phase 2, D129) | InProcessBus, 双模式 RPC+Event (D132-D133) |
 
 ## 11. 已决策项（原待决策）

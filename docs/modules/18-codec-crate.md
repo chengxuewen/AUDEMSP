@@ -85,7 +85,7 @@ pub trait VideoDecoder: Send {
 
 Host 端双后端可切换：
 ```toml
-# Cargo.toml (remote-host)
+# Cargo.toml (audemsp-host)
 audemsp-codec = { features = ["backend-ffmpeg"] }   # 生产/edge 静态分发
 # audemsp-codec = { features = ["backend-gstreamer"] } # 开发机默认
 ```

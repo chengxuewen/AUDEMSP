@@ -51,8 +51,8 @@ D1 和 D126 是互补关系，不是替代关系。
 命名对应关系：
 | AUDEMSP | Parsec | RustDesk | Moonlight/Sunshine |
 |----------|--------|----------|-------------------|
-| `remote-host` | `ParsecHost` | Controlled host (server.rs) | Sunshine (Host) |
-| `remote-client` | `ParsecClient` | Controller (client.rs) | Moonlight (Client) |
+| `audemsp-host` | `ParsecHost` | Controlled host (server.rs) | Sunshine (Host) |
+| `audemsp-client` | `ParsecClient` | Controller (client.rs) | Moonlight (Client) |
 
 **来源**：远程桌面/远程操控工业惯例分析 (2026-07-19), D154
 
@@ -60,7 +60,7 @@ D1 和 D126 是互补关系，不是替代关系。
 
 ## C5: GStreamer → WebRTC 数据流边界
 
-**约束**: remote-host 中 GStreamer 和 WebRTC 的接口**仅允许 `&[u8]` 字节传递**：
+**约束**: audemsp-host 中 GStreamer 和 WebRTC 的接口**仅允许 `&[u8]` 字节传递**：
 
 ```
 GStreamer pipeline (C, glib)
@@ -95,7 +95,7 @@ webrtc-sys (C++, libwebrtc)
 - **枚举变体**: PascalCase
 - **常量**: SCREAMING_SNAKE_CASE
 
-其他 crate (core, media, server, remote-*) 使用 bare names，无前缀。
+其他 crate (core, media, server, audemsp-*) 使用 bare names，无前缀。
 
 **来源**: D166, D167, D168 (2026-07-22)
 

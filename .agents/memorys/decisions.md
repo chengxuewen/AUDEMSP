@@ -1,6 +1,6 @@
 # AUDEMSP 架构决策记录
 
-> **说明**: 本文件包含活跃决策（D196+）。历史决策（D1-D195）归档在 `decisions-archived.md`。
+> **说明**: 本文件包含活跃决策（D196+）。历史决策（D1-D190）归档在 `decisions-archived.md`（含 20 个历史跳号）。
 > 决策格式: `## D{N}: 标题` — 决策 + 日期 + 原因 + 影响
 ## D196: Admin Dashboard Architecture
 
@@ -130,6 +130,7 @@
 - mediasoup-sys flatbuffers wrapdb 不可达 → 统一走 Docker 构建（C13）
 - 镜像加速只解决网络瓶颈（2-5min），mediasoup C++ 编译（15-30min）为硬瓶颈
 **影响**: Dockerfile base 阶段 3 处加速点。后续 B 方案（预构建 dev 镜像）将进一步缩短到 <5min。
+> **修订 (D208)**: cargo 镜像由清华 tuna 改为 rsproxy（tuna 只镜像 index，.crate 二进制 404 实测）；apt/rustup 清华源保留。
 
 ## D207: 预构建 dev 镜像推送 ghcr.io (B 方案)
 
@@ -139,6 +140,7 @@
 - mediasoup C++ Worker 编译 15-30min 无法在每次构建时重复（OpenVidu pre-built binary 模式）
 - 层缓存（P0.1）只对 Cargo.toml 不变时生效，首次构建仍慢
 - 预构建镜像一劳永逸：apt/rustup/crates 全部跳过
+> **修订 (D208)**: 机制改为 compose `image:` + `pull_policy: always`（本地零构建）；命名统一 `audemsp-server-dev` / `audemsp-server-builder`；预烘焙按需启动（团队扩张时实施）。
 **影响**: 待用户确认 ghcr org 名称后实施。Dockerfile base 阶段改为 FROM 预构建镜像。
 
 ---
@@ -169,5 +171,5 @@
 **决策**: 项目对外名称与全部标识符统一由 OMSPBase 更名为 AUDEMSP（AUDE 生态多媒体系统）。范围：crates/ 7 个目录与包名（audemsp-*）、Rust 代码标识符（281 处 import 路径）、环境变量（OMSPBASE_PSK→AUDEMSP_PSK）、Docker 镜像/服务/卷名、www npm 包名、docs（73 文件）+ .agents 记忆/规则/技能（20 文件）+ README/AGENTS.md + 脚本/CI（含 /opt/omspbase→/opt/audemsp 及 oomspbase 笔误修正）。
 **日期**: 2026-08-03
 **原因**: 项目归属 AUDESYS/AUDEBase 生态，统一 AUDEMSP 命名消除「OMSPBase 是独立项目」歧义，与生态命名体系一致。团队 4 分析师交叉验证（217 文件/2363 处）。
-**例外（保留原名）**: decisions-archived.md 历史档案（136 处）、git 历史/commit 消息、.omo/.sisyphus 归档快照、node_modules 生成物。
+**例外（保留原名）**: decisions-archived.md 历史档案（174 处实测旧名引用）、git 历史/commit 消息、.omo/.sisyphus 归档快照、node_modules 生成物。
 **影响**: ① 改名后 Docker 镜像层缓存全部失效（路径变化），首次构建回滚全量编译（一次性成本）；② 旧 env（OMSPBASE_PSK）与 localStorage 键失效——项目未发布，接受破坏；③ git mv 保留历史，单 commit 可 revert 回滚；④ 后续所有文档/命令使用 audemsp-* 命名。

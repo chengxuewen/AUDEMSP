@@ -52,7 +52,7 @@ Client (browser/GUI)
 | 开发环境 | `localhost:5173` (Vite dev) | `localhost:9800` (Server) | ✅ 是 |
 | 生产同域 | `app.example.com` | `app.example.com/api` | ❌ 不需要 |
 | 生产子域 | `web.example.com` | `api.example.com` | ✅ 是 |
-| 嵌入场景 | `aude.example.com` | `omsp.example.com` | ✅ 是 |
+| 嵌入场景 | `aude.example.com` | `audemsp.example.com` | ✅ 是 |
 
 ### 19.3.2 当前状态
 
@@ -191,11 +191,11 @@ upstream audemsp_server {
 
 server {
     listen 443 ssl http2;
-    server_name omsp.example.com;
+    server_name audemsp.example.com;
 
     # TLS
-    ssl_certificate     /etc/letsencrypt/live/omsp.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/omsp.example.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/audemsp.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/audemsp.example.com/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
@@ -254,7 +254,7 @@ server {
 # HTTP → HTTPS redirect
 server {
     listen 80;
-    server_name omsp.example.com;
+    server_name audemsp.example.com;
     return 301 https://$server_name$request_uri;
 }
 ```
@@ -269,7 +269,7 @@ server {
 **最小配置** (`/etc/caddy/Caddyfile`):
 
 ```caddyfile
-omsp.example.com {
+audemsp.example.com {
     # TLS automatically managed by Let's Encrypt
 
     # API
@@ -333,7 +333,7 @@ services:
     image: audemsp-server:latest
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.audemsp.rule=Host(`omsp.example.com`)"
+      - "traefik.http.routers.audemsp.rule=Host(`audemsp.example.com`)"
       - "traefik.http.routers.audemsp.entrypoints=websecure"
       - "traefik.http.routers.audemsp.tls.certresolver=letsencrypt"
       # WebSocket handled automatically by Traefik 2.x+
@@ -353,7 +353,7 @@ openssl req -x509 -newkey rsa:4096 -days 365 -nodes \
 # 生成服务端证书
 openssl req -newkey rsa:4096 -nodes \
   -keyout server-key.pem -out server-req.pem \
-  -subj "/CN=omsp.example.com"
+  -subj "/CN=audemsp.example.com"
 
 # 用 CA 签名
 openssl x509 -req -in server-req.pem -days 90 \
@@ -403,10 +403,10 @@ services:
   server:
     image: audemsp-server:latest
     environment:
-      - OMSP_SERVER_HOST=0.0.0.0
-      - OMSP_SERVER_PORT=9800
-      - OMSP_JWT_SECRET=${JWT_SECRET}
-      - OMSP_CORS_ORIGINS=https://omsp.example.com
+      - AUDEMSP_SERVER_HOST=0.0.0.0
+      - AUDEMSP_SERVER_PORT=9800
+      - AUDEMSP_JWT_SECRET=${JWT_SECRET}
+      - AUDEMSP_CORS_ORIGINS=https://audemsp.example.com
       - RUST_LOG=info,audemsp_server=debug
     expose:
       - "9800"
@@ -450,7 +450,7 @@ volumes:
 ### Caddyfile
 
 ```caddyfile
-omsp.example.com {
+audemsp.example.com {
     # API routes
     handle /api/* {
         reverse_proxy server:9800 {

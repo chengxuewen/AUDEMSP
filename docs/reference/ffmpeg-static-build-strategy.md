@@ -744,7 +744,7 @@ panic = "abort"       # 进一步减小体积
 | **1** | `audemsp-codec` crate 骨架 | `crates/audemsp-codec/` | 2 天 |
 | **1** | build.rs (FFmpeg 检测+符号验证) | `build.rs` | 1 天 |
 | **1** | VideoDecoder trait 的 FFmpeg 实现 | `codec/ffmpeg_decoder.rs` | 3 天 |
-| **2** | Remote Client 集成解码 | `remote-client` decode path | 2 天 |
+| **2** | Remote Client 集成解码 | `audemsp-client` decode path | 2 天 |
 | **2** | 二进制大小优化 + 基准测试 | release profile tuning | 1 天 |
 | **3** | GPL 编码器支持 (如需) | 动态链接 或 子进程 | TBD |
 

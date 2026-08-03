@@ -2,7 +2,7 @@
 
 **Generated:** 2026-07-23
 
-AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入等能力。当前状态: Phase 3 完成，7 crate workspace，webrtc triple-backend (webrtc-rs 视频管线完整对齐)，audemsp-codec 三后端 (stub+FFmpeg+GStreamer)，44 commits on main。
+AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入等能力。当前状态: Phase 3 完成，7 crate workspace，webrtc triple-backend (webrtc-rs 视频管线完整对齐)，audemsp-codec 三后端 (stub+FFmpeg+GStreamer)，217 commits on main。
 
 ## STRUCTURE
 
@@ -10,7 +10,6 @@ AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一�
 AUDEMSP/
 ├── .opencode/          # OpenCode 配置（插件、MCP、LSP、instructions）
 │   ├── opencode.json   # 主配置：模型、插件、instructions、MCP、LSP
-│   ├── agent-guide.md  # AI 代理使用指南（5 层模型体系、OMO 编排）
 │   ├── agent-model-tiers.md  # 模型分层体系
 │   ├── oh-my-openagent.jsonc  # OMO Agent 配置
 │   ├── init-lsp-wrap.mjs      # LSP 包装器初始化
@@ -47,14 +46,13 @@ AUDEMSP/
 |------|----------|-------|
 | 项目简介 | `README.md` | 功能范围、架构定位、技术栈 |
 | Agent 配置 | `.opencode/opencode.json` | instructions、MCP、LSP |
-| Agent 使用指南 | `.opencode/agent-guide.md` | OMO 编排体系、5 层模型路由 |
 | 模型分层 | `.opencode/agent-model-tiers.md` | 五层模型映射、provider 选择 |
 | 语言规则 | `.agents/rules/{lang}/` | 各语言专属规则 |
 | 通用规则 | `.agents/rules/common/` | 安全、编码风格、测试、Git 工作流 |
 | 架构文档 | `docs/architecture.md` | 整体架构设计 |
-│ 模块文档 | `docs/modules/` | 各领域详细设计 (25 篇)
+| 模块文档 | `docs/modules/` | 各领域详细设计 (27 篇)
 | 项目记忆 | `.agents/memorys/` | 决策记录 (decisions.md)、状态跟踪 (status.md) |
-│ Rust 源码 | `crates/` | 七个 crate: audemsp-host/remote-client/server/core/media/webrtc/codec
+| Rust 源码 | `crates/` | 七个 crate: audemsp-host/audemsp-client/audemsp-server/audemsp-common/audemsp-webrtc/audemsp-media/audemsp-codec
 
 
 ## SKILL DIRECTORY
@@ -89,11 +87,8 @@ AUDEMSP/
 | **文档转技能** | `book-to-skill` | 将文档/书籍转为 AI 技能 |
 | **同步规格** | `openspec-sync-specs` | delta specs 同步到主 specs |
 
-
 ## CODE MAP
-| **行动前** | `think-before-act` | 任何非平凡操作前（自动触发） |
 
-## CODE MAP
 
 _项目已进入代码实施阶段。以下为当前状态：_
 
@@ -106,7 +101,7 @@ _项目已进入代码实施阶段。以下为当前状态：_
 │ audemsp-media | ✅ 已实现 | 媒体管线: pipeline, broadcast, engine, transform (54 tests)
 │ audemsp-webrtc | ✅ triple-backend | WebRTC 抽象层 (stub/webrtc-rs/webrtc-sys), 118+ tests, webrtc-rs 视频管线完整对齐
 │ audemsp-codec | ✅ 三后端 | 编解码: stub + FFmpeg (static) + GStreamer (dynamic, pixi)
-│ Phase 2+ crates | 🔲 计划中 | 详见 `.sisyphus/plans/consolidated-mvp/` 和 `docs/architecture.md`
+| Phase 2+ crates | 🔲 计划中 | 详见 `.sisyphus/plans/phase3-production/` 和 `docs/architecture.md`
 
 ## CONVENTIONS
 
@@ -147,6 +142,6 @@ _项目已进入代码实施阶段。以下为当前状态：_
 
 ## NOTES
 
-- **Phase 3 完成** — Docker/CI/DevContainer 就位，SFU connect_transport 已实现，91 commits on main
-- **骨架代码已创建** — `crates/audemsp-{host,remote,server}` 三个 crate 含模块骨架
+- **Phase 3 完成** — Docker/CI/DevContainer 就位，SFU connect_transport 已实现，217 commits on main
+- **骨架代码已创建** — `crates/audemsp-{host,client,server}` 三个 crate 含模块骨架
 - **AUDE 生态共享依赖** — AUDESYS 引用 Rust crate，AUDEBase 通过 napi 绑定

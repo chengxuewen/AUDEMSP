@@ -1,6 +1,6 @@
 # macOS Development Workflow
 
-> 状态：Phase 0-1 | 关联：Docker SFU 架构、Native Host/Client
+> 状态：Phase 3 完成 | 关联：Docker SFU 架构、Native Host/Client
 
 ## 架构概览
 
