@@ -2,7 +2,7 @@
 
 **生成**: 2026-08-03 | 决策: 182 (D1-D209) | Phase: 3 完成 | 209 commits | 22 skills | mediasoup 0.24.1 | PIT-41
 
-**当前**: 7 crate workspace (audemsp-*)。Phase 3 全部完成。**Host SFU 全链路实现完成** (host-webrtc-sfu-web-client 50/50: audemsp-webrtc 抽象层补全 + ICE/DTLS + E2E)。**统一 Docker 构建策略完成** (docker-build-strategy 29/29: 层缓存 + compose 分离 + Caddy 代理 + CI 镜像)。**OpenVidu 参考文档 3 篇**。Docker 环境本机已装 (29.1.3 + 镜像加速 + daemon 代理)。**构建优化 D208 已实施验证** — 本周 9 项 P0 修复全部完成：builder/dev/runtime 三 target 冒烟 EXIT 0 + runtime health 200；docker-cargo.sh 全链路实测通过（C13 check-server 首次可用，3m27s）；CI 门禁升级（PIT-39 gate 冒烟 + PR build-only）；沉淀 PIT-36~41（Docker dev 链路历史故障 + 编排/编辑教训）。**项目重命名 D209 完成**（OMSPBase→AUDEMSP，217 文件/2363 处）。**待办**: ghcr org 确认 → 预烘焙镜像；admin dist 修复
+**当前**: 7 crate workspace (audemsp-*)。Phase 3 全部完成。**Host SFU 全链路实现完成** (host-webrtc-sfu-web-client 50/50: audemsp-webrtc 抽象层补全 + ICE/DTLS + E2E)。**统一 Docker 构建策略完成** (docker-build-strategy 29/29: 层缓存 + compose 分离 + Caddy 代理 + CI 镜像)。**OpenVidu 参考文档 3 篇**。Docker 环境本机已装 (29.1.3 + 镜像加速 + daemon 代理)。**构建优化 D208 已实施验证** — 本周 9 项 P0 修复全部完成：builder/dev/runtime 三 target 冒烟 EXIT 0 + runtime health 200；docker-cargo.sh 全链路实测通过（C13 check-server 首次可用，3m27s）；CI 门禁升级（PIT-39 gate 冒烟 + PR build-only）；沉淀 PIT-36~41（Docker dev 链路历史故障 + 编排/编辑教训）。**项目重命名 D209 完成**（OMSPBase→AUDEMSP，217 文件/2363 处）。**部署策略**: 优先本地构建（cargo-cache 卷 + 层缓存，初次 15-30min 一次性）；ghcr 预烘焙按需启动（团队 >1 人/换机频繁时再做，占位符 ghcr.io/org/audemsp-server 已就绪）。**待办**: admin dist 修复
 
 ## 测试
 
