@@ -28,7 +28,13 @@ After EVERY code change (edit, write, or ast_grep_replace):
 ```
 Rust:   cargo check -p <crate>       (5-15s)
 TS/TSX: npx tsc --noEmit             (3-5s)
+YAML:   docker compose config --quiet (compose 文件)
+Shell:  bash -n <script>             (脚本)
 ```
+
+### 批量 edits 数组必须逐操作验证 (PIT-41)
+
+多个 replace 操作引用相邻区域时，边界行号/内容易错位（一个操作可能覆盖另一个操作的保留区域）。每次 edit 调用后立即跑对应格式验证；发现破坏 → 重读文件恢复，不叠加修复。
 
 If verification fails, STOP. Do NOT apply another edit on top. Instead:
 1. `git diff` to see what changed

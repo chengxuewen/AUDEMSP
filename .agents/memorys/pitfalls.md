@@ -139,7 +139,7 @@ compile_error!("Only one backend can be enabled at a time.");
 
 **解法**:
 1. `curl --http1.1` 强制 HTTP/1.1，绕过 HTTP/2 干扰
-2. GitHub 镜像回落：`mirror.ghproxy.com` 或 `ghproxy.net`
+2. ~~GitHub 镜像回落：`mirror.ghproxy.com` 或 `ghproxy.net`~~ **已修订 (2026-08-03)**：`mirror.ghproxy.com` 已停运（原项目 2024 年终止，curl 实测连接失败 000），脚本回退需换 `gh-proxy.com` 或从 conda 镜像安装（pixi 在 conda-forge 有包）
 3. 代理：`export HTTPS_PROXY=http://127.0.0.1:7890`
 
 ## PIT-15: pixi 版本不应硬编码，Gitee 私人镜像不可靠 (2026-07-28)
@@ -151,7 +151,7 @@ compile_error!("Only one backend can be enabled at a time.");
 **解法**:
 1. 默认 `PIXI_VERSION=latest`，使用官方 `pixi.sh/install.sh`
 2. 指定版本时用 `PIXI_VERSION=x.y.z` 环境变量覆盖
-3. 不用私人镜像，用 `mirror.ghproxy.com`（公共服务）
+3. ~~不用私人镜像，用 `mirror.ghproxy.com`（公共服务）~~ **已修订 (2026-08-03)**：ghproxy.com 已停运（见 PIT-14），pixi 安装回退改为 `gh-proxy.com` 或 conda-forge 安装
 4. 下载的 tarball 缓存到 `.pixi-cache/downloads/` 复用
 **注意**: 当前用户选择保持现状（内网环境），但如需外部部署/代码分享时必须迁移。
 
@@ -369,3 +369,78 @@ compile_error!("Only one backend can be enabled at a time.");
 **解法**: 生成参考文档后必须对照上游源码核查事实（容器清单、镜像注册表、端口、数据库）。发现错误 → 修正文档（本轮修正 4 处）。核查时以仓库实际 docker-compose.yaml 为准，不信二手描述。
 
 **验证**: `grep -i "kurento\|coturn" openvidu-deployment.md` 应为空。
+
+## PIT-36: Docker builder dummy→COPY 层 mtime 坑 — cargo fingerprint 误判源码未变 (2026-08-03)
+
+**症状**: `docker build --target builder` 最终构建报 `cannot find protocol in omspbase_common` + `str::clone` 系列连锁错误，但源码明显正确（grep 确认 pub mod protocol 存在）。
+
+**根因**: Dockerfile 模式「dummy src 编译依赖 → `rm -rf crates/*/src` → `COPY . .` 真实源码 → 最终构建」。**COPY 保留宿主文件 mtime**，宿主 .rs 文件 mtime 早于 dummy 构建时间 → cargo fingerprint 按 mtime 判断源码未变更 → 链接 dummy 阶段编译的**空 common rlib** → 连锁类型错误。
+
+**解法**: COPY . . 之后、最终构建之前 touch 源码更新 mtime：
+```dockerfile
+COPY . .
+RUN find crates -name '*.rs' -exec touch {} +
+RUN cargo build --release --bin omspbase-server --features sfu-mediasoup
+```
+
+**验证**: 最终构建输出显示 `Compiling omspbase-common`（真实重编）而非跳过。
+
+## PIT-37: cargo fetch 要求全部 workspace member 有 targets + [[example]] 文件 (2026-08-03)
+
+**症状**: manifests-first 模式的 `cargo fetch` 报 `no targets specified in the manifest`（缺 src 的 member）或 `can't find square-gen-egui example`（声明了 [[example]] 的 crate 缺 examples/ 文件）。
+
+**根因**: cargo fetch 解析 workspace 时**检查所有 member 的 manifest targets 完整性**（非仅构建目标）。`[[example]]` 显式声明（如 omspbase-media 的 square-gen-egui/viewer/square-gen）会校验文件存在性；自动发现的 examples/*.rs 不校验。
+
+**解法**: dummy 阶段全建：所有 member `touch src/lib.rs`（bin crate 建 main.rs）+ 显式声明的 example 文件 `touch`。builder 与 dev 两处都需。
+
+**验证**: `docker build --target builder` 通过 fetch 阶段。
+
+## PIT-38: 容器内进程代理不继承 daemon 代理 — mediasoup wrapdb 超时 (2026-08-03)
+
+**症状**: 容器内 mediasoup-sys meson 构建报 `WrapDB connection failed to https://wrapdb.mesonbuild.com/v2/openssl_3.0.8-3/get_patch ... timed out`；tasks.py pip 装 meson 报 pypi.org ReadTimeout。
+
+**根因**: Docker daemon 代理（systemd proxy.conf，PIT-31）**只影响 daemon 拉镜像**，不传递给容器内进程。容器内 mediasoup-sys build script 的 python urllib/pip 直连 wrapdb.mesonbuild.com / pypi.org → 国内超时（PIT-33 根因复现）。
+
+**解法**: 构建期代理经 build-arg 显式传入（PIT-20 不硬编码）：
+```dockerfile
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ENV HTTP_PROXY=${HTTP_PROXY:-} HTTPS_PROXY=${HTTPS_PROXY:-}
+```
+compose build args 从宿主环境读：`HTTP_PROXY: ${http_proxy:-}`。pip 另加 `PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`（tasks.py 的 pip 调用生效，不改依赖源码）。
+
+**⚠️ 修复必须双路径（2026-08-03 补充）**: build 阶段（Dockerfile ARG/ENV）**和** run 阶段（compose `environment:`）都要传代理——`docker compose run server cargo check` 容器内编译 mediasoup-sys 同样需要。只修 build 路径，docker-cargo.sh 第二步仍会 wrapdb 超时。
+
+**验证**: meson 日志显示 wrapdb patch 下载成功；`Failed to build libmediasoup-worker` 消失；`scripts/docker-cargo.sh check -p omspbase-server --features sfu-mediasoup` EXIT 0。
+
+**验证**: meson 日志显示 wrapdb patch 下载成功；`Failed to build libmediasoup-worker` 消失。
+
+## PIT-39: omspbase-server 从未被真实编译 — Docker dev 链路历史故障 (2026-08-03)
+
+**症状**: 冒烟构建暴露 main.rs:75 `if/else 类型不一致`（String vs &str）——任何真实编译都会报的错。
+
+**根因**: Docker dev 链路**历史上从未成功运行过**，故障链：docker-cargo.sh 服务名 `dev` 不存在（必失败）→ C13 的 check-server 从未生效 → devcontainer 指向生产 compose（无工具链）→ builder dummy→COPY mtime 坑（PIT-36）→ CI 构建从未产出真实二进制。多个独立 bug 相互掩盖，导致 server 真实源码从未被编译验证。
+
+**解法**: 逐一修复（D208 本周项 4/6 + PIT-36/37/38），冒烟构建作为最终验证。**教训**: 声称"构建通过"的 CI 需抽查产物真实性（C14）；服务名/路径类 bug 长期静默是因为失败路径从未被触发。
+
+**验证**: `docker build --target builder` EXIT 0 + runtime 容器 health 200。
+
+## PIT-40: team-mode 成员模型配额耗尽后回退 session 挂起 — 需 kill + 独立任务重试 (2026-08-03)
+
+**症状**: doc-review-team 的 tech-reviewer 在首次会话因 `token-plan 1-week quota exhausted` 失败后自动重试到回退模型，但新 session 持续 1h12m **无任何产出**（其他 3 个成员 2-4 min 完成），发消息唤醒（2 次）无响应。
+
+**根因**: 团队成员的模型配额耗尽（1 周额度）→ 重试机制创建回退 session，但该 session 挂起（idle + unread 消息不被处理）。团队消息队列无法唤醒死 session。
+
+**解法**: 不再等待 → `team_shutdown_request` + `team_approve_shutdown` 终止死成员 → 用独立 `task(category=..., run_in_background=true)` 以干净上下文重试（本案例 4m41s 完成同等工作）。**团队成员不响应时不要无限等待，5 min 无产出即 kill 换独立任务**。
+
+**验证**: 独立任务完成（bg_20e704a5 4m41s EXIT 正常）；审核报告交付。
+
+## PIT-41: 批量 edit 多个 replace 操作覆盖相邻结构 — 提交后必须立即跑配置验证 (2026-08-03)
+
+**症状**: 修改 docker-compose.yml 时，edits 数组第二个操作（删 volumes 段）误把 proxy 服务整体替换掉，`docker compose config` 报 `services.proxy must be a mapping`。若未验证直接提交会破坏生产部署。
+
+**根因**: 批量 edits 数组内多个 replace 操作引用相邻区域时，边界行号/内容易错位（一个操作覆盖了另一个操作的保留区域）。edit 工具按原始快照应用，操作间不互相校验。
+
+**解法**: 每次 edit 调用后**立即跑对应格式验证**：YAML → `docker compose config --quiet`；shell → `bash -n`；Rust → `cargo check`。发现破坏 → 重读文件恢复。本案例通过 config 验证发现并修复（proxy 服务完整恢复）。
+
+**验证**: `docker compose -f docker-compose.yml config --quiet` EXIT 0 + `--services` 输出 server/proxy。

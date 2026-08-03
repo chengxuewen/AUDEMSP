@@ -140,3 +140,24 @@
 - 层缓存（P0.1）只对 Cargo.toml 不变时生效，首次构建仍慢
 - 预构建镜像一劳永逸：apt/rustup/crates 全部跳过
 **影响**: 待用户确认 ghcr org 名称后实施。Dockerfile base 阶段改为 FROM 预构建镜像。
+
+---
+
+## D208: 构建优化策略实施 (2026-08-03)
+
+**决策**: 采纳 docs/reference/build-optimization-strategy.md 方案 B（dev+builder 双镜像预烘焙 + 国内镜像修复 + lto 优化），分三阶段执行（本周修复 / 本月结构 / 下月按需）。
+**日期**: 2026-08-03
+**原因**:
+- 首次 Docker 构建 15-30 min（mediasoup C++ 45% + Rust deps 35%），dev 镜像无预编译依赖 + gha cache 本地不可达
+- 团队模式 4 分析师 + 4 审核员交叉验证：审计发现全部属实，方案经 H1-H4/M1-M6 修正
+- 实测发现：pixi 无国内镜像（最慢层）、rsproxy sparse URL 失效、tuna 不镜像 cargo 二进制、ghproxy 停运
+**修订**:
+- **D206 部分修订**：apt/rustup 清华镜像保留；cargo 镜像 tuna → rsproxy（tuna 只镜像 index，.crate 二进制 404）
+- **D207 机制修订**：FROM 预构建 base → compose `image:` + `pull_policy: always`（本地零构建，命名卷 copy-on-first-use 灌入烘焙产物）；镜像命名统一 `omspbase-server-dev` / `omspbase-server-builder`
+**关键约束**（审核修正，实施时强制执行）:
+- 卷 copy-on-first-use 仅空卷生效 → 落地必须显式 `docker volume rm omspbase_cargo-cache`
+- 预烘焙镜像 amd64 only，Apple Silicon 走仿真，dev service 显式声明 platform
+- GHCR 清理 workflow（sha tag 保留 N=10）+ path-filter（仅依赖变更时推 dev 镜像）
+- ghcr 可达性未实测前不实施预烘焙（PIT-14/31 背景下可能 30min+）
+- 生产 runtime 缺口是 admin dist 产物（非 feature）→ Docker 构建需 `pnpm build:admin` 先于 cargo build（PIT-23）
+**影响**: 本地首次构建 15-28 min → 2-5 min（预计）；日常增量每轮省 30-60s。实施细节见 docs/reference/build-optimization-strategy.md。
