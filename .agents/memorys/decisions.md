@@ -120,3 +120,23 @@
 - context-engineering 路由表处理关键词匹配，skill-router 处理模糊意图
 - 与 context-engineering 互补：规则文件处理明确场景，技能处理模糊意图
 **影响**: 22 个技能，AGENTS.md 目录表已更新
+
+## D206: Docker 构建国内镜像加速 (A 方案)
+
+**决策**: Dockerfile 使用国内镜像源加速构建（apt 清华源 + rustup 清华镜像 + cargo sparse 清华镜像）。
+**日期**: 2026-07-31
+**原因**:
+- 国内网络下 Ubuntu apt/rustup/crates.io 直连慢或不可达（PIT-31/PIT-33 教训）
+- mediasoup-sys flatbuffers wrapdb 不可达 → 统一走 Docker 构建（C13）
+- 镜像加速只解决网络瓶颈（2-5min），mediasoup C++ 编译（15-30min）为硬瓶颈
+**影响**: Dockerfile base 阶段 3 处加速点。后续 B 方案（预构建 dev 镜像）将进一步缩短到 <5min。
+
+## D207: 预构建 dev 镜像推送 ghcr.io (B 方案)
+
+**决策**: 构建一次含全部编译依赖的 dev 镜像，推送 `ghcr.io/{org}/omspbase-server-dev:latest`，后续 Dockerfile FROM 直接拉取。
+**日期**: 2026-07-31
+**原因**:
+- mediasoup C++ Worker 编译 15-30min 无法在每次构建时重复（OpenVidu pre-built binary 模式）
+- 层缓存（P0.1）只对 Cargo.toml 不变时生效，首次构建仍慢
+- 预构建镜像一劳永逸：apt/rustup/crates 全部跳过
+**影响**: 待用户确认 ghcr org 名称后实施。Dockerfile base 阶段改为 FROM 预构建镜像。

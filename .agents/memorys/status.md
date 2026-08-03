@@ -1,6 +1,6 @@
 # OMSPBase Status
 
-**生成**: 2026-07-31 | 决策: 180 (D1-D205, 25个预留) | Phase: 3 完成 | 209 commits | 22 skills | mediasoup 0.24.1 | PIT-35
+**生成**: 2026-07-31 | 决策: 180 (D1-D207) | Phase: 3 完成 | 209 commits | 22 skills | mediasoup 0.24.1 | PIT-35
 
 **当前**: 7 crate workspace。Phase 3 全部完成。**Host SFU 全链路实现完成** (host-webrtc-sfu-web-client 50/50: omspbase-webrtc 抽象层补全 + ICE/DTLS + E2E)。**统一 Docker 构建策略完成** (docker-build-strategy 29/29: 层缓存 + compose 分离 + Caddy 代理 + CI 镜像)。**OpenVidu 参考文档 3 篇**。Docker 环境本机已装 (29.1.3 + 镜像加速 + daemon 代理)。
 

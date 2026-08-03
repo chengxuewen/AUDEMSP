@@ -2,14 +2,26 @@
 # Ubuntu 22.04 is mediasoup's recommended prebuild base (widest glibc compatibility)
 FROM ubuntu:22.04 AS base
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
+
+# 国内镜像加速: apt 换清华源 (PIT-31/36 教训 — 国内网络)
+RUN sed -i 's|archive.ubuntu.com|mirrors.tuna.tsinghua.edu.cn|g; s|security.ubuntu.com|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates build-essential pkg-config cmake ninja-build git \
     libssl-dev libuv1-dev \
     python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+# 国内镜像加速: rustup 换清华镜像
+ENV RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup \
+    RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup
+
 # Install Rust via rustup (matches rust-toolchain.toml: stable channel)
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="/root/.cargo/bin:${PATH}"
+
+# 国内镜像加速: cargo crates.io 换清华 sparse 镜像
+RUN mkdir -p /root/.cargo && printf '[source.crates-io]\nreplace-with = "tuna"\n[source.tuna]\nregistry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"\n' > /root/.cargo/config.toml
+
 # Meson for mediasoup C++ Worker
 RUN pip3 install meson
 
