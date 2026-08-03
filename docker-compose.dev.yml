@@ -9,6 +9,7 @@ services:
         HTTPS_PROXY: ${https_proxy:-}
         NO_PROXY: ${no_proxy:-}
     ports:
+      - "20000:20000/udp"
       - "40000-40100:40000-40100/udp"
     environment:
       RUST_LOG: debug

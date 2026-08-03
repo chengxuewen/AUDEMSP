@@ -171,18 +171,18 @@ export RUSTUP_UPDATE_ROOT="https://rsproxy.cn/rustup"
 
 ### 4.4 其他优化（ROI 排序）
 
-| # | 优化项 | 预估节省 | 工作量 | 风险 |
-|---|--------|---------|--------|------|
-| 1 | dev stage manifests-first（去掉 COPY . . 前置 fetch） | 每次构建省 30-60s | S | 低 |
-| 2 | Docker 资源配额 ≥8GB RAM / 6+ CPU（文档化） | 全量编译 2-3x | S | 无 |
-| 3 | warm-dev.sh 后台预热脚本（早晨跑一次） | 首调 15-28 min 后台化 | S | 低 |
-| 4 | `lto="thin" + codegen-units=16`（**仅影响 release**：builder/CI/生产镜像路径；dev debug 路径无收益，debug profile 独立） | release 依赖编译 2-3x（代价 1-2% 体积/性能） | S | 低 |
-| 5 | sccache 双路（原生 + 容器卷） | 依赖冷变更 8-15 → 2-4 min | M | 中 — daemon 内存 ~1GB；mediasoup C++ 部分收益受限 |
-| 6 | mediasoup 预编译 worker（OpenVidu 思路） | 每构建省 4-8 min | M-L | 中 — mediasoup-sys 需 patch；版本/glibc 严格绑定 |
-| 7 | BuildKit cache mount（registry + meson OUT_DIR） | fetch 3 min → 5s；meson 重编秒级 | S-M | 低 |
-| 8 | .dockerignore 补 `.pixi/ .omo/ .sisyphus/ .codegraph/` | 上下文上传减小 | S | 无 |
-| 9 | pixi 环境瘦身：gst-plugins-ugly/gst-libav/llvm 移入 test feature | 环境创建省 1-2 min | S-M | 低 |
-| 10 | CI：docker.yml 加 PR 触发 build-only 校验 | 提前发现 Dockerfile 破坏 | S | 低 |
+| # | 优化项 | 预估节省 | 工作量 | 风险 | 状态 (doc-audit L8, 2026-08-03) |
+|---|--------|---------|--------|------|------|
+| 1 | dev stage manifests-first（去掉 COPY . . 前置 fetch） | 每次构建省 30-60s | S | 低 | ✅ 已完成 |
+| 2 | Docker 资源配额 ≥8GB RAM / 6+ CPU（文档化） | 全量编译 2-3x | S | 无 | ✅ 已完成（operations.md §Docker 资源限额） |
+| 3 | warm-dev.sh 后台预热脚本（早晨跑一次） | 首调 15-28 min 后台化 | S | 低 | ✅ 已存在 |
+| 4 | `lto="thin" + codegen-units=16`（**仅影响 release**：builder/CI/生产镜像路径；dev debug 路径无收益，debug profile 独立） | release 依赖编译 2-3x（代价 1-2% 体积/性能） | S | 低 | ✅ 已完成 |
+| 5 | sccache 双路（原生 + 容器卷） | 依赖冷变更 8-15 → 2-4 min | M | 中 — daemon 内存 ~1GB；mediasoup C++ 部分收益受限 | ❌ 按需（触发：Cargo.lock 变更频率上升） |
+| 6 | mediasoup 预编译 worker（OpenVidu 思路） | 每构建省 4-8 min | M-L | 中 — mediasoup-sys 需 patch；版本/glibc 严格绑定 | ❌ 未做 |
+| 7 | BuildKit cache mount（registry + meson OUT_DIR） | fetch 3 min → 5s；meson 重编秒级 | S-M | 低 | ❌ 未做 |
+| 8 | .dockerignore 补 `.pixi/ .omo/ .sisyphus/ .codegraph/` | 上下文上传减小 | S | 无 | ✅ 已完成（+ .env*/*.key） |
+| 9 | pixi 环境瘦身：gst-plugins-ugly/gst-libav/llvm 移入 test feature | 环境创建省 1-2 min | S-M | 低 | ❌ 未做 |
+| 10 | CI：docker.yml 加 PR 触发 build-only 校验 | 提前发现 Dockerfile 破坏 | S | 低 | ✅ 已完成（PIT-39 gate 一并） |
 
 **明确不做/低价值**：
 - **跨平台 target 共享不可行**：macOS native（aarch64-apple-darwin）与容器（aarch64/x86_64-unknown-linux-gnu）产物按 triple 分键；mediasoup worker 按 arch+OS 编译；sccache 同样按 compiler+target 分键。唯一跨平台机会 = 预编译 worker 二进制（Linux x64）

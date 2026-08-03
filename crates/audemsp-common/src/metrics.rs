@@ -2,6 +2,9 @@
 //!
 //! Provides convenience functions to register standard metrics
 //! used by all three components.
+//!
+//! 命名规范 (H4, doc-audit): 所有指标 `audemsp_` 前缀 — Prometheus namespace
+//! 惯例 + D209 改名一致 + 避免 host/server/client 三进程同名冲突。
 
 use prometheus_client::encoding::text::encode;
 use prometheus_client::metrics::counter::Counter;
@@ -15,6 +18,8 @@ pub struct CoreMetrics {
     pub relayed_bytes: Counter<u64>,
     pub signaling_latency_us: Gauge,
     pub error_count: Counter<u64>,
+    pub rooms_active: Gauge,
+    pub component_status: Gauge,
 }
 
 impl CoreMetrics {
@@ -24,30 +29,44 @@ impl CoreMetrics {
 
         let active_connections = Gauge::default();
         registry.register(
-            "active_connections",
+            "audemsp_active_connections",
             "Number of active WebSocket/WebRTC connections",
             active_connections.clone(),
         );
 
         let relayed_bytes = Counter::default();
         registry.register(
-            "relayed_bytes",
+            "audemsp_relayed_bytes",
             "Total bytes relayed (Server only)",
             relayed_bytes.clone(),
         );
 
         let signaling_latency_us = Gauge::default();
         registry.register(
-            "signaling_latency_us",
+            "audemsp_signaling_latency_us",
             "Signaling message latency in microseconds",
             signaling_latency_us.clone(),
         );
 
         let error_count = Counter::default();
         registry.register(
-            "error_count",
+            "audemsp_error_count",
             "Total error count by error code",
             error_count.clone(),
+        );
+
+        let rooms_active = Gauge::default();
+        registry.register(
+            "audemsp_rooms_active",
+            "Number of active rooms (Server only)",
+            rooms_active.clone(),
+        );
+
+        let component_status = Gauge::default();
+        registry.register(
+            "audemsp_component_status",
+            "Component health status: 1=healthy, 0=unhealthy",
+            component_status.clone(),
         );
 
         Self {
@@ -56,6 +75,8 @@ impl CoreMetrics {
             relayed_bytes,
             signaling_latency_us,
             error_count,
+            rooms_active,
+            component_status,
         }
     }
 
@@ -82,14 +103,16 @@ mod tests {
         let metrics = CoreMetrics::new();
         let output = metrics.encode();
         // Prometheus text format should have HELP and TYPE for each metric
-        assert!(output.contains("# HELP active_connections"), "missing HELP active_connections");
-        assert!(output.contains("# TYPE active_connections gauge"), "missing TYPE active_connections");
-        assert!(output.contains("# HELP relayed_bytes"), "missing HELP relayed_bytes");
-        assert!(output.contains("# TYPE relayed_bytes counter"), "missing TYPE relayed_bytes");
-        assert!(output.contains("# HELP signaling_latency_us"), "missing HELP signaling_latency_us");
-        assert!(output.contains("# TYPE signaling_latency_us gauge"), "missing TYPE signaling_latency_us");
-        assert!(output.contains("# HELP error_count"), "missing HELP error_count");
-        assert!(output.contains("# TYPE error_count counter"), "missing TYPE error_count");
+        assert!(output.contains("# HELP audemsp_active_connections"), "missing HELP audemsp_active_connections");
+        assert!(output.contains("# TYPE audemsp_active_connections gauge"), "missing TYPE audemsp_active_connections");
+        assert!(output.contains("# HELP audemsp_relayed_bytes"), "missing HELP audemsp_relayed_bytes");
+        assert!(output.contains("# TYPE audemsp_relayed_bytes counter"), "missing TYPE audemsp_relayed_bytes");
+        assert!(output.contains("# HELP audemsp_signaling_latency_us"), "missing HELP audemsp_signaling_latency_us");
+        assert!(output.contains("# TYPE audemsp_signaling_latency_us gauge"), "missing TYPE audemsp_signaling_latency_us");
+        assert!(output.contains("# HELP audemsp_error_count"), "missing HELP audemsp_error_count");
+        assert!(output.contains("# TYPE audemsp_error_count counter"), "missing TYPE audemsp_error_count");
+        assert!(output.contains("# HELP audemsp_rooms_active"), "missing HELP audemsp_rooms_active");
+        assert!(output.contains("# HELP audemsp_component_status"), "missing HELP audemsp_component_status");
     }
 
     #[test]
@@ -97,10 +120,12 @@ mod tests {
         let metrics = CoreMetrics::new();
         let output = metrics.encode();
         // All metrics should start at 0
-        assert!(output.contains("active_connections 0"), "active_connections should be 0");
-        assert!(output.contains("relayed_bytes_total 0"), "relayed_bytes should be 0");
-        assert!(output.contains("signaling_latency_us 0"), "signaling_latency_us should be 0");
-        assert!(output.contains("error_count_total 0"), "error_count should be 0");
+        assert!(output.contains("audemsp_active_connections 0"), "audemsp_active_connections should be 0");
+        assert!(output.contains("audemsp_relayed_bytes_total 0"), "audemsp_relayed_bytes should be 0");
+        assert!(output.contains("audemsp_signaling_latency_us 0"), "audemsp_signaling_latency_us should be 0");
+        assert!(output.contains("audemsp_error_count_total 0"), "audemsp_error_count should be 0");
+        assert!(output.contains("audemsp_rooms_active 0"), "audemsp_rooms_active should be 0");
+        assert!(output.contains("audemsp_component_status 0"), "audemsp_component_status should be 0");
     }
 
     #[test]
@@ -109,8 +134,8 @@ mod tests {
         metrics.relayed_bytes.inc_by(1024);
         metrics.error_count.inc_by(3);
         let output = metrics.encode();
-        assert!(output.contains("relayed_bytes_total 1024"), "expected relayed_bytes_total 1024");
-        assert!(output.contains("error_count_total 3"), "expected error_count_total 3");
+        assert!(output.contains("audemsp_relayed_bytes_total 1024"), "expected audemsp_relayed_bytes_total 1024");
+        assert!(output.contains("audemsp_error_count_total 3"), "expected audemsp_error_count_total 3");
     }
 
     #[test]
@@ -118,9 +143,13 @@ mod tests {
         let metrics = CoreMetrics::new();
         metrics.active_connections.set(5);
         metrics.signaling_latency_us.set(1500);
+        metrics.rooms_active.set(2);
+        metrics.component_status.set(1);
         let output = metrics.encode();
-        assert!(output.contains("active_connections 5"), "expected active_connections 5");
-        assert!(output.contains("signaling_latency_us 1500"), "expected signaling_latency_us 1500");
+        assert!(output.contains("audemsp_active_connections 5"), "expected audemsp_active_connections 5");
+        assert!(output.contains("audemsp_signaling_latency_us 1500"), "expected audemsp_signaling_latency_us 1500");
+        assert!(output.contains("audemsp_rooms_active 2"), "expected audemsp_rooms_active 2");
+        assert!(output.contains("audemsp_component_status 1"), "expected audemsp_component_status 1");
     }
 
     #[test]
@@ -129,14 +158,14 @@ mod tests {
         metrics.relayed_bytes.inc_by(100);
         metrics.relayed_bytes.inc_by(200);
         let output = metrics.encode();
-        assert!(output.contains("relayed_bytes_total 300"), "expected relayed_bytes_total 300");
+        assert!(output.contains("audemsp_relayed_bytes_total 300"), "expected audemsp_relayed_bytes_total 300");
     }
 
     #[test]
     fn default_impl_works() {
         let metrics: CoreMetrics = Default::default();
         let output = metrics.encode();
-        assert!(output.contains("# HELP active_connections"));
-        assert!(output.contains("active_connections 0"));
+        assert!(output.contains("# HELP audemsp_active_connections"));
+        assert!(output.contains("audemsp_active_connections 0"));
     }
 }

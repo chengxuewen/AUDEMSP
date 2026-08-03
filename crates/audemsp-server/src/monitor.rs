@@ -150,6 +150,16 @@ async fn metrics_handler(State(state): State<MonitorState>) -> String {
         .active_connections
         .set(connected_peers);
 
+    // H4: 补注册的有数据源 gauge — rooms_active / component_status
+    let rooms = state.signaling.room_manager.active_rooms() as i64;
+    state.metrics.rooms_active.set(rooms);
+
+    let health = state.signaling.check_health();
+    state
+        .metrics
+        .component_status
+        .set(if health.is_alive() { 1 } else { 0 });
+
     // Encode all metrics in Prometheus text format
     state.metrics.encode()
 }

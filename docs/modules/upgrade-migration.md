@@ -14,6 +14,25 @@ Remote (Client): MAJOR.minor.patch
   - 当前 MAJOR 与 Server 一致时推荐升级
 ```
 
+## Crate 版本策略 (doc-audit L7)
+
+> 7-crate workspace 被 AUDESYS（Rust 静态链接）与 AUDEBase（napi 绑定）消费，需独立于二进制矩阵的 crate 级版本策略。
+
+### 分级 API 面
+
+| 层 | crates | 变更语义 |
+|----|--------|---------|
+| 契约层 | audemsp-common（protocol/auth/config） | **任何 wire 格式变更 = 所有消费者 breaking** |
+| 能力层 | audemsp-media / audemsp-webrtc / audemsp-codec | feature 化能力（见三后端矩阵） |
+| 应用层 | audemsp-host / audemsp-client / audemsp-server | 沿用 D118 二进制矩阵 |
+
+### 规则
+
+1. **独立 semver**：7 crate 各自版本，0.1.x 阶段允许 breaking（minor 递增）；进入 1.0 后严格 semver。`version.workspace = true` 仅用于同步发布节奏的 crate（当前 media/codec），不强制全 workspace 同步——audemsp-common 0.2 不必拖带 server 0.2。
+2. **audemsp-webrtc 三后端 feature 矩阵**（C12）：stub/webrtc-rs/webrtc-sys 属 feature 级兼容；新增后端 = minor，后端行为变更 = major。
+3. **MSRV**：rust-toolchain.toml 固定；[规划] CI 加 `cargo-semver-checks` 门禁（PR 检测公共 API breaking）。
+4. **消费方锁定**：AUDESYS pin `=x.y.z` 或 commit 引用；AUDEBase（napi）由 audemsp-common 版本决定 ABI 面，发布时同版本记录。
+5. **变更通知**：breaking 变更在 decisions.md + CHANGELOG 双记录（[规划] cargo release 或 per-crate changelog 生成）。
 ## 配置迁移
 
 host.conf 使用 JSON Schema 加 `version` 字段：
@@ -41,6 +60,57 @@ systemd service 控制：
 
 Host 启动时检查 `version` 字段，自动执行 schema 迁移。Remote 通过 `audemsp-server` 推送更新包。
 
+## 容器镜像升级 (Server, Docker)
+
+> 关联：C13 (Server 统一 Docker 构建), D208 (构建优化), PIT-39 (冒烟门禁) | 创建依据：doc-audit M6
+
+Server 是唯一 Docker 部署的组件（C13），镜像由 CI 发布，无手工构建/上传流程。
+
+### 镜像 tag 约定 (docker.yml)
+
+| Tag | 含义 | 更新时机 |
+|-----|------|---------|
+| `ghcr.io/org/audemsp-server:latest` | 滚动最新 | 每次 main push |
+| `ghcr.io/org/audemsp-server:sha-<commit>` | 精确版本，可回滚锚点 | 每次 main push |
+
+CI（`.github/workflows/docker.yml`）流程：push main → 构建 runtime stage → 打双 tag → **冒烟门禁**（run 镜像 30s 内 `/health` 返回 200，失败则 push 失败，PIT-39）。
+
+### 升级步骤
+
+```
+1. docker compose pull                       # 拉取新 latest
+2. docker compose up -d                      # 滚动重建 server（proxy 不变）
+3. docker compose ps | grep healthy          # 等待 healthcheck 通过
+4. curl -sf http://localhost:9800/health     # 最终确认
+```
+
+健康检查门禁：compose healthcheck（30s 间隔/3s 超时/3 次重试，`docker-compose.yml:18-22`）与 Dockerfile HEALTHCHECK 双份存在；容器不健康时 compose 不会自动回滚，需人工介入。
+
+### 回滚
+
+```
+docker compose pull                          # 或跳过：直接指定旧 tag
+docker compose up -d ghcr.io/org/audemsp-server:sha-<旧commit>
+docker compose up -d                          # 恢复 compose 文件默认 latest
+```
+
+保留策略：`sha-` tag 随 main push 累积，建议每 N 个 release 清理旧 tag（ghcr 手动删除）。
+
+### 配置与数据迁移
+
+- 配置：`./config/server.docker.yaml` 挂载只读（`docker-compose.yml:24`），镜像升级不触碰配置；新字段经 serde `#[serde(default)]` 兼容（见上文 §配置迁移）。
+- 数据库：sqlx migrate 启动时自动执行（见下节 §数据库迁移）；升级前备份 `audemsp.db`（operations.md §备份）。
+- 版本兼容：遵循 §版本兼容矩阵 (D118)——MAJOR 不同必须同步升级 Host/Remote。
+
+### 与 Host 升级的差异
+
+| 维度 | Host (D-OPS-10) | Server (Docker) |
+|------|----------------|-----------------|
+| 分发 | Server WS 推送 tarball + SHA256 校验 | CI 推 ghcr 镜像 |
+| 执行 | systemctl stop/start | compose pull + up -d |
+| 验证 | GET /health → 200 | 冒烟门禁 + compose healthcheck |
+| 回滚 | 恢复旧二进制 | 切回 `sha-<commit>` tag |
+| 自动回滚 | Phase 2 (60s 健康检查失败) | 未实现，人工回滚 |
 ## 数据库迁移 (Server)
 
 sqlx migrate 管理 SQLite schema：

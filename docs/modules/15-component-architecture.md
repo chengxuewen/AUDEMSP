@@ -1,6 +1,6 @@
 # 15. Component Architecture — 组件架构
 
-> 状态：Phase 1 设计 | 关联决策：D126–D134 | **Phase 编号说明**: 本文档使用 consolidated-mvp/plan.md 的 Phase 编号。Component 框架 = Phase 3, Plugin = Phase 5。
+> 状态：Phase 1 设计 | 关联决策：D126–D134 | **Phase 编号说明**: 本文档使用 phase3-production/plan.md 的 Phase 编号。Component 框架 = Phase 3, Plugin = Phase 5。
 
 ## 三层逻辑抽象模型
 

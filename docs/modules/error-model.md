@@ -41,9 +41,23 @@ pub enum ComponentError {
 | 1xxx | 通用/Component | 1001 NotFound, 1002 InitFailed |
 | 2xxx | 传输层 | 2001 ConnectionRefused, 2002 Timeout |
 | 3xxx | 资源 | 3001 StreamNotFound, 3002 RoomFull |
-| 4xxx | 发现 | 4001 CameraNotFound, 4002 ONVIFAuthFailed |
+| 4xxx | 发现 | 4101 CameraNotFound, 4102 ONVIFAuthFailed, 4103 DiscoveryTimeout |
 | 5xxx | 认证授权 | 5001 TokenExpired, 5002 PermissionDenied |
 | 6xxx | 媒体 | 6001 CodecUnsupported, 6002 EncoderFailed |
+
+### SFU 媒体面错误 (40xx, 实时协议)
+
+> 创建依据：doc-audit L6（错误码三处语义冲突合并）。SFU 码段为**线上信令协议实际使用**（signaling.rs），发现层已平移至 41xx。
+
+| 码 | 含义 | 代码位置 |
+|----|------|---------|
+| 4000 | transport 连接失败 / Produce 需要 send transport | signaling.rs:675 |
+| 4001 | Room join 失败 | signaling.rs:308 |
+| 4002 | Room 已满 | signaling.rs:295 |
+| 4003 | 认证失败（PSK）——语义属认证层，[规划] 迁移至 5003 | signaling.rs:215/232 |
+| 4099 | SFU 内部错误——[规划] 由 5000 迁入 | signaling.rs:629/636/661/703/726 |
+
+> ⚠️ 5xxx 段注明：**5000 已被 SFU 内部错误占用**（signaling.rs 5 处），与 5xxx=认证授权语义冲突；迁移计划见上表（5000→4099、4003→5003），需信令协议版本兼容评估（浏览器按 type 字段路由，PIT-06，code 迁移风险低）。
 
 ## HTTP 状态映射
 
@@ -81,7 +95,7 @@ ConfigInvalid(_) → 400
 
 ### Discovery 超时
 - ONVIF/RTSP 设备发现超时 10s。
-- 错误码: 4003 DiscoveryTimeout
+- 错误码: 4103 DiscoveryTimeout
 
 ### Codec 不匹配
 - SDP 协商无共同 codec → 错误码 3005 CodecNegotiationFailed。

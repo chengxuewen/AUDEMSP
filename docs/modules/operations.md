@@ -110,12 +110,34 @@ MemoryMax=1G
 CPUQuota=200%
 TasksMax=512
 ```
-```ini
-[Service]
-MemoryMax=1G
-CPUQuota=200%
-TasksMax=512
+
+### Docker 资源限额 (compose)
+
+> 关联：D208 构建优化 | 创建依据：doc-audit M6
+
+生产 `docker-compose.yml` 为 server 服务声明资源限额（`docker-compose.yml:10-17`）：
+
+| 项 | limits | reservations |
+|----|--------|--------------|
+| CPU | 2 核 | 1 核 |
+| 内存 | 4G | 2G |
+
+**数值依据**（对齐本文件 §容量规划"小"档）：
+- **limits 2c/4G**：容器内同时运行 Rust server + mediasoup C++ Worker（RTP 转发、Router 管理），Caddy 反代是独立服务不占此配额。小规模（10 rooms/20 peers）规划为 2核/2GB，4G 上限为 mediasoup Worker 的突发转发（大房间 + 多 transport）留出余量。
+- **reservations 1c/2G**：信令基线约 0.5 core/200MB，1c/2G 保证 Worker 启动与常规转发不因调度挤占而饥饿。
+
+**dev 环境无限额（有意为之）**：`docker-compose.dev.yml` 不设 `deploy.resources`。dev 容器承担 `cargo build`（mediasoup-sys meson/ninja C++ 编译，PIT-11/33）等重负载，限额会 OOM 杀死构建进程；开发机资源由 Docker Desktop / 宿主调度兜底。
+
+**⚠️ 生效范围**：`deploy.resources` 仅在 Docker Swarm（`docker stack deploy`）下生效，普通 `docker compose up` 会忽略。当前单机部署若需强制限额，改为容器级字段：
+
+```yaml
+services:
+  server:
+    mem_limit: 4g
+    cpus: 2
 ```
+
+**调整方式**：按 §容量规划档位缩放——中规模（50 rooms/100 peers）建议 limits 4c/8G、reservations 2c/4G；大规模 8c/16G。改动后 `docker compose up -d` 重启，`docker compose config` 验证。
 
 ## 日志聚合
 
