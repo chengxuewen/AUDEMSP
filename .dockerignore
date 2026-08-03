@@ -24,3 +24,16 @@ docker-compose.yml
 *.tmp
 *.swp
 *~
+
+# Agent/dev tooling (D208: 防大目录进构建上下文)
+.pixi/
+.pixi-cache/
+.omo/
+.sisyphus/
+.codegraph/
+.opencode/
+
+# Secrets (D208: 防密钥类文件入镜像)
+.env*
+*.key
+config/*.local*

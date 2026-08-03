@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
 # Build dev image if not cached
-docker compose -f "$PROJECT_ROOT/docker-compose.dev.yml" build dev
+docker compose -f "$PROJECT_ROOT/docker-compose.dev.yml" build server
 
 # Run cargo inside container
-exec docker compose -f "$PROJECT_ROOT/docker-compose.dev.yml" run --rm dev cargo "$@"
+exec docker compose -f "$PROJECT_ROOT/docker-compose.dev.yml" run --rm server cargo "$@"

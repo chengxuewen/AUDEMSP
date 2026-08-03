@@ -1,6 +1,6 @@
 {
   "name": "OMSPBase SFU Dev",
-  "dockerComposeFile": "../docker-compose.yml",
+  "dockerComposeFile": "../docker-compose.dev.yml",
   "service": "server",
   "workspaceFolder": "/workspace",
 
@@ -12,7 +12,7 @@
         "vadimcn.vscode-lldb"
       ],
       "settings": {
-        "rust-analyzer.cargo.features": ["sfu-mediasoup"],
+        "rust-analyzer.cargo.features": ["sfu-mediasoup", "admin-dashboard"],
         "rust-analyzer.check.command": "clippy",
         "rust-analyzer.check.allTargets": true,
         "rust-analyzer.linkedProjects": [

@@ -82,13 +82,13 @@ fi
 
 # --- Step 3: Direct GitHub release download (with mirror) ---
 github_url="https://github.com/prefix-dev/pixi/releases/download/v${download_ver}/${fname}"
-mirror_url="https://mirror.ghproxy.com/${github_url}"
+mirror_url="https://gh-proxy.com/${github_url}"
 
 echo "Downloading pixi ${download_ver}..."
 if $CURL "$github_url" -o "${cached_tarball}" 2>/dev/null; then
     echo "Downloaded from GitHub"
 elif $CURL "$mirror_url" -o "${cached_tarball}" 2>/dev/null; then
-    echo "Downloaded from mirror (ghproxy.com)"
+    echo "Downloaded from mirror (gh-proxy.com)"
 else
     rm -f "${cached_tarball}"
     echo "ERROR: failed to download pixi ${download_ver}"

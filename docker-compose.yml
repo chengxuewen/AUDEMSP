@@ -22,7 +22,6 @@ services:
       retries: 3
     volumes:
       - ./config/server.docker.yaml:/opt/omspbase/etc/server.yaml:ro
-      - cargo-cache:/workspace/target
 
   proxy:
     image: caddy:2
@@ -34,6 +33,3 @@ services:
     depends_on:
       - server
     restart: unless-stopped
-
-volumes:
-  cargo-cache:

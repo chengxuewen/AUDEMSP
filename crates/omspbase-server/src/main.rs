@@ -72,7 +72,7 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         if args.len() > 2 && args[1] == "--config" {
             args[2].clone()
         } else {
-            "/opt/omspbase/etc/server.yaml"
+            "/opt/omspbase/etc/server.yaml".to_string()
             // ponytail: path matches docker-compose volume mount
         }
     };
