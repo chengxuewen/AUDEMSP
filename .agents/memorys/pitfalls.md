@@ -637,3 +637,19 @@ close() { this.closed = true; ... }
 **验证**: server 重启 + Host 重启竞态不再触发 Host 退出。
 
 **调试教训**: server 重启后旧连接清理事件可能污染新连接——重启服务后重启客户端要间隔几秒（等清理完成），或客户端做 peer_id 校验。
+
+## PIT-62: VideoFrameGenerator 架构与 libwebrtc 管线不兼容 — 多色矩形帧交付 (2026-08-04)
+
+**症状**: 用户要求"视频帧生成器的动态多色矩形帧"（非调试期棋盘格）。接入 audemsp-media VideoFrameGenerator 后 E2E 渲染失败（videoWidth=0）。实验矩阵:
+- 手写图案（棋盘格/4色块）+ tokio 循环 → **通过** (关键帧 ~1s)
+- 手写 4 色块 + VideoFrameGenerator 架构 (线程→mpsc→tokio) → **失败**
+- SquaresPattern 直接绘制 (tokio 循环) → **失败** (关键帧 ~40s, 90s E2E 无渲染)
+- 手写 4 色块 + 彩色 U/V + tokio 循环 → **通过** (关键帧 ~11s)
+
+**根因**: 未完全定位。write_raw_i420 调用正常 (30fps/ts 递增/内容合法) 但编码器输出稀疏 (仅偶发关键帧)——VideoFrameGenerator 的 mpsc 架构与 SquaresPattern 图案两种场景都触发。候选: ① generator 实际帧率 ≠ ts 步进 (AdaptFrame 帧率估计丢帧); ② libwebrtc 静态内容检测 (SquaresPattern 背景不变); ③ mpsc burst 抖动。需 libwebrtc verbose 日志 (webrtc-sys 未暴露全局日志 API) 或最小复现深入。
+
+**解法（当前交付）**: 手写动态多色矩形 (4 色块循环, 彩色 U/V) + tokio 循环 — E2E 通过 (640x480)。SquaresPattern/VideoFrameGenerator 集成标记为待办 (生产优化: PLI/关键帧请求路径也需验证)。
+
+**验证**: E2E videoWidth=640x480 + 截图 4 色对角循环网格。
+
+**调试教训**: ① tcpdump 在容器内抓"宿主→容器"流量不可靠 (docker-proxy NAT 路径) — 以 server 侧 ReceiveRtpPacket 日志和 E2E 结果为准。② 帧质量/编码问题用"关键帧间隔"判断 (ReceiveRtpPacket 只打关键帧) 而非总包数。③ 变量分离: 图案/架构/线程逐一二分, 不要同时改多个变量。

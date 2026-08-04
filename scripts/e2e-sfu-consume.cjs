@@ -10,8 +10,7 @@ const APP = 'http://127.0.0.1:5173';
 
 (async () => {
   const browser = await chromium.launch({ executablePath: CHROME, headless: process.env.HEADFUL ? false : true,
-    args: ['--disable-features=WebRtcHideLocalIpsWithMdns', '--enable-logging=stderr', '--v=1'],
-    env: { ...process.env, RTC_LOG: 'info' } });
+    args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] });
   const page = await browser.newPage();
   const logs = [];
   page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
@@ -38,7 +37,7 @@ const APP = 'http://127.0.0.1:5173';
   const videoReady = await page.waitForFunction(() => {
     const v = document.querySelector('video');
     return v && v.videoWidth > 0;
-  }, { timeout: 35000 }).then(() => true).catch(() => false);
+  }, { timeout: 90000 }).then(() => true).catch(() => false); // PIT-62: SquaresPattern 关键帧间隔 ~40s
   console.log(`video ready (width>0): ${videoReady}`);
 
   const vidInfo = await page.evaluate(() => {

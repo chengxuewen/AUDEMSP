@@ -361,36 +361,38 @@ let app = axum::Router::new()
             Err(_) => return Err(anyhow::anyhow!("SFU Produce send timeout after 10s")),
         }
 
-        // B5: Spawn I420 frame sender using write_raw_i420 (no audemsp-codec needed)
+        // B5: 动态多色矩形帧 (PIT-60 用户要求) → write_raw_i420
+        // PIT-62: audemsp-media 的 VideoFrameGenerator (线程/mpsc 架构) 与 libwebrtc 管线
+        // 不兼容 (write_raw_i420 30fps 正常但编码器几乎无输出 — 待查);
+        // SquaresPattern 直接绘制 (tokio 循环) 关键帧间隔 ~40s 浏览器 90s 内无渲染 — 待查。
+        // 当前交付: 手写动态多色矩形 (4 色块循环) — E2E 验证通过。
         let video_track_send = video_track.clone();
         tokio::spawn(async move {
             let width: u32 = 640;
             let height: u32 = 480;
             let y_size = (width * height) as usize;
             let uv_size = (width * height / 4) as usize;
-            let frame_size = y_size + 2 * uv_size;
-            let mut frame = vec![0u8; frame_size];
-            // U/V planes: neutral gray (128)
-            frame[y_size..y_size + uv_size].fill(128);
-            frame[y_size + uv_size..].fill(128);
+            let mut frame = vec![0u8; y_size + 2 * uv_size];
+            frame[y_size..y_size + uv_size].fill(100); // 彩色 (非灰色)
+            frame[y_size + uv_size..].fill(160);
             let mut seq = 0u64;
             loop {
-                tokio::time::sleep(Duration::from_millis(33)).await; // ~30fps
+                tokio::time::sleep(Duration::from_millis(33)).await;
                 let y_plane = &mut frame[..y_size];
-                let offset = (seq % 200) as u8;
                 for y in 0..height {
                     for x in 0..width {
                         let idx = (y * width + x) as usize;
-                        let color = if ((x / 40 + y / 40 + offset as u32 / 20) & 1) == 0 { 40 } else { 200 };
+                        let sx = x / 80;
+                        let sy = y / 60;
+                        let color = match ((sx + sy + (seq as u32 / 60) as u32) % 4) as u8 {
+                            0 => 40, 1 => 120, 2 => 200, _ => 80,
+                        };
                         y_plane[idx] = color;
                     }
                 }
-                match video_track_send.write_raw_i420(&frame, width, height).await {
-                    Ok(()) => {}
-                    Err(e) => {
-                        tracing::warn!("SFU write_raw_i420 error: {}", e);
-                        break;
-                    }
+                if let Err(e) = video_track_send.write_raw_i420(&frame, width, height).await {
+                    tracing::warn!("SFU write_raw_i420 error: {}", e);
+                    break;
                 }
                 seq += 1;
                 if seq % 90 == 0 {
@@ -398,7 +400,7 @@ let app = axum::Router::new()
                 }
             }
         });
-        tracing::info!("SFU produce transport {} ready — I420 frame loop started", transport_id);
+        tracing::info!("SFU produce transport {} ready — multi-color rects started", transport_id);
     } else {
 
     // P2P transport path — gated behind webrtc-p2p feature

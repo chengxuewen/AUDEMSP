@@ -553,8 +553,9 @@ use webrtc_sys::video_frame::ffi as vf;
         // Build VideoFrame and push to source
         let mut builder = vf::new_video_frame_builder();
         // PIT-57: 单调递增时间戳 (30fps) — 固定 0 → 编码器输出极小帧
+        // (wall-clock ts 实验已回滚 — squares 内容 + wall-clock 停摆, 与 ts 无关见 PIT-61)
         let ts_us = next_video_timestamp(&self.next_timestamp_us);
-        builder.pin_mut().set_timestamp_us(ts_us as i64); // PIT-57: libwebrtc 时间戳单位 us (i64)
+        builder.pin_mut().set_timestamp_us(ts_us as i64);
         builder.pin_mut().set_video_frame_buffer(
             // SAFETY: i420 → yuv8 → yuv → vfb upcast chain
             unsafe { &*vfb::yuv_to_vfb(
