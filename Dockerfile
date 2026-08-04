@@ -8,6 +8,8 @@ RUN sed -i 's|archive.ubuntu.com|mirrors.tuna.tsinghua.edu.cn|g; s|security.ubun
     && apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates build-essential pkg-config cmake ninja-build git \
     libssl-dev libuv1-dev \
+    libglib2.0-dev libclang-dev \
+    libglib2.0-dev \
     python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 

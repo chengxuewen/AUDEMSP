@@ -328,6 +328,7 @@ let app = axum::Router::new()
 
         let answer = pc.create_answer(&RTCAnswerOptions::default()).await
             .map_err(|e| anyhow::anyhow!("create answer: {}", e))?;
+        tracing::debug!("SFU local answer SDP:\n{}", answer.sdp);
         pc.set_local_description(&answer).await
             .map_err(|e| anyhow::anyhow!("set local: {}", e))?;
 
@@ -615,6 +616,8 @@ encoder:
   backend: "auto"
   bitrate_kbps: 2000
   keyframe_interval: 60
+room:
+  id: "default-room"
 psk: "audemsp-dev"
 "#.to_string()
 }

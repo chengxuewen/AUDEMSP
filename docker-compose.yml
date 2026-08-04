@@ -3,6 +3,7 @@ services:
   server:
     image: ghcr.io/org/audemsp-server:latest
     ports:
+      - "9800:9800"
       - "20000:20000/udp"
       - "40000-40100:40000-40100/udp"
     environment:

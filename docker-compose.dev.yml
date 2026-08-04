@@ -9,6 +9,7 @@ services:
         HTTPS_PROXY: ${https_proxy:-}
         NO_PROXY: ${no_proxy:-}
     ports:
+      - "9800:9800"
       - "20000:20000/udp"
       - "40000-40100:40000-40100/udp"
     environment:

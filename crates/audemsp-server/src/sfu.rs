@@ -21,6 +21,18 @@ mod imp {
     use std::sync::Arc;
     use std::num::{NonZeroU32, NonZeroU8};
 
+    /// Detect the container's primary IP (zero-dependency UDP connect trick;
+    /// connect() on UDP only sets the default route target, no packet is sent).
+    fn detect_local_ip() -> String {
+        if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+            if socket.connect("8.8.8.8:80").is_ok() {
+                if let Ok(addr) = socket.local_addr() {
+                    return addr.ip().to_string();
+                }
+            }
+        }
+        "0.0.0.0".to_string()
+    }
     /// Create RouterOptions with sensible default codecs (Opus + VP8 + H264).
     fn default_router_options() -> RouterOptions {
         RouterOptions::new(vec![
@@ -153,12 +165,16 @@ mod imp {
             tracing::info!("mediasoup Worker created (id: {:?})", worker.id());
 
             // Create WebRtcServer with single port (port 20000)
+            // PIT-43: listen 0.0.0.0 必须设 announced_address（mediasoup 官方要求），
+            // 否则 candidate=0.0.0.0 对端无法 ICE；容器内探测本机 IP。
+            // 生产环境应改为配置化的公网/内网 IP。
+            let announced_ip = detect_local_ip();
             let webrtc_server = worker
                 .create_webrtc_server(WebRtcServerOptions::new(WebRtcServerListenInfos::new(
                     ListenInfo {
                         protocol: Protocol::Udp,
                         ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                        announced_address: None,
+                        announced_address: Some(announced_ip),
                         expose_internal_ip: false,
                         port: Some(20000),  // Fixed ICE port
                         port_range: None,

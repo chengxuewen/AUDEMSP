@@ -621,8 +621,19 @@ impl webrtc_sys::peer_connection_factory::PeerConnectionObserver for RealObserve
             cb(mapped);
         }
     }
-    fn on_ice_gathering_change(&self, _: webrtc_sys::peer_connection::ffi::IceGatheringState) {}
-    fn on_ice_candidate(&self, _: cxx::SharedPtr<webrtc_sys::jsep::ffi::IceCandidate>) {}
+    fn on_ice_gathering_change(&self, state: webrtc_sys::peer_connection::ffi::IceGatheringState) {
+        let s = match state {
+            webrtc_sys::peer_connection::ffi::IceGatheringState::IceGatheringNew => "new",
+            webrtc_sys::peer_connection::ffi::IceGatheringState::IceGatheringGathering => "gathering",
+            webrtc_sys::peer_connection::ffi::IceGatheringState::IceGatheringComplete => "complete",
+            _ => "unknown",
+        };
+        tracing::debug!("ICE gathering state: {}", s);
+    }
+    fn on_ice_candidate(&self, candidate: cxx::SharedPtr<webrtc_sys::jsep::ffi::IceCandidate>) {
+        // PIT-44: 空桩曾导致本地候选被丢弃 — 至少记录，P2P 路径需完整转发
+        tracing::debug!("ICE local candidate received (mid={})", candidate.sdp_mid());
+    }
     fn on_ice_candidate_error(&self, _: String, _: i32, _: String, _: i32, _: String) {}
     fn on_ice_candidates_removed(&self, _: Vec<cxx::SharedPtr<webrtc_sys::candidate::ffi::Candidate>>) {}
     fn on_ice_connection_receiving_change(&self, _: bool) {}

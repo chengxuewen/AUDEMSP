@@ -444,3 +444,43 @@ compose build args 从宿主环境读：`HTTP_PROXY: ${http_proxy:-}`。pip 另�
 **解法**: 每次 edit 调用后**立即跑对应格式验证**：YAML → `docker compose config --quiet`；shell → `bash -n`；Rust → `cargo check`。发现破坏 → 重读文件恢复。本案例通过 config 验证发现并修复（proxy 服务完整恢复）。
 
 **验证**: `docker compose -f docker-compose.yml config --quiet` EXIT 0 + `--services` 输出 server/proxy。
+
+## PIT-45: webrtc-sys (livekit) Linux gathering 失效 — 测试套件从未验证真实连接 (2026-08-04)
+
+**症状**: Host（backend-webrtc-sys）连接 mediasoup SFU 时 ICE/DTLS 30s 超时；tcpdump 显示 0 STUN 包；answer SDP 无 a=candidate 行；on_ice_gathering_change/on_ice_candidate/on_ice_connection_state_change 回调**零触发**（连 Gathering/Complete 都没有）。容器（bridge/host 网络）与**本机原生桌面**（真实网卡 192.168.2.127）一致失败。
+
+**根因**: webrtc-sys 0.3.39/0.3.41（livekit/rust-sdks 的 libwebrtc 预编译包）在 Linux 上 **gathering 永不启动**（libwebrtc 从未调用 OnIceGatheringChange——C++ 转发与 observer 注册均正常，排除应用层）。上游测试套件**从未验证过真实 ICE 连接**：loopback/media_frame_e2e 测试只交换 SDP 不等待 connected、不断言对端收帧（CountingSink 无断言）——"测试全过"≠"ICE 可用"。LiveKit 服务器端用 Go pion（go.mod 实证），webrtc-sys 仅用于客户端 SDK（Linux 目标=桌面），容器/无头场景无任何成功先例；官方 C++ 客户端（libmediasoupclient）Linux CI 亦被禁用。
+
+**解法**: ① 应用层无法修复（库层运行时问题），向 livekit/rust-sdks 报 issue（附证据链）；② 容器/无头环境验证改用 `backend-webrtc-rs`（纯 Rust ICE，pion 同类路线）；③ 车端 Ubuntu 桌面可再试 webrtc-sys 更新版或真实设备验证。
+
+**验证**: 升级 webrtc-sys 0.3.41 后重跑仍超时（2026-08-04 实测）——版本升级无效。
+
+## PIT-46: mediasoup WebRtcServer listen 0.0.0.0 必须设 announced_address (2026-08-04)
+
+**症状**: SFU transport 候选公告 0.0.0.0:20000，对端 ICE 0 包（tcpdump）——Linux 内核把发往 0.0.0.0 的 UDP 路由到 **loopback**（`ip route get 0.0.0.0` → `local ... dev lo` 实证），STUN 永远到不了 mediasoup。
+
+**根因**: WebRtcServerOptions ListenInfo `ip: 0.0.0.0` + `announced_address: None` 违反 mediasoup 官方要求（"0.0.0.0 必须配 announcedAddress"）；`expose_internal_ip: true` 仅在 announced_address 非空时生效（worker 源码 WebRtcTransport.cpp else 分支）。mediasoup 维护者明确不校验 0.0.0.0（issue #717），仅文档约束。
+
+**解法**: 容器场景启动时探测本机 IP（零依赖 UDP connect 技巧）作 announced_address；生产按 mediasoup F.A.Q. 配方 `0.0.0.0` + `announcedAddress: 公网/可达 IP`。
+```rust
+fn detect_local_ip() -> String {
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("8.8.8.8:80").is_ok() {
+            if let Ok(addr) = socket.local_addr() { return addr.ip().to_string(); }
+        }
+    }
+    "0.0.0.0".to_string()
+}
+```
+
+**验证**: 修复后 transport 候选为 172.18.0.2:20000（remote SDP 打印确认）。
+
+## PIT-47: webrtc-sys on_ice_candidate 回调空桩 (2026-08-04)
+
+**症状**: webrtc_sys.rs:625 `fn on_ice_candidate(&self, _) {}`——本地候选被静默丢弃，P2P relay 路径无法 trickle，且掩盖本地收集状态（无法区分"无候选"与"回调丢失"）。
+
+**根因**: 封装层空实现（livekit 客户端走完整回调转发，audemsp-webrtc 未实现）。
+
+**解法**: 至少记录日志（已实现 tracing::debug + gathering 状态日志）；P2P 路径需完整转发到 ObserverCallbacks。
+
+**验证**: RUST_LOG=debug 可观察 ICE gathering/candidate 事件。
