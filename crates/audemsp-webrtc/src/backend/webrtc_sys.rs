@@ -9,7 +9,10 @@
 //! - WebrtcSysTrack: real video track via VideoTrackSource (webrtc-sys)
 //! - WebrtcSysFactory: wraps webrtc_sys::peer_connection_factory::ffi::PeerConnectionFactory
 
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+};
 use cxx::SharedPtr;
 
 use super::DcBackend;
@@ -459,11 +462,13 @@ impl DcBackend for WebrtcSysDc {
 /// libwebrtc handles encoding internally (VP8/H.264).
 pub(crate) struct WebrtcSysTrack {
     video_source: Mutex<Option<SharedPtr<webrtc_sys::video_track::ffi::VideoTrackSource>>>,
+    // PIT-57: VideoFrame 时间戳必须单调递增 (30fps → 33333us) — 固定 0 导致 libwebrtc 编码输出极小帧
+    next_timestamp_us: AtomicU64,
 }
 
 impl Default for WebrtcSysTrack {
     fn default() -> Self {
-        Self { video_source: Mutex::new(None) }
+        Self { video_source: Mutex::new(None), next_timestamp_us: AtomicU64::new(0) }
     }
 }
 
@@ -478,7 +483,7 @@ impl std::fmt::Debug for WebrtcSysTrack {
 impl Clone for WebrtcSysTrack {
     fn clone(&self) -> Self {
         let source = self.video_source.lock().unwrap().clone();
-        Self { video_source: Mutex::new(source) }
+        Self { video_source: Mutex::new(source), next_timestamp_us: AtomicU64::new(0) }
     }
 }
 
@@ -486,7 +491,7 @@ impl WebrtcSysTrack {
     pub(crate) fn with_video_source(
         source: SharedPtr<webrtc_sys::video_track::ffi::VideoTrackSource>,
     ) -> Self {
-        Self { video_source: Mutex::new(Some(source)) }
+        Self { video_source: Mutex::new(Some(source)), next_timestamp_us: AtomicU64::new(0) }
     }
 }
 
@@ -508,7 +513,7 @@ impl TrackWriteBackend for WebrtcSysTrack {
     async fn write_raw_i420(
         &self, data: &[u8], width: u32, height: u32,
     ) -> Result<(), RTCError> {
-        use webrtc_sys::video_frame::ffi as vf;
+use webrtc_sys::video_frame::ffi as vf;
         use webrtc_sys::video_frame_buffer::ffi as vfb;
         use webrtc_sys::video_track::ffi as vt;
 
@@ -547,7 +552,9 @@ impl TrackWriteBackend for WebrtcSysTrack {
 
         // Build VideoFrame and push to source
         let mut builder = vf::new_video_frame_builder();
-        builder.pin_mut().set_timestamp_us(0);
+        // PIT-57: 单调递增时间戳 (30fps) — 固定 0 → 编码器输出极小帧
+        let ts_us = self.next_timestamp_us.fetch_add(33_333, Ordering::Relaxed);
+        builder.pin_mut().set_timestamp_us(ts_us as i64); // PIT-57: libwebrtc 时间戳单位 us (i64)
         builder.pin_mut().set_video_frame_buffer(
             // SAFETY: i420 → yuv8 → yuv → vfb upcast chain
             unsafe { &*vfb::yuv_to_vfb(

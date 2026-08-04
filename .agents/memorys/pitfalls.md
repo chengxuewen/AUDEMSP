@@ -585,3 +585,31 @@ close() { this.closed = true; ... }
 **验证**: server 日志 `Producer <id> (Video) created` + `SFU: broadcast NewProducer`；Host `SFU produce transport ready — I420 frame loop started`。
 
 **调试教训**: ① 日志矛盾（response sent 出现在 produce() 之后）指向 Err 分支无日志——gdb 断点（signaling.rs:691/704/716）一锤定音。② 容器 gdb 需要 `cap_add: [SYS_PTRACE]`（已加入 docker-compose.dev.yml）；apt 包每次容器重建丢失 → gdb 已入 dev Dockerfile。③ **设计缺陷**：Host 手工构造 rtp_parameters 是双硬编码（SDP + produce JSON 各自写死 PT/SSRC），且两处已不一致——SDP fmtp 是 `profile-level-id=42e01f`（Baseline, main.rs:293），produce JSON 是 `4d0032`（Main, main.rs:380），靠 mediasoup answer 用 Router codec (4d0032) 应答才偶然对齐；正确形态是 audemsp-webrtc 补 `get_rtp_parameters(track_id)` API 从协商结果提取——记入待办。
+
+## PIT-56: 浏览器 consume 链路 6 个问题 — rtp_capabilities/候选/DTLS/方向 (2026-08-04)
+
+**症状**: Host produce 成功后浏览器 consume 成功（Consumer created）但 videoWidth=0、ontrack 不触发（仅 audio 空轨）。逐层定位出 6 个独立 bug。
+
+**根因（按发现顺序）**:
+1. **rtp_capabilities 格式**：`RtpCodecCapability` 是 `#[serde(tag="kind", rename_all="lowercase")]`——kind 字段必需（"video"）；且 match_codecs strict 匹配要求 clockRate/parameters（4d0032, pm=1）与 Router 一致。
+2. **ice_candidates 被 handleMessage 丢弃**：transportResolver 只传 transport_id/ice_parameters/dtls_parameters——offer 无候选 → 浏览器 ICE 永不发起（mediasoup ICE-Lite 需候选在 offer 的 m= 段内，PIT-46 同教训）。
+3. **server IceCandidate 是字段格式**（ip/port/protocol/foundation/priority/candidateType camelCase）非 SDP 字符串——需转 `a=candidate:...` 行。
+4. **offer `a=setup:active` → DTLS 死锁**：浏览器 answer 为 passive，mediasoup 是 DTLS server 等待——双方不发起 ClientHello。offer 应 `a=setup:passive`（浏览器 active 发起）。
+5. **connect 消息 fingerprints 传错**：传了 sfuResult 的（mediasoup 指纹）→ DTLS fingerprint mismatch（WARN `does not match the announced one`）→ 无 SRTP → Consumer 不转发。必须从本地 answer SDP 提取浏览器证书指纹（Host 侧用 pc.local_dtls_fingerprint() 同理）。
+6. **offer `a=recvonly` + 浏览器 transceiver recvonly → 协商 inactive**：消费方向 offer 应 `a=sendonly`（描述 mediasoup 发送方）→ 浏览器 answer recvonly → video 轨建立。
+
+**解法**: sfu-client.ts 逐项修复（videoRtpCapabilities() helper / candidates 传递+转换 / setup:passive / 本地指纹 / sendonly）。调试工具：容器 tcpdump（注意宿主 NAT 使浏览器源 IP 变 172.18.0.1，过滤时按端口区分）+ mediasoup worker 日志链（OnDtlsTransportConnected/GetNegotiatedSrtpCryptoSuite 缺失 = 上层问题）。
+
+**验证**: E2E `videoWidth=640, videoHeight=480` + 截图棋盘格渲染 + `ONTRACK fired, track=video`。
+
+## PIT-57: VideoFrame 时间戳固定 0 — libwebrtc 编码输出极小帧 (2026-08-04)
+
+**症状**: Host produce 后 RTP 持续发出但每包仅 37 字节（25 字节载荷）——mediasoup 判定为 key frame（0.8s 一个）但内容极小，浏览器解码无图像。抓包发现帧大小分布全部 ≤37 字节。
+
+**根因**: webrtc_sys.rs `write_raw_i420` 的 `builder.set_timestamp_us(0)` 固定 0——libwebrtc 编码管线按时间戳调度（帧率/时序），全 0 → 编码器输出异常极小帧（空帧）。Host 帧循环正常（5.7 万帧无错误）但编码结果无效。
+
+**解法**: WebrtcSysTrack 加 `next_timestamp_us: AtomicU64`，每帧 `fetch_add(33_333)`（30fps 微秒）后 set_timestamp_us。修复后帧大小 968-1008 字节（正常 H264 帧）。
+
+**验证**: tcpdump 帧大小分布（>500 字节帧出现）+ 浏览器渲染成功。
+
+**调试教训**: RTP 载荷是 SRTP 密文无法直接分析——用"帧大小分布"判断编码质量（37 字节 = 异常，1000 字节 = 正常）。时间戳/时序类问题在 WebRTC 发送管线中影响编码器输出，日志无错误时抓包看帧大小是高效诊断。

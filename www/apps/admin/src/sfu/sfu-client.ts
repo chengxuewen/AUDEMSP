@@ -2,6 +2,26 @@
 // Flow: CreateWebRtcTransport(recv) → WebRtcTransportCreated → buildRemoteSdp → setRemoteDescription → createAnswer → ConnectWebRtcTransport
 // After consume, ontrack delivers remote stream.
 
+// PIT-55: mediasoup consume 匹配要求完整 codec 字段 (clockRate/parameters/preferredPayloadType)，
+// 缺任一 → match_codecs strict 匹配失败 → "No compatible media codecs"
+// 参数与 Router/Producer 一致 (4d0032 Main, packetization-mode=1)
+function videoRtpCapabilities() {
+  return {
+    codecs: [{
+      kind: 'video', // serde(tag="kind") 必需 (PIT-55)
+      mimeType: 'video/H264',
+      clockRate: 90000,
+      preferredPayloadType: 101,
+      parameters: {
+        'level-asymmetry-allowed': 1,
+        'packetization-mode': 1,
+        'profile-level-id': '4d0032',
+      },
+      rtcpFeedback: [],
+    }],
+    headerExtensions: [],
+  };
+}
 interface IceParams {
   username_fragment: string;
   password: string;
@@ -12,10 +32,21 @@ interface DtlsParams {
   role: string;
 }
 
+// PIT-56: server 的 IceCandidate 是字段格式 (ip/port/protocol/foundation/priority/candidate_type)，非 SDP 字符串
+interface IceCandidate {
+  ip: string;
+  port: number;
+  protocol: string;
+  foundation: string;
+  priority: number;
+  candidate_type?: string;
+}
+
 interface TransportCreated {
   transport_id: string;
   ice_parameters: IceParams;
   dtls_parameters: DtlsParams;
+  ice_candidates?: IceCandidate[];
 }
 
 type StreamCallback = (stream: MediaStream) => void;
@@ -124,13 +155,15 @@ export class SfuConsumerClient {
     this.pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
-    this.pc.ontrack = (event) => { this.onTrack(event.streams[0]); this.onStatus('playing'); this.startMetrics(); };
+    this.pc.ontrack = (event) => { console.log('SfuClient: ONTRACK fired, streams=', event.streams.length, 'track=', event.track?.kind); this.onTrack(event.streams[0]); this.onStatus('playing'); this.startMetrics(); };
     this.pc.oniceconnectionstatechange = () => {
+      console.log('SfuClient: iceConnectionState =', this.pc?.iceConnectionState); // PIT-56 观测
       if (this.pc?.iceConnectionState === 'disconnected' || this.pc?.iceConnectionState === 'failed') {
         this.onStatus('disconnected'); this.stopMetrics();
       }
     };
     this.pc.onicecandidate = (event) => {
+      console.log('SfuClient: local candidate', event.candidate?.candidate); // PIT-56 观测
       if (event.candidate) this.ws?.send(JSON.stringify({ type: 'rtc_ice_candidate', room_id: this.roomId, target: null, candidate: event.candidate.candidate, sdp_mid: event.candidate.sdpMid, sdp_mline_index: event.candidate.sdpMLineIndex }));
     };
     this.pc.addTransceiver('video', { direction: 'recvonly' });
@@ -150,15 +183,20 @@ export class SfuConsumerClient {
       this.transportId = sfuResult.transport_id;
       // pending producer will be processed after connect_web_rtc_transport succeeds
       console.log('SfuClient: setting remote description...');
-      const offerSdp = this.buildRemoteSdp(sfuResult.ice_parameters, sfuResult.dtls_parameters);
+      const offerSdp = this.buildRemoteSdp(sfuResult.ice_parameters, sfuResult.dtls_parameters, sfuResult.ice_candidates ?? []);
       try {
+        console.log('SfuClient: offer SDP:\n' + offerSdp); // PIT-56 观测
         await this.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
         console.log('SfuClient: remote description set OK');
         const answer = await this.pc.createAnswer();
         console.log('SfuClient: answer created');
+        console.log('SfuClient: answer SDP:\n' + answer.sdp); // PIT-56 观测
         await this.pc.setLocalDescription(answer);
         console.log('SfuClient: local description set, sending connect_web_rtc_transport');
-        this.ws.send(JSON.stringify({ type: 'connect_web_rtc_transport', room_id: this.roomId, peer_id: this.roomId + '-consumer', transport_id: sfuResult.transport_id, dtls_parameters: { fingerprints: sfuResult.dtls_parameters.fingerprints, role: "client" }, sdp: answer.sdp }));
+        // PIT-56: connect 的 fingerprints 必须是浏览器本地证书指纹 (从 answer SDP 提取),
+        // 传 sfuResult 的 (mediasoup 指纹) → DTLS fingerprint mismatch → 无 SRTP → Consumer 不转发
+        const localFp = (answer.sdp ?? '').match(/a=fingerprint:(\S+) (\S+)/);
+        this.ws.send(JSON.stringify({ type: 'connect_web_rtc_transport', room_id: this.roomId, peer_id: this.roomId + '-consumer', transport_id: sfuResult.transport_id, dtls_parameters: { fingerprints: localFp ? [{ algorithm: localFp[1], value: localFp[2] }] : sfuResult.dtls_parameters.fingerprints, role: "client" }, sdp: answer.sdp }));
       } catch (e) {
         console.error('SfuClient: SDP negotiation failed:', e);
       }
@@ -177,23 +215,19 @@ export class SfuConsumerClient {
       console.log('SfuClient: received message type:', msg.type);
 
       if (msg.type === 'web_rtc_transport_created' && this.transportResolver) {
+        console.log('SfuClient: transport msg keys:', Object.keys(msg).join(','), 'cands=', JSON.stringify(msg.ice_candidates)); // PIT-56 观测
         console.log('SfuClient: transport created, id:', msg.transport_id);
         this.transportResolver({
           transport_id: msg.transport_id,
           ice_parameters: msg.ice_parameters,
           dtls_parameters: msg.dtls_parameters,
+          ice_candidates: msg.ice_candidates ?? [], // PIT-56: 必须传给 buildRemoteSdp
         });
         this.transportResolver = null;
       } else if (msg.type === 'new_producer') {
         if (this.transportId) {
           console.log('SfuClient: consuming producer', msg.producer_id);
-          const rtpCaps = {
-            codecs: [{
-              kind: 'video',
-              mimeType: 'video/H264',
-            }],
-            headerExtensions: [],
-          };
+          const rtpCaps = videoRtpCapabilities();
           this.ws?.send(JSON.stringify({
             type: 'consume', room_id: this.roomId, transport_id: this.transportId,
             producer_id: msg.producer_id, kind: msg.kind, rtp_capabilities: rtpCaps,
@@ -208,15 +242,8 @@ export class SfuConsumerClient {
         console.log('SfuClient: transport_connected (code: 0)');
         if (this.pendingProducer && this.transportId) {
           console.log('SfuClient: consuming pending producer', this.pendingProducer.producer_id);
-          // Construct minimal valid RtpCapabilities (browser's caps lack "kind" field)
-          const rtpCaps = {
-            codecs: [{
-              kind: 'video',
-              mimeType: 'video/H264',
-              clockRate: 90000,
-            }],
-            headerExtensions: [],
-          };
+          // PIT-55: rtp_capabilities 需完整 codec 字段, 见 videoRtpCapabilities()
+          const rtpCaps = videoRtpCapabilities();
           this.ws?.send(JSON.stringify({
             type: 'consume', room_id: this.roomId, transport_id: this.transportId,
             producer_id: this.pendingProducer.producer_id, kind: this.pendingProducer.kind, rtp_capabilities: rtpCaps,
@@ -256,8 +283,14 @@ export class SfuConsumerClient {
 
   // Build a server-side SDP offer from mediasoup ICE/DTLS parameters.
   // The browser answers this offer to establish the server-offer transport.
-  private buildRemoteSdp(ice: IceParams, dtls: DtlsParams): string {
+  private buildRemoteSdp(ice: IceParams, dtls: DtlsParams, candidates: IceCandidate[]): string {
     const fp = dtls.fingerprints[0];
+    // PIT-56: mediasoup ICE-Lite 候选必须嵌入 offer 的 m= 段（无候选 → 浏览器 ICE 无对端地址，永不发起）
+    // 转为 SDP candidate 行 (candidate 必须在 m= 段内 — PIT-46 同教训)
+    const toCandidateLine = (c: IceCandidate) =>
+      `a=candidate:${c.foundation} 1 ${c.protocol.toUpperCase()} ${c.priority} ${c.ip} ${c.port} typ ${c.candidate_type ?? 'host'}`;
+    const videoCandidates = candidates.map(toCandidateLine).join('\r\n');
+    const audioCandidates = '';
     return [
       'v=0',
       'o=- 0 0 IN IP4 0.0.0.0',
@@ -268,15 +301,17 @@ export class SfuConsumerClient {
       `a=ice-ufrag:${ice.username_fragment}`,
       `a=ice-pwd:${ice.password}`,
       `a=fingerprint:${fp.algorithm.toLowerCase()} ${fp.value}`,
-      'a=setup:active',
+      'a=setup:passive', // PIT-56: offer setup 决定 answerer 角色 — passive → 浏览器 active (ClientHello 发起方)；mediasoup 是 DTLS server 等 ClientHello (Host 侧 actpass 同理)
       // Video: H264
-      'm=video 7 UDP/TLS/RTP/SAVPF 100',
+      'm=video 7 UDP/TLS/RTP/SAVPF 101',
       'c=IN IP4 127.0.0.1',
       'a=rtcp-mux',
       'a=mid:video',
-      'a=recvonly',
-      'a=rtpmap:100 H264/90000',
-      'a=fmtp:100 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f',
+      'a=sendonly', // PIT-56: offer 描述 mediasoup (发送方) — recvonly+浏览器recvonly → 协商 inactive → 无媒体轨
+      'a=rtpmap:101 H264/90000',
+      'a=fmtp:101 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f',
+      ...(videoCandidates ? [videoCandidates] : []),
+      'a=end-of-candidates',
       // Audio: Opus
       'm=audio 7 UDP/TLS/RTP/SAVPF 111',
       'c=IN IP4 127.0.0.1',
@@ -284,6 +319,8 @@ export class SfuConsumerClient {
       'a=mid:audio',
       'a=rtpmap:111 opus/48000/2',
       'a=fmtp:111 minptime=10;useinbandfec=1',
+      ...(audioCandidates ? [audioCandidates] : []),
+      'a=end-of-candidates',
       '',
     ].join('\r\n');
   }

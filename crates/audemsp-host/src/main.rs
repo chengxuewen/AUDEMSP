@@ -41,7 +41,6 @@ async fn main() -> anyhow::Result<()> {
         .json()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("info".parse().expect("hardcoded directive")),
         )
         .init();
 
@@ -288,7 +287,7 @@ let app = axum::Router::new()
                 format!("c=IN IP4 {}", conn_ip),
                 "a=rtcp-mux".to_string(),
                 "a=mid:video".to_string(),
-                "a=sendonly".to_string(),
+                "a=recvonly".to_string(), // PIT-56: mediasoup 是接收方 (Host send transport) — sendonly 会让 libwebrtc answer recvonly → 不建发送管线
                 format!("a=rtpmap:{} H264/90000", H264_PT),
                 format!("a=fmtp:{} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f", H264_PT),
             ]);
@@ -365,12 +364,23 @@ let app = axum::Router::new()
 
         // Step 4: Produce video (B6: 10s WS timeout)
         const H264_PT2: u16 = 101;
+        // PIT-56: 从 answer SDP 提取 libwebrtc 实际协商的发送 ssrc (替代硬编码 12345)
+        // — mediasoup 按 produce encodings 的 ssrc 匹配 RTP 流，不一致则收不到
+        let negotiated_ssrc: u32 = answer.sdp
+            .lines()
+            .find_map(|l| {
+                let l = l.trim_start();
+                l.strip_prefix("a=ssrc:")
+                    .and_then(|s| s.split(' ').next())
+                    .and_then(|s| s.parse().ok())
+            })
+            .ok_or_else(|| anyhow::anyhow!("no a=ssrc in answer SDP"))?;
+        tracing::debug!("SFU: negotiated send ssrc={}", negotiated_ssrc);
         let produce = SignalingMessage::Produce {
             room_id: sfu_room,
             transport_direction: TransportDirection::Send,
             kind: MediaKind::Video,
             rtp_parameters: serde_json::json!({
-                "mid": "0",
                 "codecs": [{
                     "mimeType": "video/H264",
                     "payloadType": H264_PT2,
@@ -384,7 +394,8 @@ let app = axum::Router::new()
                     }
                 }],
                 "headerExtensions": [],
-                "encodings": [{"ssrc": 12345}],
+                // PIT-56: ssrc 必须与 libwebrtc 实际发送一致 (从 answer SDP 提取)
+                "encodings": [{"ssrc": negotiated_ssrc}],
                 "rtcp": {"reducedSize": true}
             }),
         };
