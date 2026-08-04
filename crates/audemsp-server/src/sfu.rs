@@ -165,7 +165,7 @@ mod imp {
             tracing::info!("mediasoup Worker created (id: {:?})", worker.id());
 
             // Create WebRtcServer with single port (port 20000)
-            // PIT-43: listen 0.0.0.0 必须设 announced_address（mediasoup 官方要求），
+            // PIT-44: listen 0.0.0.0 必须设 announced_address（mediasoup 官方要求），
             // 否则 candidate=0.0.0.0 对端无法 ICE；容器内探测本机 IP。
             // 生产环境应改为配置化的公网/内网 IP。
             let announced_ip = detect_local_ip();

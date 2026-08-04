@@ -631,7 +631,7 @@ impl webrtc_sys::peer_connection_factory::PeerConnectionObserver for RealObserve
         tracing::debug!("ICE gathering state: {}", s);
     }
     fn on_ice_candidate(&self, candidate: cxx::SharedPtr<webrtc_sys::jsep::ffi::IceCandidate>) {
-        // PIT-44: 空桩曾导致本地候选被丢弃 — 至少记录，P2P 路径需完整转发
+        // PIT-43: 空桩曾导致本地候选被丢弃 — 至少记录，P2P 路径需完整转发
         tracing::debug!("ICE local candidate received (mid={})", candidate.sdp_mid());
     }
     fn on_ice_candidate_error(&self, _: String, _: i32, _: String, _: i32, _: String) {}

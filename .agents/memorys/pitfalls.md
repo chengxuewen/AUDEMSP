@@ -455,7 +455,7 @@ compose build args 从宿主环境读：`HTTP_PROXY: ${http_proxy:-}`。pip 另�
 
 **验证**: 升级 webrtc-sys 0.3.41 后重跑仍超时（2026-08-04 实测）——版本升级无效。
 
-## PIT-46: mediasoup WebRtcServer listen 0.0.0.0 必须设 announced_address (2026-08-04)
+## PIT-44: mediasoup WebRtcServer listen 0.0.0.0 必须设 announced_address (2026-08-04)
 
 **症状**: SFU transport 候选公告 0.0.0.0:20000，对端 ICE 0 包（tcpdump）——Linux 内核把发往 0.0.0.0 的 UDP 路由到 **loopback**（`ip route get 0.0.0.0` → `local ... dev lo` 实证），STUN 永远到不了 mediasoup。
 
@@ -475,7 +475,7 @@ fn detect_local_ip() -> String {
 
 **验证**: 修复后 transport 候选为 172.18.0.2:20000（remote SDP 打印确认）。
 
-## PIT-47: webrtc-sys on_ice_candidate 回调空桩 (2026-08-04)
+## PIT-43: webrtc-sys on_ice_candidate 回调空桩 (2026-08-04)
 
 **症状**: webrtc_sys.rs:625 `fn on_ice_candidate(&self, _) {}`——本地候选被静默丢弃，P2P relay 路径无法 trickle，且掩盖本地收集状态（无法区分"无候选"与"回调丢失"）。
 
