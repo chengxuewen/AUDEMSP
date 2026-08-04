@@ -730,10 +730,29 @@ pub(crate) struct WebrtcSysFactory {
 
 impl Default for WebrtcSysFactory {
     fn default() -> Self {
+        // 注册 libwebrtc 内部日志（RTC_LOG → tracing）— PIT-45 调试：ICE gathering 内部状态
+        let log_sink = webrtc_sys::webrtc::ffi::new_log_sink(|message, severity| {
+            let line = message.trim_end().to_string();
+            match severity {
+                webrtc_sys::webrtc::ffi::LoggingSeverity::Info => {
+                    tracing::info!("[libwebrtc] {}", line);
+                }
+                webrtc_sys::webrtc::ffi::LoggingSeverity::Warning => {
+                    tracing::warn!("[libwebrtc] {}", line);
+                }
+                webrtc_sys::webrtc::ffi::LoggingSeverity::Error => {
+                    tracing::error!("[libwebrtc] {}", line);
+                }
+                _ => {
+                    tracing::debug!("[libwebrtc] {}", line);
+                }
+            }
+        });
+        let _ = log_sink; // keep alive for process lifetime
         let factory =
             webrtc_sys::peer_connection_factory::ffi::create_peer_connection_factory();
         Self { factory }
-}
+    }
 }
 
 impl Clone for WebrtcSysFactory {

@@ -133,14 +133,25 @@ async fn ws_handler(
     headers: HeaderMap,
     State(server): State<SignalingServer>,
 ) -> impl IntoResponse {
-    // Extract JWT from sec-websocket-protocol header (format: "Bearer <token>")
+    // Extract JWT from sec-websocket-protocol header — 兼容 "Bearer <jwt>" 与纯 <jwt>
+    // PIT-49: 浏览器子协议禁止空格（RFC 6455 token），只能传纯 JWT
     let jwt_token = headers
         .get("sec-websocket-protocol")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(|s| s.to_string());
+        .map(|v| v.trim().strip_prefix("Bearer ").unwrap_or(v.trim()))
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty());
+    // PIT-49: 必须回显子协议（浏览器要求 Sec-WebSocket-Protocol 响应确认），
+    // 否则浏览器协商失败连接被拒（admin JWT 经子协议传递）
+    let client_protocols: Vec<String> = headers
+        .get("sec-websocket-protocol")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
+        .unwrap_or_default();
     let max_size = server.ws_max_message_size;
-    ws.max_message_size(max_size).on_upgrade(move |socket| handle_socket(socket, server, jwt_token))
+    ws.max_message_size(max_size)
+        .protocols(client_protocols)
+        .on_upgrade(move |socket| handle_socket(socket, server, jwt_token))
 }
 
 /// Send a signaling message to this peer directly (not broadcast).
@@ -670,6 +681,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
             kind,
             rtp_parameters,
         } => {
+            tracing::info!("SFU: Produce received room={} kind={:?} dir={:?} rtp={}", room_id, kind, transport_direction, rtp_parameters);
             if !matches!(transport_direction, audemsp_common::protocol::TransportDirection::Send) {
                 return Some(SignalingMessage::Error {
                     code: 4000,

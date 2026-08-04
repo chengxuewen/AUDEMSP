@@ -445,7 +445,9 @@ compose build args 从宿主环境读：`HTTP_PROXY: ${http_proxy:-}`。pip 另�
 
 **验证**: `docker compose -f docker-compose.yml config --quiet` EXIT 0 + `--services` 输出 server/proxy。
 
-## PIT-45: webrtc-sys (livekit) Linux gathering 失效 — 测试套件从未验证真实连接 (2026-08-04)
+## PIT-45: ~~webrtc-sys (livekit) Linux gathering 失效~~ — 已推翻 (2026-08-04)
+
+> **❌ 已修订 (2026-08-04)**：此结论**不成立**——真根因是应用层 SDP 构造 bug（candidate 行位置，见 PIT-46）。libwebrtc gathering 实际正常（strace 证明）。测试套件不验证真实连接的观察仍有效（PIT-50 方法论）。
 
 **症状**: Host（backend-webrtc-sys）连接 mediasoup SFU 时 ICE/DTLS 30s 超时；tcpdump 显示 0 STUN 包；answer SDP 无 a=candidate 行；on_ice_gathering_change/on_ice_candidate/on_ice_connection_state_change 回调**零触发**（连 Gathering/Complete 都没有）。容器（bridge/host 网络）与**本机原生桌面**（真实网卡 192.168.2.127）一致失败。
 
@@ -484,3 +486,80 @@ fn detect_local_ip() -> String {
 **解法**: 至少记录日志（已实现 tracing::debug + gathering 状态日志）；P2P 路径需完整转发到 ObserverCallbacks。
 
 **验证**: RUST_LOG=debug 可观察 ICE gathering/candidate 事件。
+
+## PIT-46: SDP a=candidate 行必须在 m= 行之后（media section 内）— webrtc-sys "Linux gathering 失效"真根因 (2026-08-04)
+
+**症状**: Host（webrtc-sys）连 mediasoup SFU 30s ICE 超时、tcpdump 0 STUN、answer 无候选行、所有 observer 回调零触发——容器（bridge/host 网络）与原生桌面一致失败。曾被误判为"webrtc-sys 库层 Linux gathering 失效"（PIT-45，已推翻）。
+
+**根因**: Host 手工构造 remote SDP 时把 `a=candidate:...` 放在 `m=video` **之前**（会话级）——SDP 规范中 candidate 属性必须属于 media section（m= 行之后）→ libwebrtc 忽略会话级 candidate → **remote candidate 从未被接受** → ICE 无对端可 ping（0 STUN）+ P2PTransportChannel 未进入连接阶段（无内部日志）。strace 证明 libwebrtc 实际正常枚举接口（netlink RTM_GETLINK）并 bind UDP socket（gathering 在工作）——问题纯在应用层 SDP 构造。
+
+**解法**: candidate 行移到 m= 行之后（media section 内）：
+```
+m=video 7 UDP/TLS/RTP/SAVPF 101
+c=IN IP4 172.18.0.2
+a=mid:video
+a=candidate:udpcandidate 1 UDP 1076302079 172.18.0.2 20000 typ host
+a=end-of-candidates
+```
+修复后 ICE 秒连（Checking→Connected→Completed）+ Produce 发送成功。
+
+**验证**: 修复后 Host 日志 `SFU ICE state: Connected` + `Produce (Video) sent` + server 侧 `OnIceServerCompleted() | ICE completed`。
+
+## PIT-47: WebSocket 子协议认证 — RFC 6455 token 禁止空格，JWT 必须纯子协议 (2026-08-04)
+
+**症状**: 浏览器 sfu-client 连 server /ws 反复失败：先 "Failed to construct WebSocket: subprotocol 'Bearer xxx' is invalid"（空格），修后 "closed before connection established"（server 未回显子协议），再修后认证失败（signaling 的 jwt_secret 未配置）。
+
+**根因**: ① WebSocket 子协议是 RFC 6455 token（禁止空格）——`Bearer <jwt>` 前缀非法，浏览器构造即抛错；② server（axum）必须 `ws.protocols(...)` 回显客户端子协议，否则浏览器协商失败；③ signaling 的 JWT 用 `jwt_secret`（非 `admin_jwt_secret`），未配置则 JWT 路径不可用（PSK fallback 又因浏览器不发 PSK 而失败）。
+
+**解法**: ① 浏览器传纯 JWT 子协议：`new WebSocket(url, [token])`；② server 解析兼容 `Bearer ` 前缀与纯 JWT，并 `protocols(client_protocols)` 回显；③ server.docker.yaml 配 `jwt_secret`（与 admin_jwt_secret 同值，admin token 可验证）；④ sfu-client 有 JWT 子协议时不再发明文 PSK。
+
+**验证**: 页面内 `new WebSocket('ws://127.0.0.1:5173/ws', [TOKEN])` open + 收到 `{"code":0,"message":"authenticated"}`；server 日志 `JWT authenticated: peer=admin`。
+
+## PIT-48: React StrictMode 双挂载 — close() 必须设标志防 onclose 重连 (2026-08-04)
+
+**症状**: Dashboard 的 VideoPlayer（React 组件）SFU 连接失败（Signal Lost），而页面内直接调用 SfuConsumerClient 成功——同一 token/URL 行为不同。
+
+**根因**: `main.tsx` 用 `<React.StrictMode>`（dev 双挂载：mount→unmount→remount）——第一个 client 的 `close()` 触发 WS onclose → `reconnect()`（无关闭标志）→ 泄漏连接与第二个 client 竞争。
+
+**解法**: sfu-client 加 `private closed` 标志：`connect()` 重置、`onclose` 检查跳过重连、`close()` 先置标志。
+```ts
+this.ws.onclose = () => { if (this.closed) return; ... };
+close() { this.closed = true; ... }
+```
+
+**验证**: 修复后 VideoPlayer（React 路径）SFU 连接正常（server 侧 JWT authenticated + transport 流程）。
+
+## PIT-49: mediasoup Router codec preferred_payload_type 必须显式 — 自动分配与 produce 参数冲突 (2026-08-04)
+
+**症状**: Host produce 消息到达 server（`Produce received`）但 producer 未创建（list_producers 0）；早期报 `Duplicated preferred payload type 101`。
+
+**根因**: `default_router_options()` 的 codec `preferred_payload_type: None`——mediasoup 自动分配 payloadType（VP8 可能自动分配 101 与 H264 冲突；H264 自动分配 ≠ Host produce 发的 101 → produce 失败）。Host 的 rtp_parameters 固定 payloadType 101。
+
+**解法**: Router codec 显式化：Opus=111、VP8=96、H264=101（与 Host produce 匹配）。注意字段类型是 `Option<u8>`（非 NonZeroU8）。
+
+**验证**: 显式化后 Router 创建成功（无 duplicated 错误）；produce 进入 `transport.produce().await`（注：当前 await 挂起为独立问题，见会话记录）。
+
+## PIT-50: WebRTC 调试归因顺序 — 先验证协议层事实，勿过早归因库层 (2026-08-04)
+
+**症状/教训**: "webrtc-sys Linux gathering 失效"结论（PIT-45）在投入大量实验后被推翻——真根因是应用层 SDP 构造 bug（PIT-46）。libwebrtc 一直正常（strace 证明接口枚举 + UDP bind 正常）。
+
+**根因**: 调试时先假设库层问题（webrtc-kit/LiveKit 预编译），跳过了协议层验证（SDP 结构是否符合规范、remote candidate 是否被接受）。
+
+**正确调试链（WebRTC 类问题）**:
+1. **tcpdump/strace** — 网络事实（0 包 vs 有包、socket 是否创建）
+2. **libwebrtc 内部日志**（LogSink：`webrtc_sys::webrtc::ffi::new_log_sink` → LS_VERBOSE 全级别）— 库内部状态
+3. **SDP 规范对照** — 结构校验（candidate 位置、媒体段顺序）
+4. **最小复现对照**（页面内直接调用 vs React 组件 → 隔离环境问题）
+5. 最后才归因库层（且要有上游证据：CI 是否真验证过、官方文档/issue）
+
+**验证**: 按此链定位 PIT-46/47/48 均为应用层问题；PIT-45 已修订（"库层问题"不成立）。
+
+## PIT-51: pixi.toml 重复 key 与缺失 feature 定义 — pixi install 从未成功过 (2026-08-04)
+
+**症状**: `pixi install` 报 `duplicate key: coverage`（两个 coverage task）+ `feature 'test' is not defined`（[environments] test 引用不存在 feature）。
+
+**根因**: pixi.toml L57-58 两个 coverage 任务重复；`[feature.test]` 从未定义（只有 dev/ci）。项目原生构建链路（pixi）从未真正运行过——与 PIT-39（Docker dev 链路从未成功）同类。
+
+**解法**: 合并 coverage task（--out Html --out Lcov）；补 `[feature.test.dependencies]` 空表。
+
+**验证**: `pixi install` EXIT 0 + `.pixi/envs/default/bin/cargo --version` 可用（原生编译链路首次打通）。

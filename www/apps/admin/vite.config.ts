@@ -7,8 +7,8 @@ export default defineConfig({
     host: '0.0.0.0',  // allow external access
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:9800',
-      '/ws': { target: 'ws://localhost:9800', ws: true },
+      '/api': { target: 'http://127.0.0.1:9800', changeOrigin: true },
+      '/ws': { target: 'ws://127.0.0.1:9800', ws: true, changeOrigin: true },
     },
   },
   build: {

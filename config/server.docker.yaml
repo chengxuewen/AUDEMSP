@@ -6,4 +6,5 @@ room_capacity: 50
 rate_limit: 100
 consumer_limit_per_stream: 50
 psk: "audemsp-dev"
+jwt_secret: "docker-admin-secret-with-32-plus-bytes!!"  # PIT-49: signaling JWT 认证（与 admin 同 secret）
 admin_jwt_secret: "docker-admin-secret-with-32-plus-bytes!!"

@@ -262,6 +262,8 @@ let app = axum::Router::new()
         }
 
         // B1: Build remote SDP from real server ICE candidates (not 127.0.0.1)
+        // PIT-48: a=candidate 行必须位于 m= 行之后（media section 内）——
+        // 会话级 candidate 被 libwebrtc 忽略 → remote candidate 丢失 → ICE 不发起 STUN
         let remote_sdp = {
             let fp = &dtls_parameters.fingerprints[0];
             let mut lines = vec![
@@ -276,22 +278,6 @@ let app = axum::Router::new()
                 format!("a=fingerprint:{} {}", fp.algorithm.to_lowercase(), fp.value),
                 "a=setup:actpass".to_string(), // ICE-Lite responder requirement
             ];
-            if let Some(ref candidates) = ice_candidates {
-                for c in candidates {
-                    if c.ip.contains(".local") { continue; } // skip mDNS
-                    let ctype = match c.candidate_type.as_str() {
-                        "host" => "host", "srflx" => "srflx",
-                        "prflx" => "prflx", "relay" => "relay",
-                        _ => "host",
-                    };
-                    lines.push(format!(
-                        "a=candidate:{} 1 {} {} {} {} typ {}",
-                        c.foundation, c.protocol.to_uppercase(), c.priority,
-                        c.ip, c.port, ctype
-                    ));
-                }
-            }
-            lines.push("a=end-of-candidates".to_string());
             let conn_ip = ice_candidates.as_ref()
                 .and_then(|cs| cs.iter().find(|c| !c.ip.contains(".local")))
                 .map(|c| c.ip.clone())
@@ -305,8 +291,25 @@ let app = axum::Router::new()
                 "a=sendonly".to_string(),
                 format!("a=rtpmap:{} H264/90000", H264_PT),
                 format!("a=fmtp:{} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f", H264_PT),
-                String::new(),
             ]);
+            // candidates 必须在 media section 内（m= 行之后）
+            if let Some(ref candidates) = ice_candidates {
+                for c in candidates {
+                    if c.ip.contains(".local") { continue; } // skip mDNS
+                    let ctype = match c.candidate_type.as_str() {
+                        "host" => "host", "srflx" => "srflx",
+                        "prflx" => "prflx", "relay" => "relay",
+                        _ => "host",
+                    };
+                    lines.push(format!(
+                    "a=candidate:{} 1 {} {} {} {} typ {}",
+                        c.foundation, c.protocol.to_uppercase(), c.priority,
+                        c.ip, c.port, ctype
+                    ));
+                }
+            }
+            lines.push("a=end-of-candidates".to_string());
+            lines.push(String::new());
             lines.join("\r\n")
         };
         tracing::debug!("SFU remote SDP:\n{}", remote_sdp);

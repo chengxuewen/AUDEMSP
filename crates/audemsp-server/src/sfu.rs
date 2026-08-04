@@ -38,7 +38,7 @@ mod imp {
         RouterOptions::new(vec![
             RtpCodecCapability::Audio {
                 mime_type: MimeTypeAudio::Opus,
-                preferred_payload_type: None,
+                preferred_payload_type: Some(111),  // Opus 显式（防与视频冲突）
                 clock_rate: NonZeroU32::new(48000).unwrap(),
                 channels: NonZeroU8::new(2).unwrap(),
                 parameters: RtpCodecParametersParameters::default(),
@@ -46,14 +46,14 @@ mod imp {
             },
             RtpCodecCapability::Video {
                 mime_type: MimeTypeVideo::Vp8,
-                preferred_payload_type: None,
+                preferred_payload_type: Some(96),  // VP8 显式（防与 H264 101 冲突）
                 clock_rate: NonZeroU32::new(90000).unwrap(),
                 parameters: RtpCodecParametersParameters::default(),
                 rtcp_feedback: vec![],
             },
             RtpCodecCapability::Video {
                 mime_type: MimeTypeVideo::H264,
-                preferred_payload_type: None,
+                preferred_payload_type: Some(101),  // PIT-51: 与 Host produce 的 payloadType 101 匹配（None=自动分配≠101 → produce 失败）
                 clock_rate: NonZeroU32::new(90000).unwrap(),
                 parameters: RtpCodecParametersParameters::from([
                     ("level-asymmetry-allowed", 1_u32.into()),

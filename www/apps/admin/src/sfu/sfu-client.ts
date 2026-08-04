@@ -33,6 +33,7 @@ export interface StreamMetrics {
 
 export class SfuConsumerClient {
   private ws: WebSocket | null = null;
+  private closed = false;  // PIT-50: close() 后禁止重连（StrictMode 双挂载竞争）
   private pc: RTCPeerConnection | null = null;
   private onTrack: StreamCallback;
   private onStatus: StatusCallback;
@@ -60,19 +61,22 @@ export class SfuConsumerClient {
   }
 
   async connect(): Promise<void> {
+    this.closed = false;  // PIT-50: 每次 connect 重置关闭标志
     this.onStatus('connecting');
 
     const protocol = this.serverUrl.startsWith('wss:') ? 'wss:' : 'ws:';
     const host = this.serverUrl.replace(/^wss?:\/\//, '');
     const wsUrl = `${protocol}//${host}/ws`;
 
-    this.ws = new WebSocket(wsUrl);
+    // Auth: JWT 经 sec-websocket-protocol 子协议（RFC 6455 token 禁止空格——不能带 "Bearer " 前缀）
+    // PIT-49: 浏览器子协议 = 纯 JWT；server 解析时兼容 "Bearer " 前缀
+    this.ws = new WebSocket(wsUrl, this.token ? [this.token] : []);
 
-    // Auth: send PSK as raw string (not JSON)
-    const psk = this.token || 'audemsp-dev';
+    // Auth: PSK fallback（无 token 时发明文 PSK；有 JWT 子协议则不发）
+    const psk = this.token ? null : 'audemsp-dev';
     const authPromise = new Promise<void>((resolve, reject) => {
       this.ws!.onopen = () => {
-        this.ws!.send(psk);
+        if (psk) this.ws!.send(psk);
       };
       this.ws!.onmessage = (event) => {
         try {
@@ -107,6 +111,7 @@ export class SfuConsumerClient {
 
     // Reconnect on WS close
     this.ws.onclose = () => {
+      if (this.closed) return;  // PIT-50: close() 后不重连
       this.onStatus('disconnected');
       this.stopMetrics();
       this.reconnect();
@@ -353,6 +358,7 @@ export class SfuConsumerClient {
   }
 
   close(): void {
+    this.closed = true;  // PIT-50: 先设标志防 onclose 重连
     this.stopMetrics();
     this.pc?.close();
     this.pc = null;
