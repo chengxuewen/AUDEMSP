@@ -33,6 +33,13 @@ mod imp {
         }
         "0.0.0.0".to_string()
     }
+
+    /// PIT-58: announced_address 解析 — 优先环境变量 AUDEMSP_SFU_ANNOUNCED_IP (宿主可达 IP),
+    /// fallback 容器内探测 (172.18.0.2 仅本机可用)。
+    fn announced_ip_from_env() -> String {
+        std::env::var("AUDEMSP_SFU_ANNOUNCED_IP").unwrap_or_else(|_| detect_local_ip())
+    }
+
     /// Create RouterOptions with sensible default codecs (Opus + VP8 + H264).
     fn default_router_options() -> RouterOptions {
         RouterOptions::new(vec![
@@ -167,8 +174,9 @@ mod imp {
             // Create WebRtcServer with single port (port 20000)
             // PIT-44: listen 0.0.0.0 必须设 announced_address（mediasoup 官方要求），
             // 否则 candidate=0.0.0.0 对端无法 ICE；容器内探测本机 IP。
-            // 生产环境应改为配置化的公网/内网 IP。
-            let announced_ip = detect_local_ip();
+            // PIT-58: 容器内探测 = 172.18.0.2 (内网地址, 其他主机不可达 → Signal Lost);
+            // 必须用宿主可达 IP — 环境变量 AUDEMSP_SFU_ANNOUNCED_IP 配置 (宿主机网卡 IP)
+            let announced_ip = announced_ip_from_env();
             let webrtc_server = worker
                 .create_webrtc_server(WebRtcServerOptions::new(WebRtcServerListenInfos::new(
                     ListenInfo {
@@ -477,7 +485,34 @@ mod imp {
             self.rooms.len()
         }
     }
-}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// PIT-58: announced_address 必须优先环境变量 (宿主可达 IP) —
+    /// 容器内探测 (172.18.0.2) 仅本机可用, 其他主机 ICE 不可达 → Signal Lost。
+    #[test]
+    fn announced_ip_prefers_env_and_falls_back() {
+        // env 优先 (宿主 IP 场景)
+        // SAFETY: 测试内串行设置/恢复, 无并发读
+        unsafe { std::env::set_var("AUDEMSP_SFU_ANNOUNCED_IP", "192.168.2.127"); }
+        assert_eq!(announced_ip_from_env(), "192.168.2.127");
+
+        // fallback 探测 (未配置场景)
+        // SAFETY: 同上
+        unsafe { std::env::remove_var("AUDEMSP_SFU_ANNOUNCED_IP"); }
+        let fallback = announced_ip_from_env();
+        assert!(!fallback.is_empty(), "fallback 探测应返回非空 IP");
+
+        // 恢复环境, 避免污染其他测试
+        // SAFETY: 同上
+        unsafe { std::env::remove_var("AUDEMSP_SFU_ANNOUNCED_IP"); }
+    }
+}}
+
+
+
 
 // ── Stub when sfu-mediasoup is not enabled ──────────────────────────────
 

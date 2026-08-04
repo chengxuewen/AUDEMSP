@@ -15,8 +15,9 @@ services:
     environment:
       RUST_LOG: debug
       AUDEMSP_PSK: audemsp-dev
+      # PIT-58: SFU announced_address 用宿主可达 IP (宿主机网卡) — 容器内探测=172.18.0.2 其他主机不可达
+      AUDEMSP_SFU_ANNOUNCED_IP: ${AUDEMSP_SFU_ANNOUNCED_IP:-}
       # 容器内进程（mediasoup-sys meson wrapdb）需要独立代理 (PIT-38)
-      HTTP_PROXY: ${http_proxy:-}
       HTTPS_PROXY: ${https_proxy:-}
       NO_PROXY: ${no_proxy:-}
     volumes:

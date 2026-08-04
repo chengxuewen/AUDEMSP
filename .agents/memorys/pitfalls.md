@@ -613,3 +613,27 @@ close() { this.closed = true; ... }
 **验证**: tcpdump 帧大小分布（>500 字节帧出现）+ 浏览器渲染成功。
 
 **调试教训**: RTP 载荷是 SRTP 密文无法直接分析——用"帧大小分布"判断编码质量（37 字节 = 异常，1000 字节 = 正常）。时间戳/时序类问题在 WebRTC 发送管线中影响编码器输出，日志无错误时抓包看帧大小是高效诊断。
+
+## PIT-58: announced_address 容器内网 IP — 其他主机 ICE 不可达 Signal Lost (2026-08-04)
+
+**症状**: 本机 localhost:5173 拉流正常渲染，其他主机访问 http://192.168.2.127:5173/ 拉流 Signal Lost（WebRTC 层失败，WS 信令正常）。
+
+**根因**: `detect_local_ip()` 在容器内 UDP connect 探测 → **容器内网 IP 172.18.0.2** 作为 mediasoup announced_address → ICE 候选公告 172.18.0.2:20000 → **其他主机无法路由到 docker 网桥内部地址** → ICE 建连失败。本机因走 docker 网桥（172.18.0.0/16 路由存在）恰好可达——**本机验证通过 ≠ 局域网可用**（PIT-50 方法论：验证场景要覆盖真实部署拓扑）。
+
+**解法**: announced_address 配置化——`AUDEMSP_SFU_ANNOUNCED_IP` 环境变量（宿主可达 IP，docker-compose 透传 `${AUDEMSP_SFU_ANNOUNCED_IP:-}`），未设置时 fallback 容器探测。生产用公网/内网可达 IP。
+
+**验证**: transport 候选 `{"ip":"192.168.2.127","port":20000}`（E2E transport msg cands 日志）；其他主机可拉流。
+
+**运维**: server 重启前需 `export AUDEMSP_SFU_ANNOUNCED_IP=<宿主IP>`，否则回退容器 IP。建议后续写 .env 持久化。
+
+## PIT-59: server 重启后 RoomLeave 广播误杀新 Host (2026-08-04)
+
+**症状**: server 重启后立即启动 Host，Host 报 `Error: SFU: unexpected RoomLeave { room_id: "test-room", ... }` 退出——produce 未开始就死亡。
+
+**根因**: server 重启清理旧 peer（旧 Host 连接）时 broadcast RoomLeave；新 Host 加入同一 room 的 forward loop 收到**旧连接的 RoomLeave**（broadcast channel 无连接隔离）→ Host 把别人的 RoomLeave 当成自己的 → 退出。
+
+**解法**: ① Host 侧忽略 peer_id ≠ 自己的 RoomLeave（校验消息内 peer_id）；② server 侧 room 清理延迟/按 peer 隔离。当前未修（已记录方向）。
+
+**验证**: server 重启 + Host 重启竞态不再触发 Host 退出。
+
+**调试教训**: server 重启后旧连接清理事件可能污染新连接——重启服务后重启客户端要间隔几秒（等清理完成），或客户端做 peer_id 校验。

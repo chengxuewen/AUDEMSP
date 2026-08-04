@@ -553,7 +553,7 @@ use webrtc_sys::video_frame::ffi as vf;
         // Build VideoFrame and push to source
         let mut builder = vf::new_video_frame_builder();
         // PIT-57: 单调递增时间戳 (30fps) — 固定 0 → 编码器输出极小帧
-        let ts_us = self.next_timestamp_us.fetch_add(33_333, Ordering::Relaxed);
+        let ts_us = next_video_timestamp(&self.next_timestamp_us);
         builder.pin_mut().set_timestamp_us(ts_us as i64); // PIT-57: libwebrtc 时间戳单位 us (i64)
         builder.pin_mut().set_video_frame_buffer(
             // SAFETY: i420 → yuv8 → yuv → vfb upcast chain
@@ -866,5 +866,28 @@ impl WebrtcSysFactory {
         let media_track = vt::video_to_media(video_track);
 
         (backend, media_track)
+    }
+}
+
+/// PIT-57: VideoFrame 时间戳必须单调递增 (30fps → 33333us 步进)。
+/// 固定 0 → libwebrtc 编码管线按时间戳调度 → 输出 37 字节极小帧。
+pub(crate) fn next_video_timestamp(ts: &AtomicU64) -> u64 {
+    ts.fetch_add(33_333, Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn video_timestamps_monotonically_increase() {
+        let ts = AtomicU64::new(0);
+        let t1 = next_video_timestamp(&ts);
+        let t2 = next_video_timestamp(&ts);
+        let t3 = next_video_timestamp(&ts);
+        assert_eq!(t1, 0);
+        assert_eq!(t2, 33_333);
+        assert_eq!(t3, 66_666);
+        assert!(t2 > t1 && t3 > t2, "PIT-57: 时间戳必须单调递增");
     }
 }

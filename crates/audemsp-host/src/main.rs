@@ -24,6 +24,7 @@ use audemsp_webrtc::{RTCPeerConnectionFactory, RTCConfiguration, RTCIceServer, R
 use audemsp_webrtc::traits::PeerConnectionApi;
 mod config;
 mod control;
+mod sfu_media;
 mod emergency;
 mod metrics;
 mod pipeline;
@@ -208,6 +209,11 @@ let app = axum::Router::new()
                         SignalingMessage::Error { code, message } => {
                             return Err(anyhow::anyhow!("SFU error [{}]: {}", code, message));
                         }
+                        // PIT-59: server 重启清理旧 peer 时广播 RoomLeave — 非自己的直接忽略
+                        // (旧 Host 的 RoomLeave 会污染新 Host 的 forward loop, 误判退出)
+                        SignalingMessage::RoomLeave { peer_id, .. } => {
+                            tracing::info!("SFU: RoomLeave for peer {} ignored", peer_id);
+                        }
                         other => {
                             return Err(anyhow::anyhow!("SFU: unexpected {:?}", other));
                         }
@@ -265,51 +271,24 @@ let app = axum::Router::new()
         // 会话级 candidate 被 libwebrtc 忽略 → remote candidate 丢失 → ICE 不发起 STUN
         let remote_sdp = {
             let fp = &dtls_parameters.fingerprints[0];
-            let mut lines = vec![
-                "v=0".to_string(),
-                "o=- 0 0 IN IP4 0.0.0.0".to_string(),
-                "s=-".to_string(),
-                "t=0 0".to_string(),
-                "a=group:BUNDLE video".to_string(),
-                "a=ice-lite".to_string(),
-                format!("a=ice-ufrag:{}", ice_parameters.username_fragment),
-                format!("a=ice-pwd:{}", ice_parameters.password),
-                format!("a=fingerprint:{} {}", fp.algorithm.to_lowercase(), fp.value),
-                "a=setup:actpass".to_string(), // ICE-Lite responder requirement
-            ];
-            let conn_ip = ice_candidates.as_ref()
-                .and_then(|cs| cs.iter().find(|c| !c.ip.contains(".local")))
-                .map(|c| c.ip.clone())
-                .unwrap_or_else(|| "0.0.0.0".to_string());
-            const H264_PT: u16 = 101; // ponytail: get from rtp_capabilities when server supports it
-            lines.extend_from_slice(&[
-                format!("m=video 7 UDP/TLS/RTP/SAVPF {}", H264_PT),
-                format!("c=IN IP4 {}", conn_ip),
-                "a=rtcp-mux".to_string(),
-                "a=mid:video".to_string(),
-                "a=recvonly".to_string(), // PIT-56: mediasoup 是接收方 (Host send transport) — sendonly 会让 libwebrtc answer recvonly → 不建发送管线
-                format!("a=rtpmap:{} H264/90000", H264_PT),
-                format!("a=fmtp:{} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f", H264_PT),
-            ]);
-            // candidates 必须在 media section 内（m= 行之后）
-            if let Some(ref candidates) = ice_candidates {
-                for c in candidates {
-                    if c.ip.contains(".local") { continue; } // skip mDNS
-                    let ctype = match c.candidate_type.as_str() {
-                        "host" => "host", "srflx" => "srflx",
-                        "prflx" => "prflx", "relay" => "relay",
-                        _ => "host",
-                    };
-                    lines.push(format!(
-                    "a=candidate:{} 1 {} {} {} {} typ {}",
-                        c.foundation, c.protocol.to_uppercase(), c.priority,
-                        c.ip, c.port, ctype
-                    ));
-                }
-            }
-            lines.push("a=end-of-candidates".to_string());
-            lines.push(String::new());
-            lines.join("\r\n")
+            // sfu_media::build_remote_sdp — 纯函数 (PIT-54/56 单测锁定)
+            let cands: Vec<(String, String, u32, u16, String)> = ice_candidates
+                .as_ref()
+                .map(|cs| {
+                    cs.iter()
+                        .map(|c| {
+                            (c.foundation.clone(), c.protocol.clone(), c.priority, c.port, c.ip.clone())
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            sfu_media::build_remote_sdp(
+                &ice_parameters.username_fragment,
+                &ice_parameters.password,
+                &fp.algorithm,
+                &fp.value,
+                &cands,
+            )
         };
         tracing::debug!("SFU remote SDP:\n{}", remote_sdp);
 
@@ -366,38 +345,14 @@ let app = axum::Router::new()
         const H264_PT2: u16 = 101;
         // PIT-56: 从 answer SDP 提取 libwebrtc 实际协商的发送 ssrc (替代硬编码 12345)
         // — mediasoup 按 produce encodings 的 ssrc 匹配 RTP 流，不一致则收不到
-        let negotiated_ssrc: u32 = answer.sdp
-            .lines()
-            .find_map(|l| {
-                let l = l.trim_start();
-                l.strip_prefix("a=ssrc:")
-                    .and_then(|s| s.split(' ').next())
-                    .and_then(|s| s.parse().ok())
-            })
+        let negotiated_ssrc: u32 = sfu_media::negotiated_ssrc_from_sdp(&answer.sdp)
             .ok_or_else(|| anyhow::anyhow!("no a=ssrc in answer SDP"))?;
         tracing::debug!("SFU: negotiated send ssrc={}", negotiated_ssrc);
         let produce = SignalingMessage::Produce {
             room_id: sfu_room,
             transport_direction: TransportDirection::Send,
             kind: MediaKind::Video,
-            rtp_parameters: serde_json::json!({
-                "codecs": [{
-                    "mimeType": "video/H264",
-                    "payloadType": H264_PT2,
-                    "clockRate": 90000,
-                    // PIT-54: mediasoup match_codecs 对 H264 严格匹配 packetization-mode/profile-level-id，
-                    // 缺参数时按 0 处理 → 与 Router (4d0032, packetization-mode=1) 不匹配 → UnsupportedCodec
-                    "parameters": {
-                        "level-asymmetry-allowed": 1,
-                        "packetization-mode": 1,
-                        "profile-level-id": "4d0032"
-                    }
-                }],
-                "headerExtensions": [],
-                // PIT-56: ssrc 必须与 libwebrtc 实际发送一致 (从 answer SDP 提取)
-                "encodings": [{"ssrc": negotiated_ssrc}],
-                "rtcp": {"reducedSize": true}
-            }),
+            rtp_parameters: sfu_media::build_produce_rtp_parameters(negotiated_ssrc),
         };
         let json = serde_json::to_string(&produce)?;
         match tokio::time::timeout(Duration::from_secs(10), ws_sender.send(Message::Text(json.into()))).await {

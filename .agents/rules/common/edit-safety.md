@@ -114,3 +114,10 @@ After claiming tests are written or features are working:
 - **Container-recreated services lose apt-installed tools** (gdb etc.) — install debug tools in the Dockerfile dev target, not per-container.
 
 **来源**：PIT-54 调试轮 (2026-08-04: pgrep -f 自杀、容器重建丢 gdb)
+
+## Network Tooling (bash)
+
+- **curl 本机服务必须 --noproxy**：bash 环境有 `http_proxy` 时，`curl http://127.0.0.1:5173` 会走代理 → 超时假死（表现为"Vite 无响应"）。用 `curl --noproxy "*" http://127.0.0.1:PORT/`。
+- **容器 tcpdump 过滤注意 NAT**：宿主发往容器网段（172.18.0.2）的包源 IP 被改写为网关（172.18.0.1）——`not host 172.18.0.1` 会把本机浏览器/应用的流量一并过滤掉。按**源端口**区分（Host 的固定端口 vs 浏览器随机端口），不要按源 IP。
+
+**来源**：PIT-56/58 调试轮 (2026-08-04)
