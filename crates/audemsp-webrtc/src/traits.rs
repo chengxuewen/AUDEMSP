@@ -19,7 +19,7 @@
 //! ```
 
 use crate::peer_connection::{
-    RTCAnswerOptions, RTCConfiguration, RTCIceCandidate, RTCOfferOptions,
+    RTCAnswerOptions, RTCIceCandidate, RTCOfferOptions,
     RTCIceConnectionState, RTCIceGatheringState, RTCPeerConnectionState, RTCSignalingState,
 };
 use crate::sdp::RTCSessionDescription;

@@ -58,13 +58,13 @@ pub(crate) trait PcBackend: Send + Sync + 'static {
         Ok(())
     }
 
-    /// Register callback for ICE candidates generated locally.
-    /// Called with (sdp_mid, sdp_mline_index, candidate_string).
+    /// Register callback for trickled local ICE candidates (P2P 需要完整转发).
+    /// 默认空实现（webrtc-rs 后端如有需要自行实现）。
     fn set_on_ice_candidate(
-        &self, _cb: Box<dyn Fn(String, i32, String) + Send + Sync + 'static>,
+        &self,
+        _cb: Box<dyn Fn(RTCIceCandidate) + Send + Sync + 'static>,
     ) {
     }
-
     /// Register callback for ICE connection state changes (monitoring).
     fn set_on_ice_connection_state_change(
         &self,

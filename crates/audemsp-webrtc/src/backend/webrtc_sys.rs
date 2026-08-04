@@ -328,6 +328,13 @@ impl PcBackend for WebrtcSysPc {
         *self.callbacks.on_peer_connection_state_change.lock().unwrap() = Some(cb);
     }
 
+    fn set_on_ice_candidate(
+        &self,
+        cb: Box<dyn Fn(RTCIceCandidate) + Send + Sync + 'static>,
+    ) {
+        *self.callbacks.on_ice_candidate.lock().unwrap() = Some(cb);
+    }
+
     fn local_description_sdp(&self) -> Option<String> {
         self.local_sdp.lock().unwrap().clone()
     }
@@ -338,7 +345,7 @@ impl PcBackend for WebrtcSysPc {
     ) -> Result<(), RTCError> {
         let mut guard = self.callbacks.staged_media_tracks.lock().unwrap();
         while let Some(media_track) = guard.pop() {
-            self.pc.add_track(media_track, &vec![]);
+            let _ = self.pc.add_track(media_track, &vec![]);
         }
         Ok(())
     }
@@ -573,6 +580,7 @@ pub(crate) struct ObserverCallbacks {
     pub video_sinks: Mutex<Vec<cxx::SharedPtr<webrtc_sys::video_track::ffi::NativeVideoSink>>>,
     pub on_ice_connection_state_change: Mutex<Option<Box<dyn Fn(RTCIceConnectionState) + Send + Sync + 'static>>>,
     pub on_peer_connection_state_change: Mutex<Option<Box<dyn Fn(RTCPeerConnectionState) + Send + Sync + 'static>>>,
+    pub on_ice_candidate: Mutex<Option<Box<dyn Fn(RTCIceCandidate) + Send + Sync + 'static>>>,
     /// Staged media tracks awaiting register_track consumption (webrtc-sys only).
     pub staged_media_tracks: Mutex<Vec<cxx::SharedPtr<webrtc_sys::media_stream_track::ffi::MediaStreamTrack>>>,
 }
@@ -631,8 +639,17 @@ impl webrtc_sys::peer_connection_factory::PeerConnectionObserver for RealObserve
         tracing::debug!("ICE gathering state: {}", s);
     }
     fn on_ice_candidate(&self, candidate: cxx::SharedPtr<webrtc_sys::jsep::ffi::IceCandidate>) {
-        // PIT-43: 空桩曾导致本地候选被丢弃 — 至少记录，P2P 路径需完整转发
-        tracing::debug!("ICE local candidate received (mid={})", candidate.sdp_mid());
+        // PIT-43/52: 完整转发 trickled 本地候选（P2P 路径必需）
+        let rtc_candidate = crate::peer_connection::RTCIceCandidate {
+            candidate: candidate.candidate(),
+            sdp_mid: Some(candidate.sdp_mid()),
+            sdp_mline_index: None,
+        };
+        if let Some(ref cb) = *self.callbacks.on_ice_candidate.lock().unwrap() {
+            cb(rtc_candidate);
+        } else {
+            tracing::debug!("ICE local candidate (unhandled): {}", rtc_candidate.candidate);
+        }
     }
     fn on_ice_candidate_error(&self, _: String, _: i32, _: String, _: i32, _: String) {}
     fn on_ice_candidates_removed(&self, _: Vec<cxx::SharedPtr<webrtc_sys::candidate::ffi::Candidate>>) {}
@@ -807,6 +824,7 @@ impl WebrtcSysFactory {
             video_sinks: Mutex::new(Vec::new()),
             on_ice_connection_state_change: Mutex::new(None),
             on_peer_connection_state_change: Mutex::new(None),
+            on_ice_candidate: Mutex::new(None),
             staged_media_tracks: Mutex::new(Vec::new()),
         });
         let observer = webrtc_sys::peer_connection_factory::PeerConnectionObserverWrapper::new(

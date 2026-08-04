@@ -563,3 +563,13 @@ close() { this.closed = true; ... }
 **解法**: 合并 coverage task（--out Html --out Lcov）；补 `[feature.test.dependencies]` 空表。
 
 **验证**: `pixi install` EXIT 0 + `.pixi/envs/default/bin/cargo --version` 可用（原生编译链路首次打通）。
+
+## PIT-53: P2P 双 full ICE 不连接 — webrtc-sys trickle 候选激活失败 (2026-08-04)
+
+**症状**: 新增真实 ICE 连接测试（ice_connect_e2e：双 PC SDP 交换 + trickle 候选双向转发 + 等待 Connected）15s 超时失败；libwebrtc 无 p2p_transport/PortAllocator 日志（ICE transport 未激活）；候选 gather 正常（回调产生 172.18.0.1/192.168.2.127 host 候选）+ add_ice_candidate 全部 OK。对照：Host→mediasoup（ICE-Lite remote + SDP 内嵌候选）连接正常（PIT-46 修复后）。
+
+**根因**: webrtc-sys（livekit libwebrtc）的 P2P 双 full ICE 场景——trickled 候选添加成功但 ICE transport 未激活（无内部日志）。与 ICE-Lite 场景（remote 候选内嵌 SDP）行为不同。**测试门禁暴露**：此前测试套件从不等待真实连接，此缺陷从未被发现（PIT-50 方法论）。
+
+**解法**: ① 测试保留（#[ignore] 标记）作为门禁——P2P ICE 修复后启用；② 修复方向：webrtc-sys 封装的 ICE transport 激活条件、候选 generation/ufrag 匹配、或双 full ICE 角色协商；③ Host→SFU 生产路径（ICE-Lite）不受影响。
+
+**验证**: `cargo test -p audemsp-webrtc --features backend-webrtc-sys --test ice_connect_e2e -- --ignored` 当前失败（预期）；移除 #[ignore] 且通过 = 修复完成。

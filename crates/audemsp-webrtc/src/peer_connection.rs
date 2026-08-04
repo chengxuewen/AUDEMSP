@@ -167,6 +167,15 @@ impl RTCPeerConnection {
     {
         self.backend.set_on_peer_connection_state_change(Box::new(callback));
     }
+
+    /// Register callback for trickled local ICE candidates (P2P 必需).
+    /// Available on all backends — non cfg-gated.
+    pub fn on_ice_candidate<F>(&self, callback: F)
+    where
+        F: Fn(RTCIceCandidate) + Send + Sync + 'static,
+    {
+        self.backend.set_on_ice_candidate(Box::new(callback));
+    }
 }
 
 // ── webrtc-rs specific callback methods ──
