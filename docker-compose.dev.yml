@@ -24,6 +24,8 @@ services:
       - ./config/server.docker.yaml:/opt/audemsp/etc/server.yaml:ro
       - cargo-cache:/workspace/target
     command: cargo run --bin audemsp-server --features sfu-mediasoup,admin-dashboard
+    cap_add:
+      - SYS_PTRACE  # 调试: 容器内 gdb attach (produce 挂起诊断)
 
   proxy:
     image: caddy:2

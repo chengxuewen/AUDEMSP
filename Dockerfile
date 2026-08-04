@@ -40,6 +40,7 @@ RUN pip3 install -i https://pypi.tuna.tsinghua.edu.cn/simple 'meson>=1.1.0,<2'
 # ---- Dev: full toolchain + source ----
 # D208: manifests-first — fetch 层只在 Cargo.lock/Cargo.toml 变更时失效（源码变更不再触发重复 fetch）
 FROM base AS dev
+RUN apt-get update && apt-get install -y --no-install-recommends gdb && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
 COPY Cargo.toml Cargo.lock ./
 COPY crates/audemsp-common/Cargo.toml crates/audemsp-common/

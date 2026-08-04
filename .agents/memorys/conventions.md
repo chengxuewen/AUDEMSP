@@ -278,3 +278,19 @@ audemsp-webrtc = { path = "../audemsp-webrtc", features = ["backend-webrtc-sys"]
 **验证**：`ls <声称的文件> && grep <关键字段> <修改的文件>`。
 
 **来源**：PIT-34 (2026-07-31 docker-compose.dev.yml 声称创建实际缺失)
+
+## C15: 错误响应分支必须打日志 — 禁止静默失败
+
+**约束**：任何返回 Error 响应/Err 的代码路径**必须**同时有 `tracing::error!`/`tracing::warn!` 日志。错误信息只进响应不进日志 = 调用方忽略响应时全链路静默（PIT-54：produce Err 分支不打日志 + Host 不读响应 → 失败表现为"挂起"，浪费数小时排查）。
+
+**检查**：`grep -n "SignalingMessage::Error" crates/audemsp-server/src/signaling.rs` — 每个构造点上方应有日志行。
+
+**来源**：PIT-54 (2026-08-04 produce UnsupportedCodec 静默)
+
+## C16: 客户端 SFU 请求必须处理响应
+
+**约束**：Host/Client 发送 SFU 请求（produce/consume/connect）后**必须等待并处理响应**（至少打日志）。禁止 fire-and-forget——错误响应被忽略 = 服务端失败在客户端静默（PIT-54：Host 发完 produce 直接跑帧循环，Producer 创建失败完全不可见）。
+
+**检查**：Host `main.rs` SFU 请求后应有响应 match（Produced/Error），Error 必须 log。
+
+**来源**：PIT-54 (2026-08-04)

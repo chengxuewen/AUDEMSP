@@ -374,7 +374,14 @@ let app = axum::Router::new()
                 "codecs": [{
                     "mimeType": "video/H264",
                     "payloadType": H264_PT2,
-                    "clockRate": 90000
+                    "clockRate": 90000,
+                    // PIT-54: mediasoup match_codecs 对 H264 严格匹配 packetization-mode/profile-level-id，
+                    // 缺参数时按 0 处理 → 与 Router (4d0032, packetization-mode=1) 不匹配 → UnsupportedCodec
+                    "parameters": {
+                        "level-asymmetry-allowed": 1,
+                        "packetization-mode": 1,
+                        "profile-level-id": "4d0032"
+                    }
                 }],
                 "headerExtensions": [],
                 "encodings": [{"ssrc": 12345}],

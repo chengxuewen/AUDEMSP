@@ -711,6 +711,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     })
                 }
                 Err(e) => {
+                    tracing::error!("SFU: Producer creation failed: {e}");
                     Some(SignalingMessage::Error {
                         code: 5000,
                         message: format!("Producer creation failed: {e}"),

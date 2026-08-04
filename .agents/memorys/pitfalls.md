@@ -573,3 +573,15 @@ close() { this.closed = true; ... }
 **解法**: ① 测试保留（#[ignore] 标记）作为门禁——P2P ICE 修复后启用；② 修复方向：webrtc-sys 封装的 ICE transport 激活条件、候选 generation/ufrag 匹配、或双 full ICE 角色协商；③ Host→SFU 生产路径（ICE-Lite）不受影响。
 
 **验证**: `cargo test -p audemsp-webrtc --features backend-webrtc-sys --test ice_connect_e2e -- --ignored` 当前失败（预期）；移除 #[ignore] 且通过 = 修复完成。
+
+## PIT-54: produce 报 UnsupportedCodec 却表现"挂起" — Err 分支无日志 + Host 不处理响应 (2026-08-04)
+
+**症状**: Host produce 后 server 无 Producer created 日志、无失败日志，表现如 `transport.produce().await` 挂起；实际是快速失败——`RTP mapping error: Unsupported codec [Video(H264), payloadType:101]`。
+
+**根因**: ① **真根因**：Host 手工构造 rtp_parameters（main.rs json!）缺 codec parameters——mediasoup match_codecs 对 H264 strict 匹配，producer 缺省 `packetization-mode` 按 0 处理，Router capability 是 1 → 不匹配 → UnsupportedCodec（PIT-51 显式 payloadType 只是必要条件）。② **静默假象**：signaling.rs Err 分支只构造 Error 响应**不打日志**，且 Host 发完 produce 后**不读响应**（main.rs:386 后直接跑帧循环）→ 错误在两端都被静默吞掉，看起来像挂起。
+
+**解法**: ① Host produce JSON 补 H264 parameters：`{"level-asymmetry-allowed":1,"packetization-mode":1,"profile-level-id":"4d0032"}`（与 Router 一致，4d0032=Main profile，mediasoup-demo 标准）。② signaling.rs Err 分支加 `tracing::error!`。③ Host 应处理 produce 响应（当前忽略）。
+
+**验证**: server 日志 `Producer <id> (Video) created` + `SFU: broadcast NewProducer`；Host `SFU produce transport ready — I420 frame loop started`。
+
+**调试教训**: ① 日志矛盾（response sent 出现在 produce() 之后）指向 Err 分支无日志——gdb 断点（signaling.rs:691/704/716）一锤定音。② 容器 gdb 需要 `cap_add: [SYS_PTRACE]`（已加入 docker-compose.dev.yml）；apt 包每次容器重建丢失 → gdb 已入 dev Dockerfile。③ **设计缺陷**：Host 手工构造 rtp_parameters 是双硬编码（SDP + produce JSON 各自写死 PT/SSRC），且两处已不一致——SDP fmtp 是 `profile-level-id=42e01f`（Baseline, main.rs:293），produce JSON 是 `4d0032`（Main, main.rs:380），靠 mediasoup answer 用 Router codec (4d0032) 应答才偶然对齐；正确形态是 audemsp-webrtc 补 `get_rtp_parameters(track_id)` API 从协商结果提取——记入待办。
