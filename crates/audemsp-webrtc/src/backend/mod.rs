@@ -106,8 +106,18 @@ pub trait TrackWriteBackend: Send + Sync + 'static {
     /// For webrtc-rs: use audemsp-codec crate to encode I420→H.264, then write_frame().
     ///
     /// `data` layout: Y plane (w*h) + U plane (w*h/4) + V plane (w*h/4).
+    /// 默认方法委托 with_ts(None) — 单入口避免双实现漂移 (PIT-54 教训)。
     async fn write_raw_i420(
-        &self, _data: &[u8], _width: u32, _height: u32,
+        &self, data: &[u8], width: u32, height: u32,
+    ) -> Result<(), RTCError> {
+        self.write_raw_i420_with_ts(data, width, height, None).await
+    }
+
+    /// PIT-63/相机: 时间戳参数化 — `ts_us` 为帧捕获时刻 (µs, wall-clock 语义)。
+    /// None → 后端内部默认时间戳 (webrtc-sys: 锚定单调 wall-clock; webrtc-rs: pts=0)。
+    /// 相机接入时传入 V4L2 buffer timestamp (µs)。
+    async fn write_raw_i420_with_ts(
+        &self, _data: &[u8], _width: u32, _height: u32, _ts_us: Option<i64>,
     ) -> Result<(), RTCError> {
         Ok(())
     }

@@ -186,7 +186,8 @@ impl RTCPeerConnection {
         &self,
         f: Box<dyn FnMut(Arc<webrtc::data_channel::RTCDataChannel>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + Send + Sync + 'static>,
     ) { self.backend.on_data_channel(f); }
-    pub fn on_ice_candidate(
+    /// webrtc-rs 原生候选回调 (P2P 路径) — 与通用 trickle 版 (on_ice_candidate) 区分命名。
+    pub fn on_ice_candidate_native(
         &self,
         f: Box<dyn FnMut(Option<webrtc::ice_transport::ice_candidate::RTCIceCandidate>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + Send + Sync + 'static>,
     ) { self.backend.on_ice_candidate(f); }

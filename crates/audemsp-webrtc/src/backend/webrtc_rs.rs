@@ -544,8 +544,8 @@ impl TrackWriteBackend for WebrtcRsTrack {
         }
         Ok(())
     }
-    async fn write_raw_i420(
-        &self, data: &[u8], width: u32, height: u32,
+    async fn write_raw_i420_with_ts(
+        &self, data: &[u8], width: u32, height: u32, ts_us: Option<i64>,
     ) -> Result<(), RTCError> {
         // ponytail: auto-init encoder on first call
         if self.encoder.lock().unwrap().is_none() {
@@ -563,7 +563,7 @@ impl TrackWriteBackend for WebrtcRsTrack {
                 Plane { data: data[y_size..y_size+uv_size].to_vec(), stride: width/2 },
                 Plane { data: data[y_size+uv_size..y_size+2*uv_size].to_vec(), stride: width/2 },
             ],
-            pts: 0,
+            pts: ts_us.unwrap_or(0) as u64, // PIT-63: 时间戳参数化 (None → 保持 0)
             keyframe: false,
         };
         // Push frame under lock, release before writing

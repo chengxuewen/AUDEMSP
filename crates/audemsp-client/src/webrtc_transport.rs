@@ -109,7 +109,7 @@ impl WebrtcTransport {
 
         // e. Register on_ice_candidate: serialize to JSON, push via ice_tx
         let ice_tx = self.ice_tx.clone();
-        pc.on_ice_candidate(Box::new(move |candidate| {
+        pc.on_ice_candidate_native(Box::new(move |candidate| {
             let ice_tx = ice_tx.clone();
             Box::pin(async move {
                 if let Some(c) = candidate {

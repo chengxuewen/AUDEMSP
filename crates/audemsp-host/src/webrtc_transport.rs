@@ -1,6 +1,6 @@
 #[cfg(feature = "webrtc-p2p")]
-//! WebRTC transport module for AUDEMSP Host.
-//!
+// WebRTC transport module for AUDEMSP Host.
+//
 //! Creates a RTCPeerConnection, establishes an unordered unreliable RTCDataChannel
 //! named "frames", and exchanges SDP/ICE candidates via the existing signaling WS.
 //!
@@ -87,7 +87,7 @@ impl WebrtcTransport {
         {
             let ws_clone = ws.clone();
             let room = room_id.clone();
-            pc.on_ice_candidate(Box::new(
+            pc.on_ice_candidate_native(Box::new(
                 move |candidate: Option<RTCIceCandidate>| {
                     let ws = ws_clone.clone();
                     let room_id = room.clone();

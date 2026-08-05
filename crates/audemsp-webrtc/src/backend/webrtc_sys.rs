@@ -523,8 +523,8 @@ impl TrackWriteBackend for WebrtcSysTrack {
         Ok(())
     }
 
-    async fn write_raw_i420(
-        &self, data: &[u8], width: u32, height: u32,
+    async fn write_raw_i420_with_ts(
+        &self, data: &[u8], width: u32, height: u32, ts_us: Option<i64>,
     ) -> Result<(), RTCError> {
 use webrtc_sys::video_frame::ffi as vf;
         use webrtc_sys::video_frame_buffer::ffi as vfb;
@@ -566,7 +566,8 @@ use webrtc_sys::video_frame::ffi as vf;
         // Build VideoFrame and push to source
         let mut builder = vf::new_video_frame_builder();
         // PIT-63: 锚定单调 wall-clock — 与 livekit TimestampAligner 期望一致 (帧 ts 与 wall-clock 可比)
-        let ts_us = self.ts_base_us + self.ts_anchor.elapsed().as_micros() as i64;
+        // ts_us 参数: Some(捕获时刻) 相机时间源; None → 内部锚定单调
+        let ts_us = ts_us.unwrap_or_else(|| self.ts_base_us + self.ts_anchor.elapsed().as_micros() as i64);
         builder.pin_mut().set_timestamp_us(ts_us);
         builder.pin_mut().set_video_frame_buffer(
             // SAFETY: i420 → yuv8 → yuv → vfb upcast chain

@@ -147,6 +147,13 @@ impl TrackSender {
     pub async fn write_raw_i420(&self, data: &[u8], width: u32, height: u32) -> Result<(), RTCError> {
         self.backend.write_raw_i420(data, width, height).await
     }
+
+    /// PIT-63: 时间戳参数化 — ts_us 为帧捕获时刻 (µs); None → 后端默认 (锚定单调 wall-clock)。
+    pub async fn write_raw_i420_with_ts(
+        &self, data: &[u8], width: u32, height: u32, ts_us: Option<i64>,
+    ) -> Result<(), RTCError> {
+        self.backend.write_raw_i420_with_ts(data, width, height, ts_us).await
+    }
 }
 
 /// Unified handle for multi-track registry (D148).
