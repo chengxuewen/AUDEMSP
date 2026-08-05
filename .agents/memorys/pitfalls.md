@@ -704,7 +704,7 @@ close() { this.closed = true; ... }
 
 **根因（已定位部分）**: ① **帧率必须匹配 libwebrtc 编码器配置（30fps）**——SquaresPattern::draw 耗时 7-17ms + 固定 sleep 33ms → 实际 ~20fps → 编码器 rate control 异常 → RTP 输出异常。修复 = 绝对时间轴（sleep_until + next += 33ms，OpenCTK RepeatingTask 同机制）。② **剩余不稳定未定位**：排除关键帧频率（RandomPerFrame 无效）、PLI 请求（request_key_frame 无效）、transport 残留（干净 server 无效）。候选: libwebrtc 关键帧 SPS/PPS 携带不稳定（浏览器无法初始化解码）或 Consumer→浏览器传输时序。
 
-**解法（当前）**: 手写多色矩形稳定默认（绝对时间轴）；Squares 图案需绝对时间轴才能渲染（从 0% → 40-60%）。深挖需 mediasoup Producer trace（明文 RTP NAL 分析 SPS/PPS）。
+**解法（当前）**: SquaresPattern + 绝对时间轴 = **MVP 交付**（人工测试成功——真实单次连接渲染正常，Squares 动态方块画面）；手写多色矩形为 E2E 连跑稳定备选。深挖（E2E 连跑不稳定）需 mediasoup Producer trace 或抓包级工具。
 
 **验证**: 手写 5/5 E2E 通过；Squares 2/5（绝对时间轴后）。
 

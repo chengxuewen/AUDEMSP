@@ -52,7 +52,7 @@ const APP = 'http://127.0.0.1:5173';
     const pc = window.__sfuPc;
     if (!pc) return { error: 'no pc' };
     const reports = await pc.getStats();
-    const out = { video: {}, audio: {} };
+    const out = { video: {}, audio: {}, transport: {} };
     reports.forEach((r) => {
       if (r.type === 'inbound-rtp' && r.kind === 'video') {
         out.video = {
@@ -61,6 +61,11 @@ const APP = 'http://127.0.0.1:5173';
           keyFramesDecoded: r.keyFramesDecoded, decoderImplementation: r.decoderImplementation,
           jitter: r.jitter, droppedFrames: r.framesDropped,
         };
+      }
+    });
+    reports.forEach((r) => {
+      if (r.type === 'transport') {
+        out.transport = { dtlsState: r.dtlsState, selectedCandidatePairState: r.selectedCandidatePairState };
       }
     });
     return out;
