@@ -9,10 +9,7 @@
 //! - WebrtcSysTrack: real video track via VideoTrackSource (webrtc-sys)
 //! - WebrtcSysFactory: wraps webrtc_sys::peer_connection_factory::ffi::PeerConnectionFactory
 
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc, Mutex,
-};
+use std::sync::{Arc, Mutex};
 use cxx::SharedPtr;
 
 use super::DcBackend;
@@ -462,13 +459,27 @@ impl DcBackend for WebrtcSysDc {
 /// libwebrtc handles encoding internally (VP8/H.264).
 pub(crate) struct WebrtcSysTrack {
     video_source: Mutex<Option<SharedPtr<webrtc_sys::video_track::ffi::VideoTrackSource>>>,
-    // PIT-57: VideoFrame 时间戳必须单调递增 (30fps → 33333us) — 固定 0 导致 libwebrtc 编码输出极小帧
-    next_timestamp_us: AtomicU64,
+    // PIT-63: 锚定单调 wall-clock 时间戳 — BASE(SystemTime 锚点) + Instant::elapsed()(单调增量)。
+    // 裸 SystemTime::now() 非单调 (NTP 跳变/挂起恢复 → ts 倒退 → aligned 倒退 → FramerateController 重置);
+    // 假时钟 (+33333us/次) 与 libwebrtc 时间域不一致 (PIT-61 实验史)。
+    ts_base_us: i64,
+    ts_anchor: std::time::Instant,
+}
+
+impl WebrtcSysTrack {
+    fn new_clock_anchor() -> (i64, std::time::Instant) {
+        let base_us = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_micros() as i64)
+            .unwrap_or(0);
+        (base_us, std::time::Instant::now())
+    }
 }
 
 impl Default for WebrtcSysTrack {
     fn default() -> Self {
-        Self { video_source: Mutex::new(None), next_timestamp_us: AtomicU64::new(0) }
+        let (ts_base_us, ts_anchor) = Self::new_clock_anchor();
+        Self { video_source: Mutex::new(None), ts_base_us, ts_anchor }
     }
 }
 
@@ -483,7 +494,8 @@ impl std::fmt::Debug for WebrtcSysTrack {
 impl Clone for WebrtcSysTrack {
     fn clone(&self) -> Self {
         let source = self.video_source.lock().unwrap().clone();
-        Self { video_source: Mutex::new(source), next_timestamp_us: AtomicU64::new(0) }
+        let (ts_base_us, ts_anchor) = Self::new_clock_anchor();
+        Self { video_source: Mutex::new(source), ts_base_us, ts_anchor }
     }
 }
 
@@ -491,7 +503,8 @@ impl WebrtcSysTrack {
     pub(crate) fn with_video_source(
         source: SharedPtr<webrtc_sys::video_track::ffi::VideoTrackSource>,
     ) -> Self {
-        Self { video_source: Mutex::new(Some(source)), next_timestamp_us: AtomicU64::new(0) }
+        let (ts_base_us, ts_anchor) = Self::new_clock_anchor();
+        Self { video_source: Mutex::new(Some(source)), ts_base_us, ts_anchor }
     }
 }
 
@@ -552,10 +565,9 @@ use webrtc_sys::video_frame::ffi as vf;
 
         // Build VideoFrame and push to source
         let mut builder = vf::new_video_frame_builder();
-        // PIT-57: 单调递增时间戳 (30fps) — 固定 0 → 编码器输出极小帧
-        // (wall-clock ts 实验已回滚 — squares 内容 + wall-clock 停摆, 与 ts 无关见 PIT-61)
-        let ts_us = next_video_timestamp(&self.next_timestamp_us);
-        builder.pin_mut().set_timestamp_us(ts_us as i64);
+        // PIT-63: 锚定单调 wall-clock — 与 livekit TimestampAligner 期望一致 (帧 ts 与 wall-clock 可比)
+        let ts_us = self.ts_base_us + self.ts_anchor.elapsed().as_micros() as i64;
+        builder.pin_mut().set_timestamp_us(ts_us);
         builder.pin_mut().set_video_frame_buffer(
             // SAFETY: i420 → yuv8 → yuv → vfb upcast chain
             unsafe { &*vfb::yuv_to_vfb(
@@ -870,25 +882,18 @@ impl WebrtcSysFactory {
     }
 }
 
-/// PIT-57: VideoFrame 时间戳必须单调递增 (30fps → 33333us 步进)。
-/// 固定 0 → libwebrtc 编码管线按时间戳调度 → 输出 37 字节极小帧。
-pub(crate) fn next_video_timestamp(ts: &AtomicU64) -> u64 {
-    ts.fetch_add(33_333, Ordering::Relaxed)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn video_timestamps_monotonically_increase() {
-        let ts = AtomicU64::new(0);
-        let t1 = next_video_timestamp(&ts);
-        let t2 = next_video_timestamp(&ts);
-        let t3 = next_video_timestamp(&ts);
-        assert_eq!(t1, 0);
-        assert_eq!(t2, 33_333);
-        assert_eq!(t3, 66_666);
-        assert!(t2 > t1 && t3 > t2, "PIT-57: 时间戳必须单调递增");
+    fn anchored_timestamp_is_monotonic_and_wallclock_magnitude() {
+        // PIT-63: 锚定单调 — 单调递增 + wall-clock 量级 (~1.78e15 µs @2026)
+        let (base, anchor) = WebrtcSysTrack::new_clock_anchor();
+        let t1 = base + anchor.elapsed().as_micros() as i64;
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let t2 = base + anchor.elapsed().as_micros() as i64;
+        assert!(t2 > t1, "时间戳必须单调递增");
+        assert!(t1 > 1_000_000_000_000, "wall-clock 量级 (µs): {t1}");
     }
 }

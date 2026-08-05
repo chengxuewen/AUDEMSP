@@ -638,6 +638,26 @@ close() { this.closed = true; ... }
 
 **调试教训**: server 重启后旧连接清理事件可能污染新连接——重启服务后重启客户端要间隔几秒（等清理完成），或客户端做 peer_id 校验。
 
+## PIT-60: 用户要求视频帧生成器动态多色矩形 — 非调试棋盘格 (2026-08-04)
+
+**症状/背景**: Host SFU 帧循环 (B5) 是 PIT-46 调试期的手工黑白棋盘格；用户要求使用"视频帧生成器"的动态多色矩形视频帧。
+
+**根因**: 调试简化实现遗留——Host 的 SFU 帧循环未接入 audemsp-media 的视频帧生成器，直接构造 I420 棋盘格喂 write_raw_i420。
+
+**解法**: 交付手写动态多色矩形 (4 色块循环 + 彩色 U/V) + tokio 循环 (E2E 通过)；VideoFrameGenerator/SquaresPattern 集成兼容问题见 PIT-62。
+
+**验证**: E2E 截图 4 色对角循环网格 (非棋盘格)。
+
+## PIT-61: wall-clock ts 实验曾回滚 — SquaresPattern 变量污染 (2026-08-04)
+
+**症状**: 真实 wall-clock 时间戳实验 (debug23: wall-clock + generator/mpsc + SquaresPattern) 编码器停摆，代码注释记录"与 ts 无关"并回滚 (webrtc_sys.rs:556)。
+
+**根因**: **变量污染**——实验中同时混入 3 个变量 (wall-clock ts + generator/mpsc 架构 + SquaresPattern 图案)，停摆被误归因于 ts。PIT-63 隔离验证推翻此结论。
+
+**解法**: 教训 = 单变量实验 (PIT-50 方法论)；结论以 PIT-63 为准 (真实时间戳是修复，非根因)。
+
+**验证**: PIT-63 T2.5 隔离验证 (wall-clock + 手写图案 + mpsc 组合) 通过。
+
 ## PIT-62: VideoFrameGenerator 架构与 libwebrtc 管线不兼容 — 多色矩形帧交付 (2026-08-04)
 
 **症状**: 用户要求"视频帧生成器的动态多色矩形帧"（非调试期棋盘格）。接入 audemsp-media VideoFrameGenerator 后 E2E 渲染失败（videoWidth=0）。实验矩阵:
@@ -653,3 +673,15 @@ close() { this.closed = true; ... }
 **验证**: E2E videoWidth=640x480 + 截图 4 色对角循环网格。
 
 **调试教训**: ① tcpdump 在容器内抓"宿主→容器"流量不可靠 (docker-proxy NAT 路径) — 以 server 侧 ReceiveRtpPacket 日志和 E2E 结果为准。② 帧质量/编码问题用"关键帧间隔"判断 (ReceiveRtpPacket 只打关键帧) 而非总包数。③ 变量分离: 图案/架构/线程逐一二分, 不要同时改多个变量。
+
+## PIT-63: 假时钟是编码器停摆根因 — 锚定单调 wall-clock 时间戳修复 (2026-08-05)
+
+**症状**: write_raw_i420 假时钟 (+33333us/次固定步进) 下，VideoFrameGenerator/mpsc 集成 E2E 失败 (编码器仅稀疏关键帧)；手写图案 + tokio 循环靠"假时钟恰好匹配 33ms 节流"的巧合通过。
+
+**根因**: 假时钟与 livekit VideoTrackSource 的 TimestampAligner (delta-preserving, 将帧 ts 映射到 wall-clock 时间域) 不一致 → 帧率估计异常 → AdaptFrame 丢帧。PIT-61 的实验混入 SquaresPattern 变量导致误判"与 ts 无关"。
+
+**解法**: 锚定单调时间戳——`ts_base_us (SystemTime 锚点, wall-clock 量级) + Instant::elapsed() (单调增量)`。**不用裸 SystemTime::now()** (NTP 跳变/挂起恢复 → ts 倒退)。删除 next_timestamp_us 假时钟。
+
+**验证 (T2/T2.5 假设验证门)**: ① 手写多色矩形 + tokio + 新时间戳 → E2E 640x480 ✓ + 关键帧间隔 **2.35s** (假时钟基线 11s → 大幅改善)；② **mpsc 组合 + 新时间戳 → E2E 640x480 ✓ + 关键帧 2.3s** — R1 假设证实: 假时钟是根因, mpsc 架构本身无问题 (T7 生成器重构降级为可选)。
+
+**调试教训**: 单变量实验 (PIT-50) — 之前 wall-clock 失败是 3 变量污染 (PIT-61)；时间戳语义问题用"关键帧间隔"量化 (11s → 2.35s 是修复证据)。

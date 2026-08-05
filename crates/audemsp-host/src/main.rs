@@ -362,10 +362,8 @@ let app = axum::Router::new()
         }
 
         // B5: 动态多色矩形帧 (PIT-60 用户要求) → write_raw_i420
-        // PIT-62: audemsp-media 的 VideoFrameGenerator (线程/mpsc 架构) 与 libwebrtc 管线
-        // 不兼容 (write_raw_i420 30fps 正常但编码器几乎无输出 — 待查);
-        // SquaresPattern 直接绘制 (tokio 循环) 关键帧间隔 ~40s 浏览器 90s 内无渲染 — 待查。
-        // 当前交付: 手写动态多色矩形 (4 色块循环) — E2E 验证通过。
+        // PIT-63 结论: 假时钟是停摆根因 (R1 证实) — 真实时间戳后 mpsc/generator 架构均可工作;
+        // 当前保持 tokio 循环直连 (最简路径)。
         let video_track_send = video_track.clone();
         tokio::spawn(async move {
             let width: u32 = 640;
