@@ -173,3 +173,20 @@
 **原因**: 项目归属 AUDESYS/AUDEBase 生态，统一 AUDEMSP 命名消除「OMSPBase 是独立项目」歧义，与生态命名体系一致。团队 4 分析师交叉验证（217 文件/2363 处）。
 **例外（保留原名）**: decisions-archived.md 历史档案（174 处实测旧名引用）、git 历史/commit 消息、.omo/.sisyphus 归档快照、node_modules 生成物。
 **影响**: ① 改名后 Docker 镜像层缓存全部失效（路径变化），首次构建回滚全量编译（一次性成本）；② 旧 env（OMSPBASE_PSK）与 localStorage 键失效——项目未发布，接受破坏；③ git mv 保留历史，单 commit 可 revert 回滚；④ 后续所有文档/命令使用 audemsp-* 命名。
+
+
+## D210: 帧时间戳锚定单调真实时钟 (2026-08-05)
+
+**决策**: write_raw_i420 的 VideoFrame 时间戳用 `ts_base_us(SystemTime 锚点) + Instant::elapsed()`（锚定单调），废弃假时钟（+33333us 固定步进）与裸 SystemTime::now()。
+
+**原因**: 假时钟与 livekit TimestampAligner（delta-preserving，映射到 wall-clock 时间域）不一致 → 编码器帧率估计异常 → 停摆（PIT-63，T2.5 假设验证门证实）；裸 SystemTime 非单调（NTP 跳变 → ts 倒退）。
+
+**影响**: 帧时间戳真实化是相机接入（V4L2 buffer timestamp）的前提；`write_raw_i420_with_ts` 参数化留口（T4）。
+
+## D211: 帧率必须匹配 libwebrtc 编码器配置 — 帧循环绝对时间轴 (2026-08-05)
+
+**决策**: Host 帧循环用绝对时间轴（`sleep_until(next); next += 33ms;`），禁止"固定 sleep + 耗时操作"模式；帧率目标 = libwebrtc 编码器配置（30fps）。
+
+**原因**: SquaresPattern::draw 耗时 7-17ms 拖慢固定 sleep 循环 → 实际 ~20fps ≠ 配置 30fps → 编码器 rate control 异常（PIT-64）。OpenCTK RepeatingTask 同机制（审核评估的 tokio sleep_until 等价落地）。
+
+**影响**: 任何视频源（生成器/相机）接入必须保证帧率匹配；C17 约束固化；E2E 连跑不稳定（PIT-65）为剩余问题。
