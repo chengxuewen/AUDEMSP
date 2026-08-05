@@ -685,3 +685,15 @@ close() { this.closed = true; ... }
 **验证 (T2/T2.5 假设验证门)**: ① 手写多色矩形 + tokio + 新时间戳 → E2E 640x480 ✓ + 关键帧间隔 **2.35s** (假时钟基线 11s → 大幅改善)；② **mpsc 组合 + 新时间戳 → E2E 640x480 ✓ + 关键帧 2.3s** — R1 假设证实: 假时钟是根因, mpsc 架构本身无问题 (T7 生成器重构降级为可选)。
 
 **调试教训**: 单变量实验 (PIT-50) — 之前 wall-clock 失败是 3 变量污染 (PIT-61)；时间戳语义问题用"关键帧间隔"量化 (11s → 2.35s 是修复证据)。
+
+## PIT-64: SquaresPattern 流 Consumer 0 转发 — 关键帧正常但渲染失败 (2026-08-05)
+
+**症状**: 真实时间戳下 SquaresPattern 关键帧间隔恢复正常（2.6-13s，R2"静态内容→40s"归因推翻），但 E2E 仍 videoWidth=0；server 侧 Producer 持续收关键帧、Consumer 创建成功但 **SendRtpPacket 0 条**（未转发任何包）。
+
+**根因**: 未完全定位。与手写图案（同链路渲染成功）的差异仅在 producer 流内容——候选: ① Consumer syncRequired 等待关键帧但 SquaresPattern 流的关键帧判定失败（SPS/PPS 缺失——libwebrtc 静态场景关键帧可能不带 SPS/PPS，mediasoup/浏览器无法初始化解码）; ② Consumer 的 RtpStream 状态异常。需抓包分析 H264 载荷（SRTP 密文阻碍——需 server 侧 RTP 解密或 mediasoup trace）或 mediasoup Producer/Consumer 层调试。
+
+**解法（当前）**: 保持手写多色矩形交付（E2E 通过）；SquaresPattern 集成标记待查（T11 归因已明确：假时钟是唯一根因，SquaresPattern 渲染是独立问题）。
+
+**验证**: 手写图案回归 E2E 640x480 ✓。
+
+**调试教训**: 关键帧间隔正常 ≠ 渲染成功——Consumer::SendRtpPacket 计数是"流是否到浏览器"的直接证据；producer 关键帧判定（ReceiveRtpPacket）与 Consumer 转发是两个独立环节。
