@@ -402,6 +402,16 @@ mod imp {
                 consumer_id, peer_id, producer_id, protocol_kind
             );
 
+            // PIT-64: Consumer 创建后立即请求关键帧 — Squares 流关键帧间隔波动 (7-13s)
+            // 导致 Consumer syncRequired 等待窗口长 → 浏览器 0 包; PLI 强制立即出关键帧
+            {
+                let cid = consumer_id.clone();
+                match consumer.request_key_frame().await {
+                    Ok(()) => tracing::info!("SFU: requested key frame for consumer {cid}"),
+                    Err(e) => tracing::warn!("SFU: request_key_frame failed for {cid}: {e}"),
+                }
+            }
+
             peer.consumers.push(consumer);
 
             Ok(ConsumeResult {

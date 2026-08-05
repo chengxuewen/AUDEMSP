@@ -697,3 +697,15 @@ close() { this.closed = true; ... }
 **验证**: 手写图案回归 E2E 640x480 ✓。
 
 **调试教训**: 关键帧间隔正常 ≠ 渲染成功——Consumer::SendRtpPacket 计数是"流是否到浏览器"的直接证据；producer 关键帧判定（ReceiveRtpPacket）与 Consumer 转发是两个独立环节。
+
+## PIT-65: Squares 流 E2E 不稳定 — 帧率匹配是必须条件, 剩余竞态待查 (2026-08-05)
+
+**症状**: SquaresPattern（生成器图案）+ 真实时间戳：E2E 通过率 ~40-60%（手写图案 5/5 稳定）；成功轮次解码正常（147 帧），失败轮次浏览器 0 包（inbound-rtp 空）尽管 server 有 Consumer sync 转发。
+
+**根因（已定位部分）**: ① **帧率必须匹配 libwebrtc 编码器配置（30fps）**——SquaresPattern::draw 耗时 7-17ms + 固定 sleep 33ms → 实际 ~20fps → 编码器 rate control 异常 → RTP 输出异常。修复 = 绝对时间轴（sleep_until + next += 33ms，OpenCTK RepeatingTask 同机制）。② **剩余不稳定未定位**：排除关键帧频率（RandomPerFrame 无效）、PLI 请求（request_key_frame 无效）、transport 残留（干净 server 无效）。候选: libwebrtc 关键帧 SPS/PPS 携带不稳定（浏览器无法初始化解码）或 Consumer→浏览器传输时序。
+
+**解法（当前）**: 手写多色矩形稳定默认（绝对时间轴）；Squares 图案需绝对时间轴才能渲染（从 0% → 40-60%）。深挖需 mediasoup Producer trace（明文 RTP NAL 分析 SPS/PPS）。
+
+**验证**: 手写 5/5 E2E 通过；Squares 2/5（绝对时间轴后）。
+
+**调试教训**: ① 帧率与编码器配置的匹配是硬约束（内容 draw 耗时会破坏）。② E2E 不稳定排查: 关键帧频率/PLI/残留逐一排除, 剩余候选 SPS/PPS（需 trace 级工具）。③ decoder stats（inbound-rtp）是"包是否到浏览器"的直接证据（比 videoWidth 更早的信号）。

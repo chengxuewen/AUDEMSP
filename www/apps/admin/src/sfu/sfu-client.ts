@@ -155,6 +155,7 @@ export class SfuConsumerClient {
     this.pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
+    (window as any).__sfuPc = this.pc; // PIT-64 观测: 暴露 pc 供 getStats 查询
     this.pc.ontrack = (event) => { console.log('SfuClient: ONTRACK fired, streams=', event.streams.length, 'track=', event.track?.kind); this.onTrack(event.streams[0]); this.onStatus('playing'); this.startMetrics(); };
     this.pc.oniceconnectionstatechange = () => {
       console.log('SfuClient: iceConnectionState =', this.pc?.iceConnectionState); // PIT-56 观测

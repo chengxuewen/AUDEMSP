@@ -46,6 +46,27 @@ const APP = 'http://127.0.0.1:5173';
   });
   console.log('video info:', JSON.stringify(vidInfo));
 
+  // PIT-64: Chrome 解码统计 (video 接收端)
+  await new Promise(r => setTimeout(r, 5000)); // 给解码器时间
+  const stats = await page.evaluate(async () => {
+    const pc = window.__sfuPc;
+    if (!pc) return { error: 'no pc' };
+    const reports = await pc.getStats();
+    const out = { video: {}, audio: {} };
+    reports.forEach((r) => {
+      if (r.type === 'inbound-rtp' && r.kind === 'video') {
+        out.video = {
+          bytesReceived: r.bytesReceived, packetsReceived: r.packetsReceived,
+          framesDecoded: r.framesDecoded, framesReceived: r.framesReceived,
+          keyFramesDecoded: r.keyFramesDecoded, decoderImplementation: r.decoderImplementation,
+          jitter: r.jitter, droppedFrames: r.framesDropped,
+        };
+      }
+    });
+    return out;
+  });
+  console.log('decoder stats:', JSON.stringify(stats));
+
   await page.screenshot({ path: '/tmp/e2e-2-playing.png' });
   console.log('--- console logs ---');
   logs.forEach((l) => console.log(l));

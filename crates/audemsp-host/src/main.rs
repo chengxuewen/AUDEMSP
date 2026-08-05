@@ -361,9 +361,9 @@ let app = axum::Router::new()
             Err(_) => return Err(anyhow::anyhow!("SFU Produce send timeout after 10s")),
         }
 
-        // B5: 动态多色矩形帧 (PIT-60 用户要求) → write_raw_i420
-        // PIT-63 结论: 假时钟是停摆根因 (R1 证实) — 真实时间戳后 mpsc/generator 架构均可工作;
-        // 当前保持 tokio 循环直连 (最简路径)。
+        // B5: 动态多色矩形帧 — 稳定默认 (手写, E2E 5/5 通过)
+        // PIT-63: 假时钟是停摆根因 (锚定单调真实时间戳修复)。
+        // PIT-64: Squares 图案需绝对时间轴 (draw 7-17ms 拖慢帧率) + 仍 E2E 不稳定 (SPS/PPS 待查)。
         let video_track_send = video_track.clone();
         tokio::spawn(async move {
             let width: u32 = 640;
@@ -371,11 +371,12 @@ let app = axum::Router::new()
             let y_size = (width * height) as usize;
             let uv_size = (width * height / 4) as usize;
             let mut frame = vec![0u8; y_size + 2 * uv_size];
-            frame[y_size..y_size + uv_size].fill(100); // 彩色 (非灰色)
+            frame[y_size..y_size + uv_size].fill(100);
             frame[y_size + uv_size..].fill(160);
             let mut seq = 0u64;
+            let mut next = tokio::time::Instant::now() + Duration::from_millis(33);
             loop {
-                tokio::time::sleep(Duration::from_millis(33)).await;
+                tokio::time::sleep_until(next).await;
                 let y_plane = &mut frame[..y_size];
                 for y in 0..height {
                     for x in 0..width {
@@ -393,12 +394,13 @@ let app = axum::Router::new()
                     break;
                 }
                 seq += 1;
-                if seq % 90 == 0 {
-                    tracing::debug!("SFU: sent {} frames", seq);
+                next += Duration::from_millis(33);
+                if next < tokio::time::Instant::now() {
+                    next = tokio::time::Instant::now();
                 }
             }
         });
-        tracing::info!("SFU produce transport {} ready — multi-color rects started", transport_id);
+        tracing::info!("SFU produce transport {} ready — multi-color rects (stable)", transport_id);
     } else {
 
     // P2P transport path — gated behind webrtc-p2p feature
