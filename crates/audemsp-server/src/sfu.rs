@@ -413,13 +413,12 @@ mod imp {
                     .await;
             }
 
-            // PIT-64: Consumer 创建后立即请求关键帧 — Squares 流关键帧间隔波动 (7-13s)
-            // 导致 Consumer syncRequired 等待窗口长 → 浏览器 0 包; PLI 强制立即出关键帧
+            // PIT-65 观测: Consumer dump (rtp_streams score — IsActive 判定依据)
             {
                 let cid = consumer_id.clone();
-                match consumer.request_key_frame().await {
-                    Ok(()) => tracing::info!("SFU: requested key frame for consumer {cid}"),
-                    Err(e) => tracing::warn!("SFU: request_key_frame failed for {cid}: {e}"),
+                if let Ok(dump) = consumer.dump().await {
+                    let scores: Vec<u8> = dump.rtp_streams.iter().map(|s| s.score).collect();
+                    tracing::info!("CONS-DUMP {}: paused={} scores={:?}", cid, dump.paused, scores);
                 }
             }
 

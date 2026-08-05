@@ -706,7 +706,7 @@ close() { this.closed = true; ... }
 
 **根因（已定位部分）**: ① **帧率必须匹配 libwebrtc 编码器配置（30fps）**——SquaresPattern::draw 耗时 7-17ms + 固定 sleep 33ms → 实际 ~20fps → 编码器 rate control 异常 → RTP 输出异常。修复 = 绝对时间轴（sleep_until + next += 33ms，OpenCTK RepeatingTask 同机制）。② **剩余不稳定未定位**：排除关键帧频率（RandomPerFrame 无效）、PLI 请求（request_key_frame 无效）、transport 残留（干净 server 无效）。候选: libwebrtc 关键帧 SPS/PPS 携带不稳定（浏览器无法初始化解码）或 Consumer→浏览器传输时序。
 
-**解法（当前）**: ① **b=AS:2000（SDP 码率预算）必要修复**——Squares 复杂内容 → 编码器默认码率不足 → rate control 跳帧 → RTP seq 周期跳变 → mediasoup Consumer seq manager 拒绝后续 P 帧 → 0 转发 → 黑屏。b=AS 后 seq 100% 连续 + E2E 成功轮次 153 帧解码。② **前端 SFU peer_id 唯一化**（每连接随机后缀）——修复多网页同 peer_id 导致 SfuManager recv_transport 覆盖（架构正确性，非黑屏根因——唯一化后仍黑）。③ **剩余竞态**：多 Consumer 并发时部分 Consumer 只转发 sync（关键帧首包）不转发 P 帧（传输层 ICE/DTLS 全就绪、seq 连续）——候选: 多 Consumer PLI 风暴（request_key_frame 每 Consumer 触发 → 关键帧 burst → UDP 丢包）或 mediasoup Consumer late-joiner sync 竞态——**需 mediasoup worker 调试日志（MS_LOG_DEV_LEVEL 编译期开启）或移除 request_key_frame 实验**。手写流稳定对照。
+**解法（当前）**: ① **b=AS:2000（SDP 码率预算）必要修复**——Squares 复杂内容 → 编码器默认码率不足 → rate control 跳帧 → RTP seq 周期跳变 → mediasoup Consumer seq manager 拒绝后续 P 帧 → 0 转发 → 黑屏。b=AS 后 seq 100% 连续 + E2E 成功轮次 153 帧解码。② **前端 SFU peer_id 唯一化**（每连接随机后缀）——修复多网页同 peer_id 导致 SfuManager recv_transport 覆盖（架构正确性，非黑屏根因——唯一化后仍黑）。③ **剩余竞态（多网页黑屏）未定位**：多 Consumer 并发时部分 Consumer 只转发 sync 不转发 P 帧。**已排除**：编码器跳帧（b=AS 修，seq 连续）、PLI 风暴（移除 request_key_frame 无效）、分辨率（320x240 更差）、peer_id 覆盖（signaling 用 session relay_peer_id=admin 覆盖仍存，但唯一化/非唯一化都黑，非主因）、IsActive（CONS-DUMP score=10 满活跃）、ICE/DTLS（全就绪）。**剩余候选**：mediasoup Consumer 对"流运行后加入"（late-joiner）的 seq 管理竞态——**需 mediasoup worker 编译日志（MS_LOG_DEV_LEVEL / MS_RTC_LOGGER_RTP）或 mediasoup-rs 升级验证**。手写流稳定对照（内容简单无此竞态）。
 
 **验证**: 手写 5/5 E2E 通过；Squares 2/5（绝对时间轴后）。
 
