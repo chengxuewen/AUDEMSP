@@ -72,6 +72,8 @@ export class SfuConsumerClient {
   private pendingSdp: any = null;
   private metricsTimer: ReturnType<typeof setInterval> | null = null;
   private transportId: string | null = null;
+  // PIT-65: 每连接唯一 SFU peer_id — 多网页同 peer_id 导致 SfuManager recv_transport 互相覆盖
+  private sfuPeerId: string;
   private transportResolver: ((params: TransportCreated) => void) | null = null;
   private pendingProducer: any = null;
 
@@ -89,6 +91,8 @@ export class SfuConsumerClient {
     this.onTrack = callbacks.onTrack;
     this.onStatus = callbacks.onStatus;
     this.onMetrics = callbacks.onMetrics;
+    // PIT-65: 每连接唯一 SFU peer_id (多网页同 peer_id → SfuManager transport 覆盖)
+    this.sfuPeerId = `${this.roomId}-consumer-${Math.random().toString(36).slice(2, 8)}`;
   }
 
   async connect(): Promise<void> {
@@ -173,7 +177,7 @@ export class SfuConsumerClient {
     // Try SFU (mediasoup) with 3s timeout. Fall back to P2P if no response.
     // Set resolver BEFORE sending to avoid race condition
     const sfuPromise = new Promise<TransportCreated | null>(r => { this.transportResolver = r; });
-    console.log("SfuClient: sending create_web_rtc_transport"); this.ws.send(JSON.stringify({ type: "create_web_rtc_transport", room_id: this.roomId, peer_id: this.roomId + '-consumer', direction: 'recv' }));
+    console.log("SfuClient: sending create_web_rtc_transport"); this.ws.send(JSON.stringify({ type: "create_web_rtc_transport", room_id: this.roomId, peer_id: this.sfuPeerId, direction: 'recv' }));
     const sfuResult = await Promise.race([
       sfuPromise,
       new Promise<null>(r => setTimeout(() => r(null), 3000)),
@@ -197,7 +201,7 @@ export class SfuConsumerClient {
         // PIT-56: connect 的 fingerprints 必须是浏览器本地证书指纹 (从 answer SDP 提取),
         // 传 sfuResult 的 (mediasoup 指纹) → DTLS fingerprint mismatch → 无 SRTP → Consumer 不转发
         const localFp = (answer.sdp ?? '').match(/a=fingerprint:(\S+) (\S+)/);
-        this.ws.send(JSON.stringify({ type: 'connect_web_rtc_transport', room_id: this.roomId, peer_id: this.roomId + '-consumer', transport_id: sfuResult.transport_id, dtls_parameters: { fingerprints: localFp ? [{ algorithm: localFp[1], value: localFp[2] }] : sfuResult.dtls_parameters.fingerprints, role: "client" }, sdp: answer.sdp }));
+        this.ws.send(JSON.stringify({ type: 'connect_web_rtc_transport', room_id: this.roomId, peer_id: this.sfuPeerId, transport_id: sfuResult.transport_id, dtls_parameters: { fingerprints: localFp ? [{ algorithm: localFp[1], value: localFp[2] }] : sfuResult.dtls_parameters.fingerprints, role: "client" }, sdp: answer.sdp }));
       } catch (e) {
         console.error('SfuClient: SDP negotiation failed:', e);
       }
@@ -403,6 +407,7 @@ export class SfuConsumerClient {
     this.ws?.close();
     this.ws = null;
     this.transportId = null;
+    this.sfuPeerId = `${this.roomId}-consumer-${Math.random().toString(36).slice(2, 8)}`; // PIT-65
     this.transportResolver = null;
   }
 }

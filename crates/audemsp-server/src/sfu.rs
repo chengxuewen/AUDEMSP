@@ -402,6 +402,17 @@ mod imp {
                 consumer_id, peer_id, producer_id, protocol_kind
             );
 
+            // PIT-65 观测: Consumer RTP trace (每包处理/丢弃原因)
+            {
+                let cid = consumer_id.clone();
+                consumer.on_trace(move |trace: &mediasoup::consumer::ConsumerTraceEventData| {
+                    tracing::info!("CONS-TRACE {}: {:?}", cid, trace);
+                });
+                let _ = consumer
+                    .enable_trace_event(vec![mediasoup::consumer::ConsumerTraceEventType::Rtp])
+                    .await;
+            }
+
             // PIT-64: Consumer 创建后立即请求关键帧 — Squares 流关键帧间隔波动 (7-13s)
             // 导致 Consumer syncRequired 等待窗口长 → 浏览器 0 包; PLI 强制立即出关键帧
             {
