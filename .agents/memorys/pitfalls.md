@@ -686,17 +686,17 @@ close() { this.closed = true; ... }
 
 **调试教训**: 单变量实验 (PIT-50) — 之前 wall-clock 失败是 3 变量污染 (PIT-61)；时间戳语义问题用"关键帧间隔"量化 (11s → 2.35s 是修复证据)。
 
-## PIT-64: SquaresPattern 流 Consumer 0 转发 — 关键帧正常但渲染失败 (2026-08-05)
+## PIT-64: SquaresPattern 渲染失败 — 帧率必须匹配 libwebrtc 编码器配置 (2026-08-05)
 
-**症状**: 真实时间戳下 SquaresPattern 关键帧间隔恢复正常（2.6-13s，R2"静态内容→40s"归因推翻），但 E2E 仍 videoWidth=0；server 侧 Producer 持续收关键帧、Consumer 创建成功但 **SendRtpPacket 0 条**（未转发任何包）。
+**症状**: 真实时间戳下 SquaresPattern 关键帧间隔正常（2.6-13s），但 E2E 渲染失败/不稳定（初判"Consumer 0 转发"，重测为偶发）；手写图案同链路稳定。
 
-**根因**: 未完全定位。与手写图案（同链路渲染成功）的差异仅在 producer 流内容——候选: ① Consumer syncRequired 等待关键帧但 SquaresPattern 流的关键帧判定失败（SPS/PPS 缺失——libwebrtc 静态场景关键帧可能不带 SPS/PPS，mediasoup/浏览器无法初始化解码）; ② Consumer 的 RtpStream 状态异常。需抓包分析 H264 载荷（SRTP 密文阻碍——需 server 侧 RTP 解密或 mediasoup trace）或 mediasoup Producer/Consumer 层调试。
+**根因**: **SquaresPattern::draw 耗时 7-17ms**（比手写图案 <1ms 慢）→ "固定 sleep 33ms" 循环实际帧率 ~20fps ≠ libwebrtc 编码器配置（30fps）→ 编码器 rate control 异常 → RTP 输出异常/稀疏。早期"Consumer 0 转发"为偶发误判（debug47 单次观察，非稳定问题）。
 
-**解法（当前）**: 保持手写多色矩形交付（E2E 通过）；SquaresPattern 集成标记待查（T11 归因已明确：假时钟是唯一根因，SquaresPattern 渲染是独立问题）。
+**解法**: **绝对时间轴**（`sleep_until(next); next += 33ms;`——OpenCTK RepeatingTask 同机制，tokio 等价落地）——吸收 draw/write 耗时抖动，帧率稳定 30fps 匹配编码器配置。修复后 Squares 从 0% → 可渲染（人工验证成功，MVP 交付）。
 
-**验证**: 手写图案回归 E2E 640x480 ✓。
+**验证**: 人工测试 SquaresPattern 动态方块浏览器渲染成功（640x480）；E2E 连跑 40-60%（PIT-65 剩余竞态）。
 
-**调试教训**: 关键帧间隔正常 ≠ 渲染成功——Consumer::SendRtpPacket 计数是"流是否到浏览器"的直接证据；producer 关键帧判定（ReceiveRtpPacket）与 Consumer 转发是两个独立环节。
+**调试教训**: ① "0 转发"单次观察不可靠——多次重测确认稳定性（竞态 vs 稳定问题）。② **帧率与编码器配置的匹配是硬约束**（内容 draw 耗时会破坏——见 PIT-65 已写）。③ 排查顺序: 关键帧频率 → PLI → 残留 → 帧率 → 传输（PIT-65 逐步排除）。
 
 ## PIT-65: Squares 流 E2E 不稳定 — 帧率匹配是必须条件, 剩余竞态待查 (2026-08-05)
 

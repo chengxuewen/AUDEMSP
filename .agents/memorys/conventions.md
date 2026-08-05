@@ -294,3 +294,11 @@ audemsp-webrtc = { path = "../audemsp-webrtc", features = ["backend-webrtc-sys"]
 **检查**：Host `main.rs` SFU 请求后应有响应 match（Produced/Error），Error 必须 log。
 
 **来源**：PIT-54 (2026-08-04)
+
+## C17: 帧时间戳与帧率约束 — WebRTC 编码链路硬性要求
+
+**约束**: ① 喂给 libwebrtc 的 VideoFrame 时间戳必须**锚定单调真实时钟**（`ts_base_us(SystemTime 锚点) + Instant::elapsed()`）——假时钟（固定步进）与 livekit TimestampAligner 时间域不一致 → 编码器停摆（PIT-63）；裸 SystemTime::now() 非单调（NTP 跳变）→ ts 倒退。② **实际帧率必须匹配 libwebrtc 编码器配置**（SDP 协商 fps）——内容 draw 耗时（如 SquaresPattern 7-17ms）拖慢"固定 sleep"循环 → 帧率偏差 → rate control 异常（PIT-64）。**帧循环用绝对时间轴**（`sleep_until(next); next += 33ms;`——OpenCTK RepeatingTask 同机制），不追赶（next < now 时重置）。
+
+**检查**: Host main.rs B5 帧循环应为 sleep_until 绝对时间轴；write_raw_i420 内部时间戳为锚定单调。
+
+**来源**: PIT-63/64 (2026-08-05 视频帧管线加固计划)
