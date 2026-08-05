@@ -35,6 +35,7 @@ pub fn build_remote_sdp(
     const H264_PT: u16 = 101; // ponytail: get from rtp_capabilities when server supports it
     lines.extend_from_slice(&[
         format!("m=video 7 UDP/TLS/RTP/SAVPF {H264_PT}"),
+        "b=AS:2000".to_string(), // PIT-65: 码率预算 — Squares 复杂内容防编码器跳帧 (seq 跳变 → Consumer 拒绝)
         format!("c=IN IP4 {conn_ip}"),
         "a=rtcp-mux".to_string(),
         "a=mid:video".to_string(),

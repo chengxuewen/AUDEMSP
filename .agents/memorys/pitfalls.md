@@ -706,7 +706,7 @@ close() { this.closed = true; ... }
 
 **根因（已定位部分）**: ① **帧率必须匹配 libwebrtc 编码器配置（30fps）**——SquaresPattern::draw 耗时 7-17ms + 固定 sleep 33ms → 实际 ~20fps → 编码器 rate control 异常 → RTP 输出异常。修复 = 绝对时间轴（sleep_until + next += 33ms，OpenCTK RepeatingTask 同机制）。② **剩余不稳定未定位**：排除关键帧频率（RandomPerFrame 无效）、PLI 请求（request_key_frame 无效）、transport 残留（干净 server 无效）。候选: libwebrtc 关键帧 SPS/PPS 携带不稳定（浏览器无法初始化解码）或 Consumer→浏览器传输时序。
 
-**解法（当前）**: SquaresPattern + 绝对时间轴可渲染（人工单次验证成功）——**但 E2E 连跑/多网页拉流不稳定（黑屏）**——**确证机制**（容器 tcpdump outbound）：失败轮次 mediasoup 只发出 1 个媒体包（关键帧 sync 首包 700B）——**Consumer 对 Squares 流的后续 P 帧不转发** → 浏览器 0 媒体（inbound-rtp 空）→ 黑屏。与负载（count 8/40 均复现）、关键帧频率、PLI、残留无关——图案内容触发 Consumer 层转发失败（候选: seq/时间戳重写或 RtpStream 关联）。手写多色矩形稳定（P 帧正常转发）。深挖需 mediasoup Consumer trace（MS_RTC_LOGGER_RTP）或 producerRtpStream 关联日志。
+**解法（当前）**: ① **b=AS:2000（SDP 码率预算）必要修复**——Squares 复杂内容 → 编码器默认码率不足 → rate control 跳帧 → RTP seq 周期跳变（1,1,1,2 每 4 分片跳 1）→ mediasoup Consumer seq manager 拒绝后续 P 帧 → 0 转发 → 黑屏。b=AS 后 seq 100% 连续 + E2E 成功轮次 153 帧解码。② 剩余不稳定：部分轮次仍 0 包（完全黑）或延迟渲染（90s+）——E2E 连跑/多 Consumer 场景——待查（连接级/累积）。手写流 seq 天然连续（内容简单码率低不跳帧）故稳定。深挖需 mediasoup Consumer trace 或连接级诊断。
 
 **验证**: 手写 5/5 E2E 通过；Squares 2/5（绝对时间轴后）。
 
