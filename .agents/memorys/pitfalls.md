@@ -711,3 +711,15 @@ close() { this.closed = true; ... }
 **验证**: 手写 5/5 E2E 通过；Squares 2/5（绝对时间轴后）。
 
 **调试教训**: ① 帧率与编码器配置的匹配是硬约束（内容 draw 耗时会破坏）。② E2E 不稳定排查: 关键帧频率/PLI/残留逐一排除, 剩余候选 SPS/PPS（需 trace 级工具）。③ decoder stats（inbound-rtp）是"包是否到浏览器"的直接证据（比 videoWidth 更早的信号）。
+
+## PIT-66: Consumer.connected_since 被 serde(skip) — 前端 undefined.slice 崩溃 (2026-08-05)
+
+**症状**: Dashboard 点击 device 展开项报 `StreamDetail.tsx:35 Cannot read properties of undefined (reading 'slice')`——`c.connected_since` 为 undefined。
+
+**根因**: room.rs `Consumer.connected_since: Instant` 带 `#[serde(skip)]`（Instant 无 serde 支持）——server API 返回的 consumer JSON 无该字段 → 前端 `.slice(0, 19)` 崩溃。Instant 除构造外无其他用途（无过期判断逻辑）。
+
+**解法**: ① server: `connected_since` 改 `String`（chrono RFC3339）——序列化给 API；② 前端: `(c.connected_since ?? '')` 空值保护（双保险）。Instant import 移除（不再使用）。
+
+**验证**: API 返回 `{"connected_since": "2026-08-05T06:22:50.455+00:00", "peer_id": ...}`；浏览器展开项无错误，consumer-since 显示正常。
+
+**调试教训**: serde(skip) 字段前端引用 = 隐藏契约破坏——API 序列化字段变更需前后端同步验证（前端 interface Consumer 声明了 connected_since: string 但 server 从未发过——类型契约与实际不符）。

@@ -16,8 +16,8 @@ pub enum RoomType {
 #[derive(Debug, Clone, Serialize)]
 pub struct Consumer {
     pub peer_id: String,
-    #[serde(skip)]
-    pub connected_since: Instant,
+    /// ISO 时间字符串 (API 展示) — 原 Instant 被 serde(skip) 排除导致前端 undefined (PIT-66)
+    pub connected_since: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -104,14 +104,14 @@ impl RoomManager {
                     RoomType::DeviceStream => {
                         room.consumers.push(Consumer {
                             peer_id: pid,
-                            connected_since: Instant::now(),
+                            connected_since: chrono::Utc::now().to_rfc3339(),
                         });
                     }
                 },
                 PeerRole::Consumer => {
                     room.consumers.push(Consumer {
                         peer_id: pid,
-                        connected_since: Instant::now(),
+                        connected_since: chrono::Utc::now().to_rfc3339(),
                     });
                 }
             }
@@ -129,7 +129,7 @@ impl RoomManager {
                     None,
                     vec![Consumer {
                         peer_id: pid.clone(),
-                        connected_since: Instant::now(),
+                        connected_since: chrono::Utc::now().to_rfc3339(),
                     }],
                 ),
             };

@@ -32,7 +32,7 @@ export default function StreamDetail({ deviceId, streamId, consumers, onClose, o
               {consumers.map((c) => (
                 <li key={c.peer_id} className="consumer-item">
                   <span>👁 {c.peer_id}</span>
-                  <span className="consumer-since">{c.connected_since.slice(0, 19)}</span>
+                  <span className="consumer-since">{(c.connected_since ?? '').slice(0, 19)}</span>
                   {onKick && (
                     <button className="btn-sm" onClick={() => onKick(c.peer_id)}>Kick</button>
                   )}
