@@ -361,43 +361,45 @@ let app = axum::Router::new()
             Err(_) => return Err(anyhow::anyhow!("SFU Produce send timeout after 10s")),
         }
 
-        // B5: SquaresPattern (视频帧生成器图案) + 绝对时间轴 — MVP 交付
-        // PIT-64: 帧率必须匹配 libwebrtc 配置 (绝对时间轴吸收 draw 7-17ms 耗时)
-        // PIT-65: E2E 连跑偶发不稳定 (传输层待查) — 单次真实场景成功率高
+        // B5: 动态多色矩形帧 — 稳定默认 (手写, E2E 稳定通过)
+        // PIT-65: Squares 流 Consumer 只转发关键帧首包 (P 帧不转发 → 黑屏) — 待查
         let video_track_send = video_track.clone();
         tokio::spawn(async move {
-            use audemsp_media::pipeline::generator::{ColorStrategy, SquaresConfig, SquaresPattern};
-            use audemsp_media::pipeline::generator::FramePattern;
             let width: u32 = 640;
             let height: u32 = 480;
             let y_size = (width * height) as usize;
             let uv_size = (width * height / 4) as usize;
-            let mut y = vec![0u8; y_size];
-            let mut u = vec![128u8; uv_size];
-            let mut v = vec![128u8; uv_size];
-            let mut pattern = SquaresPattern::with_config(width, height, SquaresConfig {
-                count: 40, min_size: 20, max_size: 300, motion_speed: 50,
-                color_strategy: ColorStrategy::default(),
-            });
             let mut frame = vec![0u8; y_size + 2 * uv_size];
+            frame[y_size..y_size + uv_size].fill(100);
+            frame[y_size + uv_size..].fill(160);
+            let mut seq = 0u64;
             let mut next = tokio::time::Instant::now() + Duration::from_millis(33);
             loop {
                 tokio::time::sleep_until(next).await;
-                pattern.draw(&mut y, &mut u, &mut v, width as usize, (width / 2) as usize, (width / 2) as usize, width, height);
-                frame[..y_size].copy_from_slice(&y);
-                frame[y_size..y_size + uv_size].copy_from_slice(&u);
-                frame[y_size + uv_size..].copy_from_slice(&v);
+                let y_plane = &mut frame[..y_size];
+                for y in 0..height {
+                    for x in 0..width {
+                        let idx = (y * width + x) as usize;
+                        let sx = x / 80;
+                        let sy = y / 60;
+                        let color = match ((sx + sy + (seq as u32 / 60) as u32) % 4) as u8 {
+                            0 => 40, 1 => 120, 2 => 200, _ => 80,
+                        };
+                        y_plane[idx] = color;
+                    }
+                }
                 if let Err(e) = video_track_send.write_raw_i420(&frame, width, height).await {
                     tracing::warn!("SFU write_raw_i420 error: {}", e);
                     break;
                 }
+                seq += 1;
                 next += Duration::from_millis(33);
                 if next < tokio::time::Instant::now() {
                     next = tokio::time::Instant::now();
                 }
             }
         });
-        tracing::info!("SFU produce transport {} ready — SquaresPattern MVP (abs-ts)", transport_id);
+        tracing::info!("SFU produce transport {} ready — multi-color rects (stable)", transport_id);
     } else {
 
     // P2P transport path — gated behind webrtc-p2p feature

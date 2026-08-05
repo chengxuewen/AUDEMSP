@@ -706,7 +706,7 @@ close() { this.closed = true; ... }
 
 **根因（已定位部分）**: ① **帧率必须匹配 libwebrtc 编码器配置（30fps）**——SquaresPattern::draw 耗时 7-17ms + 固定 sleep 33ms → 实际 ~20fps → 编码器 rate control 异常 → RTP 输出异常。修复 = 绝对时间轴（sleep_until + next += 33ms，OpenCTK RepeatingTask 同机制）。② **剩余不稳定未定位**：排除关键帧频率（RandomPerFrame 无效）、PLI 请求（request_key_frame 无效）、transport 残留（干净 server 无效）。候选: libwebrtc 关键帧 SPS/PPS 携带不稳定（浏览器无法初始化解码）或 Consumer→浏览器传输时序。
 
-**解法（当前）**: SquaresPattern + 绝对时间轴 = **MVP 交付**（人工测试成功——真实单次连接渲染正常，Squares 动态方块画面）；手写多色矩形为 E2E 连跑稳定备选。深挖（E2E 连跑不稳定）需 mediasoup Producer trace 或抓包级工具。
+**解法（当前）**: SquaresPattern + 绝对时间轴可渲染（人工单次验证成功）——**但 E2E 连跑/多网页拉流不稳定（黑屏）**——**确证机制**（容器 tcpdump outbound）：失败轮次 mediasoup 只发出 1 个媒体包（关键帧 sync 首包 700B）——**Consumer 对 Squares 流的后续 P 帧不转发** → 浏览器 0 媒体（inbound-rtp 空）→ 黑屏。与负载（count 8/40 均复现）、关键帧频率、PLI、残留无关——图案内容触发 Consumer 层转发失败（候选: seq/时间戳重写或 RtpStream 关联）。手写多色矩形稳定（P 帧正常转发）。深挖需 mediasoup Consumer trace（MS_RTC_LOGGER_RTP）或 producerRtpStream 关联日志。
 
 **验证**: 手写 5/5 E2E 通过；Squares 2/5（绝对时间轴后）。
 
