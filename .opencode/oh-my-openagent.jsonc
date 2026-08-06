@@ -8,6 +8,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
 
+  // CodeGraph MCP: project local-codegraph (init-mcp-codegraph.mjs) covers it; disable oh-my-opencode's auto-registered duplicate
+  "codegraph": { "enabled": false },
+
   // Sisyphus
   "sisyphus_agent": {
     "disabled": false,

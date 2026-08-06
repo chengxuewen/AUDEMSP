@@ -12,7 +12,7 @@
   "instructions": [
     ".agents/memorys/status.md",
     ".agents/memorys/conventions.md",
-    ".agents/memorys/pitfalls.md",
+
     ".agents/rules/common/security.md",
     ".agents/rules/common/coding-style.md",
     ".agents/rules/common/agents.md",

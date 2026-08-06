@@ -121,3 +121,10 @@ After claiming tests are written or features are working:
 - **容器 tcpdump 过滤注意 NAT**：宿主发往容器网段（172.18.0.2）的包源 IP 被改写为网关（172.18.0.1）——`not host 172.18.0.1` 会把本机浏览器/应用的流量一并过滤掉。按**源端口**区分（Host 的固定端口 vs 浏览器随机端口），不要按源 IP。
 
 **来源**：PIT-56/58 调试轮 (2026-08-04)
+
+## Git 恢复操作
+
+- **批量 `git restore <paths>` 恢复已 staged 删除时，可能部分目录工作区未实际写回**——`git ls-files`（index）有文件但磁盘（worktree）为空，grep 该目录无结果。根因：`restore` 对 staged 删除的路径恢复不完整。**优先用 `git checkout HEAD -- <paths>`**（强制从 HEAD 写回工作区）。
+- **验证必须是全量对比，不能抽样**：恢复/删除 N 个目录后，逐个 `for d in ...; do echo "[$d] index=$(git ls-files $d/ | wc -l) worktree=$(ls $d/ 2>/dev/null | wc -l)"; done` 核对，index 与 worktree 计数必须全部相等。只 `ls` 部分目录 = 遗漏（PIT-68：恢复 10 个目录仅 7 个实际写回，3 个磁盘为空未被发现）。
+
+**来源**：PIT-68 (2026-08-06 .agents 精简恢复轮)

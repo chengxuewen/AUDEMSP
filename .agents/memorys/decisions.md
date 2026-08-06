@@ -200,3 +200,16 @@
 **影响**: 文档按用途可预测；计划唯一权威源，无重复无死链；历史调研保留在 `research/` 不碍事。保留：`phase3-production`（Phase 编号约定被 5 篇文档引用）、`host-sfu-w3c-alignment`（活跃待办，C18 待实施）。
 
 **验证**: `ls docs/reference/` 顶层 = README + webrtc/ + codec/ + janus-gateway.md + research/；`find .sisyphus/plans/` 剩 3 个计划；无 `e2e-acceptance-matrix` 断链残留。
+
+## D213: Agent 上下文爆炸治理 — instructions 瘦身 + 模型容量 + .agents 精简 (2026-08-06)
+
+**决策**: 针对「当前项目配置容易上下文爆炸满」，实施三层治理：
+1. **instructions 瘦身**：`.opencode/opencode.json` 的 `instructions[]` 移除 `pitfalls.md`（59KB 历史调试日志，占原 19 文件 130KB 的 46%）→ 改为按需读取（`read`/`grep` 查询），保留 18 文件（~70KB）。
+2. **模型容量**：全局 `~/.config/opencode/opencode.jsonc` 将 premium-max-1（256K）与 premium-2（205K）的 `limit.context` 提升至 1024K，使 premium-max/-1/-2、premium/-1/-2 六模型全部 1024K（原 premium-2 fallback 是当前会话实际模型，205K 减去 40-50K 静态基线即紧张）。
+3. **.agents 精简**：删 `rules/zh/`（11 文件，common 的中文翻译副本，C7 已声明不重复加载）；瘦身 `skills/book-to-skill/`（删 docs/.github/tests/tools/CHANGELOG 等，956KB→192KB，保留运行必需的 SKILL.md+scripts+book_to_skill 包）。**非项目语言规则保留**（用户明确改口，不删 cpp/csharp/dart/golang/.../swift）。
+
+**原因**: ① 静态基线 ~60-100K tokens 主要来自 instructions 全量注入（pitfalls 59KB 是最大单一文件）+ 重复 codegraph MCP（oh-my-opencode 自动注册 `codegraph` + 项目 `local-codegraph` 双实例）+ 插件注入块；② premium-2 205K 上下文偏小，静态基线占比过高；③ zh/ 与 common/ 内容重复违背 C7；book-to-skill 混入完整 Python 库属异常膨胀。
+
+**影响**: ① 每轮静态上下文估算 -59KB（pitfalls）+ 去重 codegraph，估算节省 ~40-50K tokens/turn；② pitfalls 不再常驻，调试时需主动 `read .agents/memorys/pitfalls.md` 查历史坑；③ 配置类变更需重启 opencode 生效；④ `limit.context` 是客户端声明，实际取决于 New API 网关后端是否真有 1024K 窗口。
+
+**验证**: `python3 -c "import json; json.load(open('.opencode/opencode.json'))"` 通过；`node` 字符串感知注释剥离后 JSON.parse 通过（opencode.jsonc / oh-my-openagent.jsonc / ~/.config/opencode/opencode.jsonc 均有效）；六模型 `limit.context` 均 1024000；`.agents/` 从 1.7MB → 984KB。

@@ -739,3 +739,15 @@ close() { this.closed = true; ... }
 **验证**: 修正后 `grep -rEoh "\.\./reference/[A-Za-z_/-]+\.md" docs/modules/*.md | while read p; do f="docs/${p#../}"; [ -f "$f" ] && echo "✓" || echo "✗"; done` — 全部 ✓。
 
 **调试教训**: 验证脚本本身也可能有 bug——报告 MISSING 时先确认是"文件真缺"还是"脚本路径解析错"，用 `ls` 直接核对目标文件，勿盲目相信脚本输出（C14 验证精神的延伸）。
+
+## PIT-68: git restore 批量恢复 staged 删除，部分目录工作区未实际写回 (2026-08-06)
+
+**症状**: 误删 10 个非项目语言规则目录后，用 `git restore --staged <paths> && git restore <paths>` 批量恢复。验证时 `ls` 部分目录显示文件存在，误以为全部恢复。随后 `git status` 仍显示 `golang/perl/php` 为 ` D`（未 staged 删除），实测 `git ls-files`（index=5）与 `ls`（worktree=0）不一致——3 个目录磁盘为空。
+
+**根因**: ① `git restore` 对已 staged 删除的路径恢复**不完整**——index 恢复但某些路径的 worktree 未写回；② 验证只 `ls` 了部分目录（cpp/python/kotlin 等），未**全量对比 index 与 worktree**，3 个空目录被遗漏。
+
+**解法**: ① 恢复已 staged 删除**优先用 `git checkout HEAD -- <paths>`**（强制从 HEAD 写回工作区，可靠）；② 验证必须**全量对比**：`for d in <dirs>; do echo "[$d] index=$(git ls-files $d/ | wc -l) worktree=$(ls $d/ 2>/dev/null | wc -l)"; done`，index 与 worktree 计数必须全部相等。
+
+**验证**: `git checkout HEAD -- .agents/rules/golang .agents/rules/perl .agents/rules/php` 后，10 目录 index=worktree=5，`git status` 干净。
+
+**禁止**: 批量恢复/删除后只 `ls` 抽样验证；`git restore` 恢复 staged 删除后不核对 worktree。
