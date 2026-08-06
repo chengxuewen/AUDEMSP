@@ -470,6 +470,6 @@ pub enum CodecError {
 | ISO 14496-15 §5.2.4.1 | AVC file format (avcC box) |
 | x264 5db6aa6 | Reference software encoder (P1-P7 presets) |
 | FFmpeg libavcodec 7.x | H.264 decoder/parser/BSF |
-| `docs/reference/ffmpeg-static-build-strategy.md` | Project build strategy for FFmpeg |
+| `docs/reference/codec/ffmpeg-static-build-strategy.md` | Project build strategy for FFmpeg |
 | `docs/sdd/02-webrtc-push.md` | EncodeConfig schema origin |
 | `docs/superpowers/specs/2026-07-20-audemsp-media-crate-design.md` | Base types and traits |

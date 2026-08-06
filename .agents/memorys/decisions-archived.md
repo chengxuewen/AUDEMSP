@@ -2529,13 +2529,13 @@ Ref: systemd (Restart=on-failure), Kubernetes (restartPolicy)。推荐度: ⭐�
 
 **决策**: 承认 nginx-rtmp-module 的 RTMP 生命周期钩子模式 (on_publish/on_play/on_done/on_update)。Phase 2 RTMP/SRT 协议支持时设计通用 StreamLifecycleHook trait，映射 on_publish→StreamStarted、on_play→StreamSubscribed、on_done→StreamEnded。Phase 0-1 不实现。
 
-**关联**: docs/reference/streaming/nginx-rtmp-module.md §7, Phase 2 streaming
+**关联**: docs/reference/research/streaming/nginx-rtmp-module.md §7, Phase 2 streaming
 
 ### D153: Pion interceptor pipeline 评估
 
 **决策**: 承认 Pion 的链式 Interceptor 管道模式 (Interceptor.NewChain with Stats/NACK/TWCC/REMB)。Phase 0-2 RTP 包级处理由 webrtc-sys (Phase 0-1) 和 mediasoup C++ (Phase 2) 内部完成，不需要自定义 interceptor。Phase 3+ 自定义 RTP 处理（录制分析、自定义拥塞控制、转码）时采纳 interceptor 链模式。
 
-**关联**: docs/reference/streaming/pion.md §7.1, D24, D138
+**关联**: docs/reference/research/streaming/pion.md §7.1, D24, D138
 
 ---
 

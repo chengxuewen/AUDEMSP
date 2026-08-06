@@ -147,7 +147,7 @@
 
 ## D208: 构建优化策略实施 (2026-08-03)
 
-**决策**: 采纳 docs/reference/build-optimization-strategy.md 方案 B（dev+builder 双镜像预烘焙 + 国内镜像修复 + lto 优化），分三阶段执行（本周修复 / 本月结构 / 下月按需）。
+**决策**: 采纳 docs/reference/codec/build-optimization-strategy.md 方案 B（dev+builder 双镜像预烘焙 + 国内镜像修复 + lto 优化），分三阶段执行（本周修复 / 本月结构 / 下月按需）。
 **日期**: 2026-08-03
 **原因**:
 - 首次 Docker 构建 15-30 min（mediasoup C++ 45% + Rust deps 35%），dev 镜像无预编译依赖 + gha cache 本地不可达
@@ -162,7 +162,7 @@
 - GHCR 清理 workflow（sha tag 保留 N=10）+ path-filter（仅依赖变更时推 dev 镜像）
 - ghcr 可达性未实测前不实施预烘焙（PIT-14/31 背景下可能 30min+）
 - 生产 runtime 缺口是 admin dist 产物（非 feature）→ Docker 构建需 `pnpm build:admin` 先于 cargo build（PIT-23）
-**影响**: 本地首次构建 15-28 min → 2-5 min（预计）；日常增量每轮省 30-60s。实施细节见 docs/reference/build-optimization-strategy.md。
+**影响**: 本地首次构建 15-28 min → 2-5 min（预计）；日常增量每轮省 30-60s。实施细节见 docs/reference/codec/build-optimization-strategy.md。
 
 ---
 
@@ -190,3 +190,13 @@
 **原因**: SquaresPattern::draw 耗时 7-17ms 拖慢固定 sleep 循环 → 实际 ~20fps ≠ 配置 30fps → 编码器 rate control 异常（PIT-64）。OpenCTK RepeatingTask 同机制（审核评估的 tokio sleep_until 等价落地）。
 
 **影响**: 任何视频源（生成器/相机）接入必须保证帧率匹配；C17 约束固化；E2E 连跑不稳定（PIT-65）为剩余问题。
+
+## D212: docs/reference Diátaxis 重组 + 计划体系清理 (2026-08-06)
+
+**决策**: ① `docs/reference/` 按 **Diátaxis 框架**重组——活参考（Reference，按产品模块镜像 webrtc/ codec/ + 根目录平铺）与调研存档（Explanation，`research/<领域>/`）分离，README 作唯一索引（C19 约束固化）。② codec 验收标准从 `docs/sdd/` 迁入 `.sisyphus/plans/audemsp-codec/`（pre-implementation 产物归计划区）。③ 计划体系收敛为单一权威源 `.sisyphus/plans/`——移除已全部完成的 `video-framepipeline-hardening`（.sisyphus+.omo 双副本）、去重 `.omo/plans/phase3-production` 副本、清理空 `.omo/plans/` 目录。
+
+**原因**: ① 原 34 篇平铺 + 领域子目录重叠，混入 28 篇一次性竞品调研 → 活参考被污染（Diátaxis"按用途分离"原则，参考对齐 VitePress/Docusaurus 主流）；② acceptance 是 Phase 2 规划产物，Phase 1 sdd/ 目录放它格格不入（未编号+内容形态+Draft 状态不符）；③ 已完成计划/重复副本是死重，`e2e-acceptance-matrix.md` 断链暴露内容已内部化。
+
+**影响**: 文档按用途可预测；计划唯一权威源，无重复无死链；历史调研保留在 `research/` 不碍事。保留：`phase3-production`（Phase 编号约定被 5 篇文档引用）、`host-sfu-w3c-alignment`（活跃待办，C18 待实施）。
+
+**验证**: `ls docs/reference/` 顶层 = README + webrtc/ + codec/ + janus-gateway.md + research/；`find .sisyphus/plans/` 剩 3 个计划；无 `e2e-acceptance-matrix` 断链残留。

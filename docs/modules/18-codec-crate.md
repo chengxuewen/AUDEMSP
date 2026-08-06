@@ -227,7 +227,7 @@ CodecError (thiserror)，关键变体：
 | FFmpeg 静态 | 预构建 | 预构建 | 预构建 | 交叉编译 | vcpkg |
 | FFmpeg 动态 | brew | brew | apt | apt | vcpkg |
 
-详见 docs/reference/ffmpeg-static-build-strategy.md。
+详见 docs/reference/codec/ffmpeg-static-build-strategy.md。
 
 
 ## 测试覆盖 (69 tests, 规划中)
@@ -265,14 +265,14 @@ CodecError (thiserror)，关键变体：
 - [17. WebRTC Crate](17-webrtc-crate.md) — WebRTC 传输层，编码后输出目标
 - [08. 管线模型参考](08-pipeline-model.md) — PipelineEngine 集成
 - [决策记录 D43/D46/D70/D71/D82](../.agents/memorys/decisions.md) — 编码架构决策链
-- [FFmpeg 静态构建策略](../reference/ffmpeg-static-build-strategy.md) — 构建方案
-- [SDD 验收标准](../sdd/audemsp-codec-acceptance-criteria.md) — 具体阈值
-- [E2E 验收矩阵](../../.sisyphus/plans/audemsp-codec/e2e-acceptance-matrix.md) — 端到端场景
+- [FFmpeg 静态构建策略](../reference/codec/ffmpeg-static-build-strategy.md) — 构建方案
+- [SDD 验收标准](../../.sisyphus/plans/audemsp-codec/acceptance-criteria.md) — 具体阈值
+- [验收矩阵 §10](../../.sisyphus/plans/audemsp-codec/acceptance-criteria.md#10-test-matrix) — 20 场景 AC 矩阵
 
 ## 交叉引用
 
 以下文档链接回本文档：
 - [17. WebRTC Crate](17-webrtc-crate.md) — Phase 2 预留 write_frame / on_encoded_packet API
-- [SDD 验收标准](../sdd/audemsp-codec-acceptance-criteria.md) — 对齐 push-pull trait API
-- [FFmpeg 静态构建策略](../reference/ffmpeg-static-build-strategy.md) — 预构建 + CI 集成
-- [E2E 验收矩阵](../../.sisyphus/plans/audemsp-codec/e2e-acceptance-matrix.md) — 8 场景测试矩阵
+- [SDD 验收标准](../../.sisyphus/plans/audemsp-codec/acceptance-criteria.md) — 对齐 push-pull trait API
+- [FFmpeg 静态构建策略](../reference/codec/ffmpeg-static-build-strategy.md) — 预构建 + CI 集成
+- [验收矩阵 §10](../../.sisyphus/plans/audemsp-codec/acceptance-criteria.md#10-test-matrix) — 8+ 场景测试矩阵

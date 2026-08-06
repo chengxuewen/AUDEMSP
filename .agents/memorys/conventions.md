@@ -302,3 +302,47 @@ audemsp-webrtc = { path = "../audemsp-webrtc", features = ["backend-webrtc-sys"]
 **检查**: Host main.rs B5 帧循环应为 sleep_until 绝对时间轴；write_raw_i420 内部时间戳为锚定单调。
 
 **来源**: PIT-63/64 (2026-08-05 视频帧管线加固计划)
+
+---
+
+## C18: 官方用法优先 — 禁止自定义推测/最小用法
+
+**约束**：使用依赖库/项目/工具（crate、框架、FFI、协议）时，**必须优先遵循官方文档、官方仓库源码、官方示例和社区推荐用法**。禁止自创推测用法和"最小可用"接口——官方/社区示例和推荐用法已经过实践验证，能避免重复踩坑。
+
+**适用范围**：
+- **webrtc crate**（audemsp-webrtc）：仅暴露完整的 W3C WebRTC API（RTCPeerConnection.addTrack/addTransceiver/createOffer/setLocalDescription/setRemoteDescription/onicecandidate...），禁止为"省事"裁剪成最小接口或自选语义接口
+- **host/client 及 SDK**：遵循 mediasoup 官方客户端架构和示例（libmediasoupclient C++ / mediasoup-client JS / mediasoup-demo），produce/consume 用标准 offer/answer 协商，rtpParameters 从协商结果推导，禁止手工构造 SDP + 手工 JSON rtp_parameters
+- **其他依赖**：mediasoup-rs、GStreamer、FFmpeg、Docker 等同样适用
+
+**反面教材（PIT-65 教训）**：Host SFU produce 手工构造 remote SDP（`a=recvonly`）+ 手工 `build_produce_rtp_parameters` JSON + 从 answer 手工提取 ssrc，绕过标准 `addTransceiver(sendonly) → createOffer → setRemoteDescription(answer)` 协商。后果：① `x-google-max-keyframe-interval` 加在 remote fmtp 但 libwebrtc 从 local answer 读参数 → 失效（稳态 GOP 仍 ~99s）；② ssrc/PT 硬编码 vs 协商值可能不一致；③ 方向反转绕协商 → 关键帧/PLI 反馈链路异常。
+
+**检查**：`grep -nE "build_remote_sdp|build_produce_rtp_parameters|create_answer.*set_local|a=recvonly" crates/audemsp-host/src/` — 这些手工协商痕迹应被标准 offer/answer 取代。
+
+**来源**：用户显式要求（2026-08-05 PIT-65 重构评审后）
+
+---
+
+## C19: docs/reference 组织 — Diátaxis 活参考/调研存档分离
+
+**约束**：`docs/reference/` 按 **Diátaxis 框架** 组织，区分"活参考"与"调研存档"两种用途，不按模糊主题堆砌。
+
+**结构**：
+```
+docs/reference/
+├── README.md          # 索引（唯一导航，新增文档必须登记）
+├── webrtc/            # 活参考：镜像 webrtc 模块（mediasoup-refs/mediasoup-client/w3c-alignment/keyframe-analysis）
+├── codec/             # 活参考：镜像 codec 模块（ffmpeg/build-optimization 策略）
+├── janus-gateway.md   # 活参考（根目录平铺）
+└── research/          # 调研存档（历史竞品调研，不参与活跃工作）
+    ├── remote-desktop/ streaming/ video-conference/ teleoperation/
+```
+
+**原则**：
+- **活参考（Reference）**：按产品模块镜像目录（`webrtc/` `codec/`），克制、权威、查用；根目录平铺仅放无法归模块的活参考
+- **调研存档（Explanation）**：一次性竞品/技术选型调研（parsec/zoom/mediasoup*/openvidu*/srs 等）归 `research/<领域>/`，写完后不被代码引用，仅作历史参考
+- **新增活参考** → 归对应模块目录并在 README 登记；**新增调研** → 归 `research/<领域>/` 并在 README 登记
+- 禁止：把调研存档混入活参考目录；为模糊主题建嵌套子目录（参考按产品结构而非主题）
+
+**检查**：`ls docs/reference/` — 顶层应为 `README.md` + 模块活参考（webrtc/codec）+ `research/`；`docs/reference/research/` 下才是竞品调研。
+
+**来源**：Diátaxis 框架（2026-08-06 用户确认架构），替代此前按领域子目录的平铺方案

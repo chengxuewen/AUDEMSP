@@ -712,6 +712,10 @@ close() { this.closed = true; ... }
 
 **调试教训**: ① 帧率与编码器配置的匹配是硬约束（内容 draw 耗时会破坏）。② E2E 不稳定排查: 关键帧频率/PLI/残留逐一排除, 剩余候选 SPS/PPS（需 trace 级工具）。③ decoder stats（inbound-rtp）是"包是否到浏览器"的直接证据（比 videoWidth 更早的信号）。
 
+**根因确认 (2026-08-05 深入)**: 黑屏根因 = **Host 编码器每 ~99s 才出一关键帧 + PLI 无法强制提前**。晚加入 consumer 60s 窗口内等不到关键帧 → syncRequired 不解除 → 只转 sync packet 不转帧。之前"late-joiner seq 竞态"结论被推翻。证据链见 `docs/reference/webrtc/keyframe-black-screen-analysis.md`。
+**关键发现**: ① mediasoup 侧正常——`ConsumerOptions.paused=false` 时 mediasoup 立即向 producer 请求关键帧（mediasoup-rs consumer.rs:112-115）; ② Host 不响应 PLI——consumer 连接后 28s 无 producer 关键帧; ③ b=AS:2000 与 500 稳态 GOP 均 ~99s → 非码率驱动; ④ **raw I420 路径不检查 `keyframe_request_flag`（该 flag 仅 encoded 路径用）**，但 raw 路径与原生 track 走同一 VideoStreamEncoder，原生 PLI→RequestKeyFrame→IDR 理论上应正常 → 待诊断 PLI 断点（H1 producer 未发 PLI / H2 webrtc-sys PC sendonly 未收 RTCP / H3 OpenH264 忽略 PLI）。
+**对标官方**: libmediasoupclient 用原生 track + 零关键帧配置 + 原生 PLI 正常；mediasoup-client(JS) 浏览器原生。我们 Host 用自定义 raw I420 source。**架构最优 = 让原生 PLI 生效（诊断断点），非切 encoded 路径（过度反应，已修正）**。战术备选: SDP fmtp 加 `x-google-max-keyframe-interval=2000`（libwebrtc 官方机制，快速验证）。
+
 ## PIT-66: Consumer.connected_since 被 serde(skip) — 前端 undefined.slice 崩溃 (2026-08-05)
 
 **症状**: Dashboard 点击 device 展开项报 `StreamDetail.tsx:35 Cannot read properties of undefined (reading 'slice')`——`c.connected_since` 为 undefined。
@@ -723,3 +727,15 @@ close() { this.closed = true; ... }
 **验证**: API 返回 `{"connected_since": "2026-08-05T06:22:50.455+00:00", "peer_id": ...}`；浏览器展开项无错误，consumer-since 显示正常。
 
 **调试教训**: serde(skip) 字段前端引用 = 隐藏契约破坏——API 序列化字段变更需前后端同步验证（前端 interface Consumer 声明了 connected_since: string 但 server 从未发过——类型契约与实际不符）。
+
+## PIT-67: 文档链接验证脚本路径解析错误 — 假性 MISSING 误报 (2026-08-06)
+
+**症状**: 重组 docs/reference 后验证文档间引用，脚本报告 `✗ MISSING: ../reference/codec/ffmpeg-static-build-strategy.md`，但文件实际存在（`ls` 确认）。
+
+**根因**: 验证脚本把 `../reference/...` 用 `sed 's|\.\./|reference/|'` 处理后拼到 `docs/modules/` 下（`docs/modules/reference/...`），而非从引用文件所在目录正确上溯解析（应为 `docs/`）。路径解析基准错误 → 假阳性。
+
+**解法**: 解析相对路径引用必须**以引用文件所在目录为基准**上溯，不能用 cwd 拼接。正确：`../reference/` 从 `docs/modules/` → `docs/reference/`；验证时 `rel="${p#../}"` 再去掉一级模块前缀。
+
+**验证**: 修正后 `grep -rEoh "\.\./reference/[A-Za-z_/-]+\.md" docs/modules/*.md | while read p; do f="docs/${p#../}"; [ -f "$f" ] && echo "✓" || echo "✗"; done` — 全部 ✓。
+
+**调试教训**: 验证脚本本身也可能有 bug——报告 MISSING 时先确认是"文件真缺"还是"脚本路径解析错"，用 `ls` 直接核对目标文件，勿盲目相信脚本输出（C14 验证精神的延伸）。
