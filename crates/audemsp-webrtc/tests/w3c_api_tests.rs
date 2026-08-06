@@ -449,3 +449,215 @@ mod stats_and_rtp_tests {
         assert_eq!(ext.id, 1);
     }
 }
+
+
+// ── T1: W3C transceiver/capabilities 类型单测 (v2) ──
+#[cfg(test)]
+mod transceiver_types_tests {
+    use audemsp_webrtc::rtp::{
+        RTCRtpCapabilities, RTCRtpCodecCapability, RTCRtpHeaderExtensionCapability,
+        RTCRtpTransceiver, RTCRtpTransceiverDirection, RTCRtpTransceiverInit,
+        RTCRtpEncodingParameters, RTCRtpParameters,
+    };
+    use audemsp_webrtc::track::TrackKind;
+    use audemsp_webrtc::rtp::{RTCRtpSender, RTCRtpReceiver};
+    use audemsp_webrtc::track::TrackRef;
+    use audemsp_webrtc::track::TrackSender;
+
+    #[test]
+    fn transceiver_init_default() {
+        let init = RTCRtpTransceiverInit::default();
+        assert_eq!(init.direction, RTCRtpTransceiverDirection::Sendrecv);
+        assert!(init.send_encodings.is_empty());
+        assert!(init.stream_ids.is_empty());
+    }
+
+    #[test]
+    fn transceiver_direction_mapping() {
+        assert_eq!(RTCRtpTransceiverDirection::Sendrecv.as_str(), "sendrecv");
+        assert_eq!(RTCRtpTransceiverDirection::Sendonly.as_str(), "sendonly");
+        assert_eq!(RTCRtpTransceiverDirection::Recvonly.as_str(), "recvonly");
+        assert_eq!(RTCRtpTransceiverDirection::Inactive.as_str(), "inactive");
+    }
+
+    #[test]
+    fn transceiver_struct_fields() {
+        let sender = RTCRtpSender::new(TrackRef::Sender(TrackSender::new("s1".into(), TrackKind::Video)));
+        let receiver = RTCRtpReceiver::new(TrackRef::Receiver(audemsp_webrtc::track::TrackReceiver::new("r1".into(), TrackKind::Video)));
+        let tc = RTCRtpTransceiver::new(
+            Some("0".into()),
+            RTCRtpTransceiverDirection::Sendonly,
+            Some(RTCRtpTransceiverDirection::Sendonly),
+            false,
+            sender,
+            receiver,
+            TrackKind::Video,
+        );
+        assert_eq!(tc.mid.as_deref(), Some("0"));
+        assert_eq!(tc.direction, RTCRtpTransceiverDirection::Sendonly);
+        assert_eq!(tc.current_direction, Some(RTCRtpTransceiverDirection::Sendonly));
+        assert!(!tc.stopped);
+        assert_eq!(tc.kind, TrackKind::Video);
+        assert_eq!(tc.sender.track_id, "s1");
+        assert_eq!(tc.receiver.track_id, "r1");
+    }
+
+    #[test]
+    fn capabilities_construct() {
+        let caps = RTCRtpCapabilities {
+            codecs: vec![],
+            header_extensions: vec![],
+        };
+        assert!(caps.codecs.is_empty());
+        assert!(caps.header_extensions.is_empty());
+    }
+
+    #[test]
+    fn codec_capability_fields() {
+        let codec = RTCRtpCodecCapability {
+            mime_type: "video/H264".into(),
+            clock_rate: Some(90000),
+            channels: None,
+            sdp_fmtp_line: Some("profile-level-id=42e01f".into()),
+        };
+        assert_eq!(codec.mime_type, "video/H264");
+        assert_eq!(codec.clock_rate, Some(90000));
+        assert_eq!(codec.sdp_fmtp_line.as_deref(), Some("profile-level-id=42e01f"));
+    }
+
+    #[test]
+    fn header_ext_capability_fields() {
+        let ext = RTCRtpHeaderExtensionCapability {
+            uri: "urn:ietf:params:rtp-hdrext:sdes:mid".into(),
+            id: Some(1),
+        };
+        assert_eq!(ext.uri, "urn:ietf:params:rtp-hdrext:sdes:mid");
+        assert_eq!(ext.id, Some(1));
+    }
+
+    #[test]
+    fn rtp_parameters_has_mid() {
+        let mut params = RTCRtpParameters::default();
+        params.mid = "0".into();
+        assert_eq!(params.mid, "0");
+        assert!(params.codecs.is_empty());
+    }
+
+    #[test]
+    fn encoding_parameters_codec_dtx() {
+        let mut enc = RTCRtpEncodingParameters::default();
+        enc.codec = Some("video/H264".into());
+        enc.dtx = Some(false);
+        assert_eq!(enc.codec.as_deref(), Some("video/H264"));
+        assert_eq!(enc.dtx, Some(false));
+    }
+}
+
+
+// ── T3: 包装层测试（v2）──
+#[cfg(test)]
+mod wrapper_tests {
+    use audemsp_webrtc::peer_connection::RTCConfiguration;
+    use audemsp_webrtc::factory::RTCPeerConnectionFactory;
+    use audemsp_webrtc::rtp::{RTCRtpTransceiverDirection, RTCRtpTransceiverInit};
+    use audemsp_webrtc::track::TrackKind;
+    use audemsp_webrtc::traits::PeerConnectionApi;
+
+    fn new_pc() -> audemsp_webrtc::peer_connection::RTCPeerConnection {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(
+            RTCPeerConnectionFactory::new()
+                .create_peer_connection(RTCConfiguration::default()),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn pc_add_transceiver_w3c() {
+        let pc = new_pc();
+        let init = RTCRtpTransceiverInit {
+            direction: RTCRtpTransceiverDirection::Sendonly,
+            send_encodings: vec![],
+            stream_ids: vec![],
+        };
+        let tc = pc.add_transceiver(TrackKind::Video, init).unwrap();
+        assert_eq!(tc.kind, TrackKind::Video);
+        assert_eq!(tc.direction, RTCRtpTransceiverDirection::Sendonly);
+    }
+
+    #[test]
+    fn pc_get_transceivers_after_add() {
+        let pc = new_pc();
+        let tcs = pc.get_transceivers().unwrap();
+        assert!(tcs.is_empty()); // stub 初始空
+        pc.add_transceiver(TrackKind::Video, RTCRtpTransceiverInit::default()).unwrap();
+        let tcs = pc.get_transceivers().unwrap();
+        assert_eq!(tcs.len(), 1);
+    }
+
+    #[test]
+    fn sender_get_parameters_via_pc() {
+        let pc = new_pc();
+        let params = pc.get_sending_rtp_parameters("t1").unwrap();
+        assert!(params.codecs.is_empty()); // stub 默认
+    }
+
+    #[test]
+    fn receiver_get_parameters_via_pc() {
+        let pc = new_pc();
+        let params = pc.get_receiving_rtp_parameters("t1").unwrap();
+        assert!(params.codecs.is_empty()); // stub 默认
+    }
+
+    #[test]
+    fn capabilities_via_pc() {
+        let pc = new_pc();
+        assert!(pc.get_sender_capabilities(TrackKind::Video).unwrap().is_none());
+        assert!(pc.get_receiver_capabilities(TrackKind::Audio).unwrap().is_none());
+    }
+
+    #[test]
+    fn restart_ice_via_pc() {
+        let pc = new_pc();
+        pc.restart_ice().unwrap();
+    }
+
+    #[test]
+    fn configuration_via_pc() {
+        let pc = new_pc();
+        let cfg = pc.get_configuration();
+        pc.set_configuration(&cfg).unwrap();
+    }
+
+    #[test]
+    fn current_descriptions_via_pc() {
+        let pc = new_pc();
+        assert!(pc.current_local_description().unwrap().is_none());
+        assert!(pc.current_remote_description().unwrap().is_none());
+    }
+
+    #[test]
+    fn add_transceiver_with_track_writable() {
+        let pc = new_pc();
+        let factory = RTCPeerConnectionFactory::new();
+        let track = factory.create_video_track("t1");
+        let init = RTCRtpTransceiverInit {
+            direction: RTCRtpTransceiverDirection::Sendonly,
+            send_encodings: vec![],
+            stream_ids: vec![],
+        };
+        // stub: add_transceiver_with_track 需 staged track，stub 简化处理
+        let tc = pc.add_transceiver_with_track(&track, init).unwrap();
+        assert_eq!(tc.kind, TrackKind::Video);
+    }
+
+    #[test]
+    fn sender_object_get_parameters() {
+        let pc = new_pc();
+        pc.add_track("v1", TrackKind::Video).unwrap();
+        let senders = pc.get_senders();
+        assert_eq!(senders.len(), 1);
+        // stub: sender 未绑定 backend，get_parameters 返回 not bound 错误或默认
+        let _ = senders[0].get_parameters(); // 不 panic 即可
+    }
+}

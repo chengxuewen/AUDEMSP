@@ -31,6 +31,8 @@ pub(crate) struct WebrtcSysPc {
     pc: cxx::SharedPtr<webrtc_sys::peer_connection::ffi::PeerConnection>,
     callbacks: Arc<ObserverCallbacks>,
     local_sdp: Arc<std::sync::Mutex<Option<String>>>,
+    /// v2: factory 引用（capabilities 查询需要）
+    factory: cxx::SharedPtr<webrtc_sys::peer_connection_factory::ffi::PeerConnectionFactory>,
 }
 
 impl std::fmt::Debug for WebrtcSysPc {
@@ -67,6 +69,61 @@ fn map_sdp_type(st: webrtc_sys::jsep::ffi::SdpType) -> RTCSdpType {
         webrtc_sys::jsep::ffi::SdpType::Rollback => RTCSdpType::Rollback,
         _ => RTCSdpType::Offer, // ponytail: defensive fallback
     }
+}
+
+// ── v2: webrtc-sys RtpParameters → crate RTCRtpParameters 映射 ──
+fn map_rtp_parameters(p: webrtc_sys::rtp_parameters::ffi::RtpParameters) -> crate::rtp::RTCRtpParameters {
+    use crate::rtp::{RTCRtpCodecParameters, RTCRtpEncodingParameters, RTCRtpHeaderExtensionParameters, RTCRtcpParameters};
+    let codecs = p.codecs.iter().map(|c| RTCRtpCodecParameters {
+        mime_type: c.mime_type.clone(),
+        payload_type: c.payload_type as u8,
+        clock_rate: c.clock_rate.max(0) as u32,
+        channels: if c.has_num_channels { Some(c.num_channels as u16) } else { None },
+        sdp_fmtp_line: None,
+    }).collect();
+    let encodings = p.encodings.iter().map(|e| RTCRtpEncodingParameters {
+        ssrc: if e.has_ssrc { Some(e.ssrc as u64) } else { None },
+        active: e.active,
+        max_bitrate: if e.has_max_bitrate_bps { Some(e.max_bitrate_bps.max(0) as u64) } else { None },
+        max_framerate: if e.has_max_framerate { Some(e.max_framerate) } else { None },
+        scale_resolution_down_by: if e.has_scale_resolution_down_by { Some(e.scale_resolution_down_by) } else { None },
+        rid: if e.rid.is_empty() { None } else { Some(e.rid.clone()) },
+        codec: None,
+        dtx: None,
+    }).collect();
+    let header_extensions = p.header_extensions.iter().map(|h| RTCRtpHeaderExtensionParameters {
+        uri: h.uri.clone(),
+        id: h.id as u16,
+        encrypted: h.encrypt,
+    }).collect();
+    let rtcp = RTCRtcpParameters {
+        cname: Some(p.rtcp.cname.clone()),
+        reduced_size: p.rtcp.reduced_size,
+    };
+    crate::rtp::RTCRtpParameters {
+        transaction_id: p.transaction_id,
+        mid: p.mid,
+        codecs,
+        encodings,
+        header_extensions,
+        rtcp,
+    }
+}
+
+// ── v2: webrtc-sys RtpCapabilities → crate RTCRtpCapabilities 映射 ──
+fn map_rtp_capabilities(c: webrtc_sys::rtp_parameters::ffi::RtpCapabilities) -> crate::rtp::RTCRtpCapabilities {
+    use crate::rtp::{RTCRtpCodecCapability, RTCRtpHeaderExtensionCapability};
+    let codecs = c.codecs.iter().map(|cc| RTCRtpCodecCapability {
+        mime_type: cc.mime_type.clone(),
+        clock_rate: if cc.has_clock_rate { Some(cc.clock_rate.max(0) as u32) } else { None },
+        channels: if cc.has_num_channels { Some(cc.num_channels as u16) } else { None },
+        sdp_fmtp_line: None,
+    }).collect();
+    let header_extensions = c.header_extensions.iter().map(|h| RTCRtpHeaderExtensionCapability {
+        uri: h.uri.clone(),
+        id: if h.has_preferred_id { Some(h.preferred_id as u16) } else { None },
+    }).collect();
+    crate::rtp::RTCRtpCapabilities { codecs, header_extensions }
 }
 
 impl PcBackend for WebrtcSysPc {
@@ -350,6 +407,173 @@ impl PcBackend for WebrtcSysPc {
         Ok(())
     }
 
+    // ── v2: W3C API overrides ──
+
+    fn get_transceivers(&self) -> Result<Vec<crate::rtp::RTCRtpTransceiver>, RTCError> {
+        use webrtc_sys::rtp_transceiver::ffi::RtpTransceiverDirection as SysDir;
+        let tcs = self.pc.get_transceivers();
+        let mut out = Vec::with_capacity(tcs.len());
+        for tc in tcs {
+            let t = &tc.ptr;
+            let kind = match t.media_type() {
+                webrtc_sys::webrtc::ffi::MediaType::Video => TrackKind::Video,
+                webrtc_sys::webrtc::ffi::MediaType::Audio => TrackKind::Audio,
+                _ => TrackKind::Video,
+            };
+            let direction = match t.direction() {
+                SysDir::SendRecv => crate::rtp::RTCRtpTransceiverDirection::Sendrecv,
+                SysDir::SendOnly => crate::rtp::RTCRtpTransceiverDirection::Sendonly,
+                SysDir::RecvOnly => crate::rtp::RTCRtpTransceiverDirection::Recvonly,
+                SysDir::Inactive => crate::rtp::RTCRtpTransceiverDirection::Inactive,
+                SysDir::Stopped => crate::rtp::RTCRtpTransceiverDirection::Inactive,
+                _ => crate::rtp::RTCRtpTransceiverDirection::Inactive,
+            };
+            let current = t.current_direction().ok().map(|d| match d {
+                SysDir::SendRecv => crate::rtp::RTCRtpTransceiverDirection::Sendrecv,
+                SysDir::SendOnly => crate::rtp::RTCRtpTransceiverDirection::Sendonly,
+                SysDir::RecvOnly => crate::rtp::RTCRtpTransceiverDirection::Recvonly,
+                SysDir::Inactive => crate::rtp::RTCRtpTransceiverDirection::Inactive,
+                SysDir::Stopped => crate::rtp::RTCRtpTransceiverDirection::Inactive,
+                _ => crate::rtp::RTCRtpTransceiverDirection::Inactive,
+            });
+            let stopped = t.stopped();
+            let mid = t.mid().ok();
+            let sender = crate::rtp::RTCRtpSender::new(crate::track::TrackRef::Sender(
+                crate::track::TrackSender::new(
+                    format!("sys-sender-{}", mid.as_deref().unwrap_or("")),
+                    kind,
+                ),
+            ));
+            let receiver = crate::rtp::RTCRtpReceiver::new(
+                crate::track::TrackRef::Receiver(crate::track::TrackReceiver::new(
+                    format!("sys-recv-{}", mid.as_deref().unwrap_or("")), kind,
+                )),
+            );
+            out.push(crate::rtp::RTCRtpTransceiver::new(
+                mid, direction, current, stopped, sender, receiver, kind,
+            ));
+        }
+        Ok(out)
+    }
+
+    fn add_transceiver_with_track(&self, track: &crate::track::TrackSender, init: &crate::rtp::RTCRtpTransceiverInit) -> Result<crate::rtp::RTCRtpTransceiver, RTCError> {
+        use webrtc_sys::rtp_transceiver::ffi::RtpTransceiverDirection as SysDir;
+        // 从 staged 队列取出 media_track（create_track_sender 时 stage 的）
+        let media_track = self.callbacks.staged_media_tracks.lock().unwrap().pop()
+            .ok_or_else(|| RTCError::Track("no staged media track for add_transceiver_with_track".into()))?;
+        let sys_dir = match init.direction {
+            crate::rtp::RTCRtpTransceiverDirection::Sendrecv => SysDir::SendRecv,
+            crate::rtp::RTCRtpTransceiverDirection::Sendonly => SysDir::SendOnly,
+            crate::rtp::RTCRtpTransceiverDirection::Recvonly => SysDir::RecvOnly,
+            crate::rtp::RTCRtpTransceiverDirection::Inactive => SysDir::Inactive,
+        };
+        let sys_init = webrtc_sys::rtp_transceiver::ffi::RtpTransceiverInit {
+            direction: sys_dir,
+            stream_ids: init.stream_ids.clone(),
+            send_encodings: vec![],
+        };
+        let tc = self.pc.add_transceiver(media_track, sys_init)
+            .map_err(|e| RTCError::RTCPeerConnection(e.what().to_owned()))?;
+        let mid = tc.mid().ok();
+        let sender = crate::rtp::RTCRtpSender::new(crate::track::TrackRef::Sender(track.clone()));
+        let receiver = crate::rtp::RTCRtpReceiver::new(crate::track::TrackRef::Receiver(
+            crate::track::TrackReceiver::new(
+                format!("sys-recv-{}", mid.as_deref().unwrap_or("")), track.kind,
+            ),
+        ));
+        Ok(crate::rtp::RTCRtpTransceiver::new(
+            mid,
+            init.direction,
+            Some(init.direction),
+            false,
+            sender,
+            receiver,
+            track.kind,
+        ))
+    }
+
+    fn sender_get_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError> {
+        // 遍历 transceivers，按 sender track_id 匹配
+        for tc in self.pc.get_transceivers() {
+            let t = &tc.ptr;
+            let sender = t.sender();
+            let track = sender.track();
+            if track.id() == track_id {
+                return Ok(map_rtp_parameters(sender.get_parameters()));
+            }
+        }
+        Err(RTCError::Track(format!("sender not found: {track_id}")))
+    }
+
+    fn get_sender_capabilities(&self, kind: TrackKind) -> Result<Option<crate::rtp::RTCRtpCapabilities>, RTCError> {
+        let media_type = match kind {
+            TrackKind::Video => webrtc_sys::webrtc::ffi::MediaType::Video,
+            TrackKind::Audio => webrtc_sys::webrtc::ffi::MediaType::Audio,
+        };
+        Ok(Some(map_rtp_capabilities(
+            self.factory.rtp_sender_capabilities(media_type),
+        )))
+    }
+
+    fn get_receiver_capabilities(&self, kind: TrackKind) -> Result<Option<crate::rtp::RTCRtpCapabilities>, RTCError> {
+        let media_type = match kind {
+            TrackKind::Video => webrtc_sys::webrtc::ffi::MediaType::Video,
+            TrackKind::Audio => webrtc_sys::webrtc::ffi::MediaType::Audio,
+        };
+        Ok(Some(map_rtp_capabilities(
+            self.factory.rtp_receiver_capabilities(media_type),
+        )))
+    }
+
+    fn restart_ice(&self) -> Result<(), RTCError> {
+        self.pc.restart_ice();
+        Ok(())
+    }
+
+    fn current_local_description(&self) -> Result<Option<crate::sdp::RTCSessionDescription>, RTCError> {
+        let sd = self.pc.current_local_description();
+        if sd.is_null() { return Ok(None); }
+        Ok(Some(crate::sdp::RTCSessionDescription::new(
+            map_sdp_type(sd.sdp_type()),
+            sd.stringify(),
+        )))
+    }
+
+    fn current_remote_description(&self) -> Result<Option<crate::sdp::RTCSessionDescription>, RTCError> {
+        let sd = self.pc.current_remote_description();
+        if sd.is_null() { return Ok(None); }
+        Ok(Some(crate::sdp::RTCSessionDescription::new(
+            map_sdp_type(sd.sdp_type()),
+            sd.stringify(),
+        )))
+    }
+
+    fn transceiver_set_direction(&self, mid: &str, dir: crate::rtp::RTCRtpTransceiverDirection) -> Result<(), RTCError> {
+        use webrtc_sys::rtp_transceiver::ffi::RtpTransceiverDirection as SysDir;
+        let sys_dir = match dir {
+            crate::rtp::RTCRtpTransceiverDirection::Sendrecv => SysDir::SendRecv,
+            crate::rtp::RTCRtpTransceiverDirection::Sendonly => SysDir::SendOnly,
+            crate::rtp::RTCRtpTransceiverDirection::Recvonly => SysDir::RecvOnly,
+            crate::rtp::RTCRtpTransceiverDirection::Inactive => SysDir::Inactive,
+        };
+        for tc in self.pc.get_transceivers() {
+            if tc.ptr.mid().ok().as_deref() == Some(mid) {
+                tc.ptr.set_direction(sys_dir).map_err(|e| RTCError::RTCPeerConnection(e.what().to_owned()))?;
+                return Ok(());
+            }
+        }
+        Err(RTCError::Track(format!("transceiver not found: {mid}")))
+    }
+
+    fn transceiver_stop(&self, mid: &str) -> Result<(), RTCError> {
+        for tc in self.pc.get_transceivers() {
+            if tc.ptr.mid().ok().as_deref() == Some(mid) {
+                tc.ptr.stop_standard().map_err(|e| RTCError::RTCPeerConnection(e.what().to_owned()))?;
+                return Ok(());
+            }
+        }
+        Err(RTCError::Track(format!("transceiver not found: {mid}")))
+    }
 }
 
 // ── create_data_channel (method on WebrtcSysPc, called directly by peer.rs) ──
@@ -857,7 +1081,12 @@ impl WebrtcSysFactory {
             .create_peer_connection(rtc_config, Box::new(observer))
             .map_err(|e| RTCError::RTCPeerConnection(e.what().to_owned()))?;
 
-        Ok(WebrtcSysPc { pc, callbacks, local_sdp: Arc::new(std::sync::Mutex::new(None)) })
+        Ok(WebrtcSysPc {
+            pc,
+            callbacks,
+            local_sdp: Arc::new(std::sync::Mutex::new(None)),
+            factory: self.factory.clone(),
+        })
     }
 
     /// Create a video track with a new VideoTrackSource.

@@ -5,10 +5,11 @@
 //! Zero dyn overhead — all dispatch is monomorphized.
 
 use crate::data_channel::{RTCDataChannel, RTCDataChannelRx, RTCDataChannelState};
-use crate::peer_connection::{RTCAnswerOptions, RTCIceCandidate, RTCOfferOptions, RTCIceConnectionState, RTCIceGatheringState, RTCPeerConnectionState, RTCSignalingState};
+use crate::peer_connection::{RTCAnswerOptions, RTCIceCandidate, RTCOfferOptions, RTCIceConnectionState, RTCIceGatheringState, RTCPeerConnectionState, RTCSignalingState, RTCConfiguration};
 use crate::sdp::RTCSessionDescription;
 use crate::stats::RTCStats;
-use crate::track::{RTCAudioTrackConfig, TrackKind, TrackReceiver};
+use crate::track::{RTCAudioTrackConfig, TrackKind, TrackReceiver, TrackSender};
+use crate::rtp::{RTCRtpCapabilities, RTCRtpCodecCapability, RTCRtpParameters, RTCRtpTransceiver, RTCRtpTransceiverDirection, RTCRtpTransceiverInit};
 use crate::RTCError;
 
 // ── Traits ──
@@ -42,11 +43,122 @@ pub(crate) trait PcBackend: Send + Sync + 'static {
     fn get_stats(&self) -> Vec<RTCStats> {
         vec![]
     }
-
-    /// Add an RTP transceiver for a media type with a given direction.
-    // ponytail: String params until enums are justified.
-    fn add_transceiver(&self, _media_type: &str, _direction: &str) -> Result<(), RTCError> {
+    /// 旧版 add_transceiver (str, str) — v2 重命名，避免与 W3C 签名同名冲突（零调用方）
+    #[allow(dead_code)]
+    fn add_transceiver_legacy(&self, _media_type: &str, _direction: &str) -> Result<(), RTCError> {
         Err(RTCError::Internal("not supported".into()))
+    }
+
+    /// W3C getTransceivers — 返回所有 transceiver 的纯数据视图（v2）
+    /// 默认 Err(NotSupported) + warn（C15 防静默降级），stub 覆盖为 Ok(vec![])
+    fn get_transceivers(&self) -> Result<Vec<RTCRtpTransceiver>, RTCError> {
+        tracing::warn!("get_transceivers: not supported by backend");
+        Err(RTCError::NotSupported("get_transceivers".into()))
+    }
+
+    /// W3C addTransceiver(kind, init) — kind 版（同步，v2）
+    fn add_transceiver(&self, kind: TrackKind, init: &RTCRtpTransceiverInit) -> Result<RTCRtpTransceiver, RTCError> {
+        tracing::warn!("add_transceiver: not supported by backend");
+        Err(RTCError::NotSupported("add_transceiver".into()))
+    }
+
+    /// W3C addTransceiver(track, init) — track 版重载（v2，P3 核心：kind 版会产生无法写帧的空 track）
+    fn add_transceiver_with_track(&self, track: &TrackSender, init: &RTCRtpTransceiverInit) -> Result<RTCRtpTransceiver, RTCError> {
+        tracing::warn!("add_transceiver_with_track: not supported by backend");
+        Err(RTCError::NotSupported("add_transceiver_with_track".into()))
+    }
+
+    /// W3C RTCRtpSender.getParameters — 经 track_id 分派（同步）
+    fn sender_get_parameters(&self, _track_id: &str) -> Result<RTCRtpParameters, RTCError> {
+        tracing::warn!("sender_get_parameters: not supported by backend");
+        Err(RTCError::NotSupported("sender_get_parameters".into()))
+    }
+
+    /// W3C RTCRtpReceiver.getParameters — 经 track_id 分派（同步）
+    fn receiver_get_parameters(&self, _track_id: &str) -> Result<RTCRtpParameters, RTCError> {
+        tracing::warn!("receiver_get_parameters: not supported by backend");
+        Err(RTCError::NotSupported("receiver_get_parameters".into()))
+    }
+
+    /// W3C RTCRtpSender.setParameters — v2 补
+    fn sender_set_parameters(&self, _track_id: &str, _params: &RTCRtpParameters) -> Result<(), RTCError> {
+        tracing::warn!("sender_set_parameters: not supported by backend");
+        Err(RTCError::NotSupported("sender_set_parameters".into()))
+    }
+
+    /// W3C RTCRtpSender.replaceTrack — v2 补
+    fn sender_replace_track(&self, _track_id: &str, _new_track_id: &str) -> Result<(), RTCError> {
+        tracing::warn!("sender_replace_track: not supported by backend");
+        Err(RTCError::NotSupported("sender_replace_track".into()))
+    }
+
+    /// W3C RTCRtpSender.setStreams — v2 补
+    fn sender_set_streams(&self, _track_id: &str, _stream_ids: &[String]) -> Result<(), RTCError> {
+        tracing::warn!("sender_set_streams: not supported by backend");
+        Err(RTCError::NotSupported("sender_set_streams".into()))
+    }
+
+    /// W3C RTCRtpSender.getStats（出站统计，可选）
+    fn sender_get_stats(&self, _track_id: &str) -> Vec<RTCStats> {
+        vec![]
+    }
+
+    /// W3C 静态 RTCRtpSender.getCapabilities(kind)
+    fn get_sender_capabilities(&self, _kind: TrackKind) -> Result<Option<RTCRtpCapabilities>, RTCError> {
+        tracing::warn!("get_sender_capabilities: not supported by backend");
+        Err(RTCError::NotSupported("get_sender_capabilities".into()))
+    }
+
+    /// W3C 静态 RTCRtpReceiver.getCapabilities(kind)
+    fn get_receiver_capabilities(&self, _kind: TrackKind) -> Result<Option<RTCRtpCapabilities>, RTCError> {
+        tracing::warn!("get_receiver_capabilities: not supported by backend");
+        Err(RTCError::NotSupported("get_receiver_capabilities".into()))
+    }
+
+    /// W3C restartIce — no-op 类默认 Ok + warn
+    fn restart_ice(&self) -> Result<(), RTCError> {
+        tracing::warn!("restart_ice: not supported by backend (no-op)");
+        Ok(())
+    }
+
+    /// W3C getConfiguration
+    fn pc_configuration(&self) -> RTCConfiguration {
+        RTCConfiguration::default()
+    }
+
+    /// W3C setConfiguration
+    fn set_configuration(&self, _config: &RTCConfiguration) -> Result<(), RTCError> {
+        Ok(())
+    }
+
+    /// W3C currentLocalDescription
+    fn current_local_description(&self) -> Result<Option<RTCSessionDescription>, RTCError> {
+        tracing::warn!("current_local_description: not supported by backend");
+        Err(RTCError::NotSupported("current_local_description".into()))
+    }
+
+    /// W3C currentRemoteDescription
+    fn current_remote_description(&self) -> Result<Option<RTCSessionDescription>, RTCError> {
+        tracing::warn!("current_remote_description: not supported by backend");
+        Err(RTCError::NotSupported("current_remote_description".into()))
+    }
+
+    /// W3C RTCRtpTransceiver.setDirection — v2 补（经 mid 分派）
+    fn transceiver_set_direction(&self, _mid: &str, _dir: RTCRtpTransceiverDirection) -> Result<(), RTCError> {
+        tracing::warn!("transceiver_set_direction: not supported by backend");
+        Err(RTCError::NotSupported("transceiver_set_direction".into()))
+    }
+
+    /// W3C RTCRtpTransceiver.stop — v2 补
+    fn transceiver_stop(&self, _mid: &str) -> Result<(), RTCError> {
+        tracing::warn!("transceiver_stop: not supported by backend");
+        Err(RTCError::NotSupported("transceiver_stop".into()))
+    }
+
+    /// W3C RTCRtpTransceiver.setCodecPreferences — v2 补
+    fn transceiver_set_codec_preferences(&self, _mid: &str, _codecs: Vec<RTCRtpCodecCapability>) -> Result<(), RTCError> {
+        tracing::warn!("transceiver_set_codec_preferences: not supported by backend");
+        Err(RTCError::NotSupported("transceiver_set_codec_preferences".into()))
     }
 
     /// Register a local track with the RTCPeerConnection for RTP transmission.

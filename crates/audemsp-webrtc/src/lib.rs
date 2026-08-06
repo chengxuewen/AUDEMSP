@@ -41,6 +41,8 @@ pub enum RTCError {
     Track(String),
     #[error("Internal error: {0}")]
     Internal(String),
+    #[error("Not supported by backend: {0}")]
+    NotSupported(String),
 }
 
 #[cfg(feature = "backend-webrtc-rs")]
@@ -60,6 +62,7 @@ impl RTCError {
             RTCError::Sdp(_) => "RTCSD",
             RTCError::Track(_) => "RTCTK",
             RTCError::Internal(_) => "RTCIN",
+            RTCError::NotSupported(_) => "RTCNS",
         }
     }
 }

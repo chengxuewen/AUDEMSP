@@ -31,3 +31,7 @@ egui = "0.30"
 eframe = { version = "0.30", features = ["default"] }
 webrtc = "0.12"
 audemsp-media = { path = "../audemsp-media" }
+
+[[example]]
+name = "webrtc_loopback_egui"
+required-features = ["backend-webrtc-sys"]

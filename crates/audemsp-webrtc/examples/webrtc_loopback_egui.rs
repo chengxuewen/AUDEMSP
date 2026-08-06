@@ -15,7 +15,7 @@ use eframe::egui;
 use egui::ColorImage;
 use audemsp_webrtc::peer_connection::*;
 use audemsp_webrtc::factory::RTCPeerConnectionFactory;
-use audemsp_webrtc::track::{TrackKind, TrackSender};
+use audemsp_webrtc::track::{TrackKind, TrackRef};
 use audemsp_webrtc::TrackWriteBackend;
 use audemsp_webrtc::traits::PeerConnectionApi;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -165,7 +165,7 @@ fn run_p2p(p: Arc<Pipeline>) {
         let factory = RTCPeerConnectionFactory::new();
         // ponytail: use the SAME factory for both PC and video track —
         // libwebrtc requires tracks to be created by the PC's factory.
-        let sys_factory = &factory.backend;
+
         let pc_sender = factory
             .create_peer_connection(RTCConfiguration::default())
             .await
@@ -176,23 +176,14 @@ fn run_p2p(p: Arc<Pipeline>) {
             .expect("receiver pc");
 
         // ── Create video track with real VideoTrackSource ──
-        // create_video_track_custom returns (WebrtcSysTrack, MediaStreamTrack)
-        let (backend, media_track) = sys_factory.create_video_track_custom(
-            "loopback-video".into(), W, H,
-        );
-
-        // Register the MediaStreamTrack with the sender PC (libwebrtc requires this)
-        pc_sender.backend.accept_video_track(media_track);
-        let track_sender = TrackSender {
-            id: "loopback-video".to_string(),
-            kind: TrackKind::Video,
-            audio_config: None,
-            backend,  // WebrtcSysTrack with the same VideoTrackSource
-        };
-
-        // Register the track so RTP transmission is active
+        // add_track 内部创建真实 backend 的 TrackSender（webrtc-sys: VideoTrackSource + media_track）
+        // 并通过 get_track 取回写帧（T0 修复: 替代已删除的 create_video_track_custom/accept_video_track）
         pc_sender.add_track("loopback-video", TrackKind::Video)
             .expect("add track");
+        let track_sender = match pc_sender.get_track("loopback-video").unwrap() {
+            TrackRef::Sender(s) => s,
+            _ => unreachable!("add_track 注册的是 Sender"),
+        };
 
         // on_track callback — fires when remote track arrives after SDP negotiation
         let log_status = p.clone();
@@ -210,7 +201,10 @@ fn run_p2p(p: Arc<Pipeline>) {
                     self.tx.send((data.to_vec(), width, height)).ok();
                 }
             }
-            receiver.set_frame_sink(Box::new(ChannelSink { tx: frame_tx.clone() }));
+            // 通过 receiver.track (TrackRef::Receiver) 注册 FrameSink
+            if let TrackRef::Receiver(tr) = &receiver.track {
+                tr.set_frame_sink(Box::new(ChannelSink { tx: frame_tx.clone() }));
+            }
         });
 
         // SDP exchange
@@ -268,7 +262,8 @@ fn run_p2p(p: Arc<Pipeline>) {
             p.sender_count.fetch_add(1, Ordering::Relaxed);
 
             // Write raw I420 frame to the webrtc track
-            let _ = track_sender.backend.write_raw_i420(&i420, W, H).await;
+            // 用 TrackSender 公开方法写帧（不暴露私有 backend 类型）
+            let _ = track_sender.write_raw_i420(&i420, W, H).await;
 
             frame_idx += 1;
             tokio::time::sleep(frame_interval).await;

@@ -19,12 +19,12 @@
 //! ```
 
 use crate::peer_connection::{
-    RTCAnswerOptions, RTCIceCandidate, RTCOfferOptions,
+    RTCAnswerOptions, RTCIceCandidate, RTCOfferOptions, RTCConfiguration, RTCIceCandidateError,
     RTCIceConnectionState, RTCIceGatheringState, RTCPeerConnectionState, RTCSignalingState,
 };
 use crate::sdp::RTCSessionDescription;
 use crate::data_channel::{RTCDataChannel, RTCDataChannelInit};
-use crate::track::{TrackKind, TrackRef};
+use crate::track::{TrackKind, TrackRef, TrackSender};
 use crate::rtp::{RTCRtpSender, RTCRtpReceiver};
 use crate::RTCError;
 
@@ -94,4 +94,34 @@ pub trait PeerConnectionApi: Send + Sync + 'static {
     /// Register a callback for incoming remote tracks.
     /// The callback receives an RTCRtpReceiver when a remote track is added.
     fn on_track<F>(&self, callback: F) where F: Fn(RTCRtpReceiver) + Send + Sync + 'static;
+
+    // ── v2: W3C API 补全 ──
+
+    /// W3C getTransceivers
+    fn get_transceivers(&self) -> Result<Vec<crate::rtp::RTCRtpTransceiver>, RTCError>;
+    /// W3C addTransceiver(kind, init) — 同步
+    fn add_transceiver(&self, kind: TrackKind, init: crate::rtp::RTCRtpTransceiverInit) -> Result<crate::rtp::RTCRtpTransceiver, RTCError>;
+    /// W3C addTransceiver(track, init) — track 版（P3 核心）
+    fn add_transceiver_with_track(&self, track: &TrackSender, init: crate::rtp::RTCRtpTransceiverInit) -> Result<crate::rtp::RTCRtpTransceiver, RTCError>;
+    /// W3C RTCRtpSender.getParameters 对应（经 track_id）
+    fn get_sending_rtp_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError>;
+    /// W3C RTCRtpReceiver.getParameters 对应（经 track_id）
+    fn get_receiving_rtp_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError>;
+    /// W3C 静态 getCapabilities
+    fn get_sender_capabilities(&self, kind: TrackKind) -> Result<Option<crate::rtp::RTCRtpCapabilities>, RTCError>;
+    fn get_receiver_capabilities(&self, kind: TrackKind) -> Result<Option<crate::rtp::RTCRtpCapabilities>, RTCError>;
+    /// W3C restartIce — 同步
+    fn restart_ice(&self) -> Result<(), RTCError>;
+    /// W3C getConfiguration / setConfiguration
+    fn get_configuration(&self) -> RTCConfiguration;
+    fn set_configuration(&self, config: &RTCConfiguration) -> Result<(), RTCError>;
+    /// W3C currentLocalDescription / currentRemoteDescription
+    fn current_local_description(&self) -> Result<Option<RTCSessionDescription>, RTCError>;
+    fn current_remote_description(&self) -> Result<Option<RTCSessionDescription>, RTCError>;
+    /// W3C onnegotiationneeded
+    fn on_negotiation_needed<F>(&self, callback: F) where F: Fn() + Send + Sync + 'static;
+    /// W3C onicegatheringstatechange
+    fn on_ice_gathering_state_change<F>(&self, callback: F) where F: Fn(RTCIceGatheringState) + Send + Sync + 'static;
+    /// W3C onicecandidateerror
+    fn on_ice_candidate_error<F>(&self, callback: F) where F: Fn(crate::peer_connection::RTCIceCandidateError) + Send + Sync + 'static;
 }

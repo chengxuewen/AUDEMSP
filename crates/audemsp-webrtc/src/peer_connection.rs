@@ -36,6 +36,12 @@ pub struct RTCAnswerOptions;
 #[derive(Debug, Clone)]
 pub struct RTCIceCandidate { pub candidate: String, pub sdp_mid: Option<String>, pub sdp_mline_index: Option<u16> }
 
+/// W3C RTCIceCandidateError — onicecandidateerror 事件参数 (v2)
+#[derive(Debug, Clone, Default)]
+pub struct RTCIceCandidateError {
+    pub error_code: i32,
+    pub error_text: String,
+}
 pub const MAX_TRACKS: usize = 8;
 
 // ── RTCPeerConnection struct ──
@@ -94,7 +100,10 @@ impl crate::traits::PeerConnectionApi for RTCPeerConnection {
     fn track_count(&self) -> usize { self.tracks.lock().unwrap().len() }
     fn track_ids(&self) -> Vec<String> { self.tracks.lock().unwrap().keys().cloned().collect() }
     fn get_senders(&self) -> Vec<RTCRtpSender> {
-        self.tracks.lock().unwrap().values().filter(|tr| matches!(tr, TrackRef::Sender(_))).map(|tr| RTCRtpSender::new(tr.clone())).collect()
+        let backend = self.backend.clone();
+        self.tracks.lock().unwrap().values().filter(|tr| matches!(tr, TrackRef::Sender(_)))
+            .map(|tr| RTCRtpSender::new(tr.clone()).with_backend(backend.clone()))
+            .collect()
     }
     fn get_receivers(&self) -> Vec<RTCRtpReceiver> {
         self.tracks.lock().unwrap().values().filter(|tr| matches!(tr, TrackRef::Receiver(_))).map(|tr| RTCRtpReceiver::new(tr.clone())).collect()
@@ -105,6 +114,68 @@ impl crate::traits::PeerConnectionApi for RTCPeerConnection {
         self.backend.set_on_track(Box::new(move |tr: TrackReceiver| {
             if let Some(ref f) = *bk_cb_from.lock().unwrap() { f(RTCRtpReceiver::new(TrackRef::Receiver(tr))); }
         }));
+    }
+
+    // ── v2: W3C API 实现 ──
+
+    fn get_transceivers(&self) -> Result<Vec<crate::rtp::RTCRtpTransceiver>, RTCError> {
+        self.backend.get_transceivers()
+    }
+
+    fn add_transceiver(&self, kind: TrackKind, init: crate::rtp::RTCRtpTransceiverInit) -> Result<crate::rtp::RTCRtpTransceiver, RTCError> {
+        self.backend.add_transceiver(kind, &init)
+    }
+
+    fn add_transceiver_with_track(&self, track: &TrackSender, init: crate::rtp::RTCRtpTransceiverInit) -> Result<crate::rtp::RTCRtpTransceiver, RTCError> {
+        self.backend.add_transceiver_with_track(track, &init)
+    }
+
+    fn get_sending_rtp_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError> {
+        self.backend.sender_get_parameters(track_id)
+    }
+
+    fn get_receiving_rtp_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError> {
+        self.backend.receiver_get_parameters(track_id)
+    }
+
+    fn get_sender_capabilities(&self, kind: TrackKind) -> Result<Option<crate::rtp::RTCRtpCapabilities>, RTCError> {
+        self.backend.get_sender_capabilities(kind)
+    }
+
+    fn get_receiver_capabilities(&self, kind: TrackKind) -> Result<Option<crate::rtp::RTCRtpCapabilities>, RTCError> {
+        self.backend.get_receiver_capabilities(kind)
+    }
+
+    fn restart_ice(&self) -> Result<(), RTCError> {
+        self.backend.restart_ice()
+    }
+
+    fn get_configuration(&self) -> RTCConfiguration {
+        self.backend.pc_configuration()
+    }
+
+    fn set_configuration(&self, config: &RTCConfiguration) -> Result<(), RTCError> {
+        self.backend.set_configuration(config)
+    }
+
+    fn current_local_description(&self) -> Result<Option<RTCSessionDescription>, RTCError> {
+        self.backend.current_local_description()
+    }
+
+    fn current_remote_description(&self) -> Result<Option<RTCSessionDescription>, RTCError> {
+        self.backend.current_remote_description()
+    }
+
+    fn on_negotiation_needed<F>(&self, _callback: F) where F: Fn() + Send + Sync + 'static {
+        // v2: backend 无 negotiation callback 接口，暂空实现（可后续接 on_renegotiation_needed）
+    }
+
+    fn on_ice_gathering_state_change<F>(&self, _callback: F) where F: Fn(RTCIceGatheringState) + Send + Sync + 'static {
+        // v2: webrtc-sys observer 有 on_ice_gathering_change，可后续暴露
+    }
+
+    fn on_ice_candidate_error<F>(&self, _callback: F) where F: Fn(RTCIceCandidateError) + Send + Sync + 'static {
+        // v2: webrtc-sys observer 有 on_ice_candidate_error，可后续暴露
     }
 }
 
