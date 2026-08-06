@@ -751,3 +751,17 @@ close() { this.closed = true; ... }
 **验证**: `git checkout HEAD -- .agents/rules/golang .agents/rules/perl .agents/rules/php` 后，10 目录 index=worktree=5，`git status` 干净。
 
 **禁止**: 批量恢复/删除后只 `ls` 抽样验证；`git restore` 恢复 staged 删除后不核对 worktree。
+
+## PIT-69: 根分区磁盘满 — 编译产物撑爆 100%，隐藏历史 target (2026-08-06)
+
+**症状**: webrtc-sys 测试编译失败 `No space left on device`，`df -h /` 显示 98G 已 100% 满（仅 98M 可用）。
+
+**根因**: ① `/home/maxsense/audemsp-target`（11G，maxsense 所有）是历史遗留的 cargo target，含 webrtc-sys/libwebrtc 全量编译产物，从未清理；② `/tmp/w3c-target`（5.9G）本次编译新增；③ `.cache/rattler`（3.2G，pixi 包缓存）。三者叠加撑爆根分区。
+
+**解法**: 删除历史编译缓存——`rm -rf ~/audemsp-target`（11G，非当前 target，当前用项目 `target/` 或 `/tmp/w3c-target`）+ `rm -rf ~/.cache/rattler/cache/*`（pixi 包缓存，可重建）+ `rm -rf /tmp/opencode`。腾出 13G。**注意 audemsp-target 是 maxsense 所有（非 root），无需 sudo**。
+
+**验证**: `df -h /` 从 100% → 87%（13G 可用）；webrtc-sys 测试编译恢复。
+
+**禁止**: ① 多个 cargo target 目录并存不清理（历史 `audemsp-target` + 新 `/tmp/w3c-target`）；② 编译前不检查 `df -h /`。编译大 crate（libwebrtc）前先确认磁盘 > 5G 可用。
+
+**检查**: `df -h /` 可用 > 5G；`du -sh ~/audemsp-target /tmp/*-target` 排查历史编译产物。

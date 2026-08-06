@@ -1,8 +1,8 @@
 # AUDEMSP Status
 
-**生成**: 2026-08-06 | 决策: 188+ (D1-D213, 含跳号) | Phase: 3 完成 | 217 commits | 22 skills | mediasoup 0.24.1 | PIT-68
+**生成**: 2026-08-06 | 决策: 189+ (D1-D214, 含跳号) | Phase: 3 完成 | 221 commits | 22 skills | mediasoup 0.24.1 | PIT-69
 
-**Agent 上下文治理 D213 完成** — instructions 瘦身（pitfalls.md 59KB 移出 instructions → 按需读取，18 文件 ~70KB）+ 六模型 premium/1024K + .agents 精简（删 zh/ 翻译副本 + book-to-skill 瘦身 956K→192K，非项目语言规则保留）。**待办**: admin dist 修复；
+**Agent 上下文治理 D213 完成** — instructions 瘦身（pitfalls.md 59KB 移出 instructions → 按需读取，18 文件 ~70KB）+ 六模型 premium/1024K + .agents 精简（删 zh/ 翻译副本 + book-to-skill 瘦身 956K→192K，非项目语言规则保留）。**W3C API 补全 D214 完成** — audemsp-webrtc 补全所有 W3C API（transceiver/parameters/capabilities/sender-receiver 对象方法 + 三后端），Host SFU produce 走标准协商（get_sending_rtp_parameters 推导替代手工 SDP/硬编码），C18 检查 src/ 无残留。**待办**: admin dist 修复；webrtc-sys 下 w3c_api_tests 4 个预存失败（ice/sdp 测试假设 stub 宽松状态机）；client crate 预存 feature 不匹配（webrtc-rs 方法 vs webrtc-sys feature）；e2e_sfu.rs 需在真实 mediasoup 环境更新标准协商
 
 ## 测试
 
@@ -65,6 +65,7 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | D211 | 帧率必须匹配 libwebrtc 编码器配置 — 帧循环绝对时间轴 | ✅ | Pipeline |
 | D212 | docs/reference Diátaxis 重组 + 计划体系清理（C19） | ✅ | Docs |
 | D213 | Agent 上下文爆炸治理 — instructions 瘦身 + 六模型 1024K + .agents 精简 | ✅ | Config |
+| D214 | audemsp-webrtc 补全 W3C API 面 + Host SFU 标准协商（C18） | ✅ | WebRTC |
 
 ## Admin Dashboard 测试
 

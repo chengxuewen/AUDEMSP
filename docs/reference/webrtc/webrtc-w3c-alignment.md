@@ -159,7 +159,7 @@ fn get_sending_rtp_parameters(&self, track_id: &str) -> Result<RtpParameters>;  
 - **P2P 路径回归**：P2P relay 也走 `PeerConnectionApi`，改 trait 后需回归 P2P E2E。
 - **这是架构改动**：按 edit-safety.md 架构决策门，**需用户确认后才实施**。本文档仅分析。
 
-## 5. 相关文件
+## 7. 相关文件
 
 - `crates/audemsp-host/src/main.rs:277-361` — 当前 SFU produce 流程
 - `crates/audemsp-host/src/sfu_media.rs` — `build_remote_sdp` / `build_produce_rtp_parameters` / `negotiated_ssrc_from_sdp`
@@ -168,4 +168,148 @@ fn get_sending_rtp_parameters(&self, track_id: &str) -> Result<RtpParameters>;  
 - `/tmp/mediasoup-client/src/handlers/Chrome74.ts` — 官方 send() 流程基准
 - `/tmp/libmediasoupclient/src/Handler.cpp` — 官方 C++ 客户端基准
 - `/tmp/mediasoup-demo/app/src/RoomClient.js` — 官方 demo 基准
+
+---
+
+## 5. 无法实现的 W3C API（标注未来实现）
+
+> 计划: 2026-08-06 v2（团队审核 + W3C 对标审计后） | 依据: webrtc-sys 0.3.x FFI inventory 实测（§6）
+> 以下 API 因缺 FFI 或浏览器专属，**不实施**，仅标注供未来触发：
+
+| API | 原因 | 未来触发 |
+|-----|------|---------|
+| `RTCDTMFSender` | webrtc-sys 无 DTMF FFI（需新 C++） | 遥控/电话网关场景 |
+| `setIdentityProvider` / `RTCIdentityAssertion` | webrtc-sys 无 identity FFI | DTLS 证书级身份认证 |
+| `generateCertificate`（静态） | libwebrtc 内部自动管理证书，非必需 | 自定义证书指纹 |
+| `getDefaultIceServers`（静态） | 浏览器专属 | 无 |
+| `sctp` 属性 / `RTCSctpTransport` | 浏览器专属 | 无 |
+| `RTCRtpScriptTransform` / `RTCEncodedFrame` | 浏览器专属（插入式 transform） | 服务端 E2E 加密（FrameCryptor 已覆盖） |
+| `addStream` / `createDTMFSender` / `removeStream` | 已废弃（obsolete） | 永不 |
+| `RTCRtpReceiver.getContributingSources/getSynchronizationSources` | webrtc-sys 无 CSRC/SSRC 列表 FFI | 统计/监控场景 |
+| `RTCRtpSender/Receiver.transport` 属性 | webrtc-sys 无 DTLS transport 句柄暴露 | 传输诊断 |
+
+**注意（v2 修正）**: Sender 的 `set_parameters`/`replace_track`/`set_streams`/`get_stats` 与 Receiver 的 `get_parameters` **均可实现**（webrtc-sys FFI 有），属于 `.sisyphus/plans/host-sfu-w3c-alignment/plan.md` P1/P2 实施范围，**不列入**未来实现。
+
+**audemsp-webrtc 已覆盖/将覆盖**: 上述以外的 W3C RTCPeerConnection / RTCRtpTransceiver / RTCRtpSender / RTCRtpReceiver / RTCDataChannel / RTCRtpCapabilities 接口全部实现（见 `.sisyphus/plans/host-sfu-w3c-alignment/plan.md` P0-P2）。
+
+---
+
+## 6. webrtc-sys 0.3.x FFI 能力清单（完整 inventory）
+
+> 实测 2026-08-06 | 源码: `/tmp/webrtc-investigation/rust-sdks/webrtc-sys/src/`
+
+### 6.1 PeerConnection（peer_connection.rs, 18 方法）
+
+```
+set_configuration(config) -> Result
+create_offer(options, ctx, on_success, on_error)   // async 回调
+create_answer(options, ctx, on_success, on_error)  // async 回调
+set_local_description(desc, ctx, on_complete)
+set_remote_description(desc, ctx, on_complete)
+add_track(track, stream_ids) -> Result<SharedPtr<RtpSender>>
+remove_track(sender) -> Result
+get_stats(ctx, on_stats)  // async 回调, JSON
+add_transceiver(track, init) -> Result<SharedPtr<RtpTransceiver>>
+add_transceiver_for_media(media_type, init) -> Result<SharedPtr<RtpTransceiver>>
+get_senders() -> Vec<RtpSenderPtr>
+get_receivers() -> Vec<RtpReceiverPtr>
+get_transceivers() -> Vec<RtpTransceiverPtr>
+create_data_channel(label, init) -> Result<SharedPtr<DataChannel>>
+add_ice_candidate(candidate, ctx, on_complete)
+restart_ice()
+current_local_description() -> UniquePtr<SessionDescription>
+current_remote_description() -> UniquePtr<SessionDescription>
+connection_state / signaling_state / ice_gathering_state / ice_connection_state
+close()
+// 枚举: PeerConnectionState, SignalingState, IceConnectionState, IceGatheringState, ContinualGatheringPolicy, IceTransportsType
+// 结构体: RtcOfferAnswerOptions, IceServer, RtcConfiguration
+```
+
+### 6.2 RtpTransceiver（rtp_transceiver.rs, 16 方法）
+
+```
+media_type() -> MediaType
+mid() -> Result<String>
+sender() -> SharedPtr<RtpSender>
+receiver() -> SharedPtr<RtpReceiver>
+stopped() / stopping() -> bool
+direction() -> RtpTransceiverDirection
+set_direction(direction) -> Result
+current_direction() -> Result
+fired_direction() -> Result
+stop_standard() -> Result
+set_codec_preferences(codecs) / codec_preferences()
+header_extensions_to_negotiate() / negotiated_header_extensions()
+set_header_extensions_to_negotiate(headers)
+// 结构体: RtpTransceiverInit { direction, stream_ids, send_encodings }
+```
+
+### 6.3 RtpSender（rtp_sender.rs, 12 方法）
+
+```
+set_track(track) -> bool
+track() -> SharedPtr<MediaStreamTrack>
+get_stats(ctx, on_stats)
+ssrc() -> u32
+media_type() -> MediaType
+id() -> String
+stream_ids() -> Vec<String>
+set_streams(stream_ids)
+init_send_encodings() -> Vec<RtpEncodingParameters>
+get_parameters() -> RtpParameters
+set_parameters(parameters) -> Result
+set_video_encoder_backend(backend)
+```
+
+### 6.4 RtpReceiver（rtp_receiver.rs, 8 方法）
+
+```
+track() -> SharedPtr<MediaStreamTrack>
+get_stats(ctx, on_stats)
+stream_ids() / streams()
+media_type() -> MediaType
+id() -> String
+get_parameters() -> RtpParameters
+set_jitter_buffer_minimum_delay(is_some, delay_seconds)
+```
+
+### 6.5 参数类型（rtp_parameters.rs）
+
+```
+RtpParameters { transaction_id, mid, codecs, header_extensions, encodings, rtcp, degradation_preference }
+RtpEncodingParameters { ssrc, bitrate_priority, network_priority, max_bitrate_bps, min_bitrate_bps, max_framerate, num_temporal_layers, scale_resolution_down_by, scalability_mode, active, rid, adaptive_ptime }
+RtpCodecParameters { mime_type, name, kind, payload_type, clock_rate, num_channels, max_ptime, ptime, rtcp_feedback, parameters }
+RtpCapabilities { codecs, header_extensions, fec }
+RtpCodecCapability { mime_type, name, kind, clock_rate, preferred_payload_type, num_channels, rtcp_feedback, parameters }
+RtpHeaderExtensionCapability { uri, preferred_id, preferred_encrypt, direction }
+RtcpParameters { ssrc, cname, reduced_size, mux }
+RtpExtension { uri, id, encrypt }
+// 枚举: FecMechanism, RtcpFeedbackType, RtcpFeedbackMessageType, DegradationPreference, RtpExtensionFilter
+```
+
+### 6.6 Factory（peer_connection_factory.rs）
+
+```
+create_peer_connection_factory()
+create_peer_connection(config, observer)
+create_video_track(label, source) / create_audio_track(label, source)
+rtp_sender_capabilities(kind) -> RtpCapabilities
+rtp_receiver_capabilities(kind) -> RtpCapabilities
+// Observer 回调: on_signaling_change / on_renegotiation_needed / on_negotiation_needed_event / on_ice_connection_change / on_connection_change / on_ice_gathering_change / on_ice_candidate / on_ice_candidate_error / on_ice_candidates_removed / on_ice_connection_receiving_change / on_ice_selected_candidate_pair_changed / on_add_track / on_track / on_remove_track
+```
+
+### 6.7 DataChannel（data_channel.rs）
+
+```
+send(data) / close() / id() / label() / state() / buffered_amount()
+// 枚举: Priority, DataState | 结构体: DataChannelInit, DataBuffer
+// Observer: on_state_change / on_message / on_buffered_amount_change
+```
+
+### 6.8 不透明指针包装（helper.rs）
+
+```
+MediaStreamPtr / CandidatePtr / AudioTrackPtr / VideoTrackPtr / RtpSenderPtr / RtpReceiverPtr / RtpTransceiverPtr
+// 目的: 绕 cxx 限制 (SharedPtr<T> 不能直接放 rust::Vec)
+```
 - `docs/reference/webrtc/keyframe-black-screen-analysis.md` — PIT-65 关键帧分析

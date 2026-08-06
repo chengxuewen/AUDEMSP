@@ -213,3 +213,13 @@
 **影响**: ① 每轮静态上下文估算 -59KB（pitfalls）+ 去重 codegraph，估算节省 ~40-50K tokens/turn；② pitfalls 不再常驻，调试时需主动 `read .agents/memorys/pitfalls.md` 查历史坑；③ 配置类变更需重启 opencode 生效；④ `limit.context` 是客户端声明，实际取决于 New API 网关后端是否真有 1024K 窗口。
 
 **验证**: `python3 -c "import json; json.load(open('.opencode/opencode.json'))"` 通过；`node` 字符串感知注释剥离后 JSON.parse 通过（opencode.jsonc / oh-my-openagent.jsonc / ~/.config/opencode/opencode.jsonc 均有效）；六模型 `limit.context` 均 1024000；`.agents/` 从 1.7MB → 984KB。
+
+## D214: audemsp-webrtc 补全 W3C API 面 + Host SFU 标准协商 (2026-08-06)
+
+**决策**: ① 补全 audemsp-webrtc 的所有 W3C API 接口——新增 `RTCRtpTransceiver`/`RTCRtpTransceiverInit`/`RTCRtpTransceiverDirection`/`RTCRtpCapabilities`/`RTCRtpCodecCapability`/`RTCRtpHeaderExtensionCapability` 类型，`RTCRtpParameters` 补 `mid`、`RTCRtpEncodingParameters` 补 `codec`/`dtx`；PcBackend trait 扩展 19 个同步方法（get_transceivers/add_transceiver(+track 版)/sender-receiver get_parameters/capabilities/restart_ice/config/descriptions/transceiver 对象方法）；PeerConnectionApi + RTCPeerConnection 包装层同步扩展；RTCRtpSender 加 backend 句柄实现 get_parameters 等 W3C 对象方法。② Host SFU produce 走标准协商（add_transceiver_with_track → create_offer → set_local → get_sending_rtp_parameters → produce），删除 sfu_media.rs 的 build_remote_sdp/negotiated_ssrc_from_sdp/build_produce_rtp_parameters（C18 检查 src/ 无残留）。
+
+**原因**: ① 用户要求尽量补全 W3C API（团队审核 + MDN spec 对标确认）；webrtc-sys 0.3.x FFI 已暴露 ~95% 接口无需新 C++；仅 RTCDTMFSender/identity 等缺 FFI 标注未来实现。② PIT-65 黑屏根因是 Host 绕过标准协商手工构造 SDP——对齐官方 mediasoup-client/Handler.cpp 标准流程。
+
+**影响**: ① Host produce rtp_parameters 从 transceiver.sender.get_parameters() 推导（含 ssrc/PT），非手工硬编码；② 三后端（webrtc-sys/webrtc-rs/stub）对称实现，stub 状态化；③ 无法实现的 API（DTMF/identity/浏览器专属）在 docs/reference/webrtc/webrtc-w3c-alignment.md §5 标注未来实现；④ webrtc-sys 下 w3c_api_tests 有 4 个预存失败（ice/sdp 测试假设 stub 宽松状态机，非本次改动）；⑤ client crate 预存 feature 不匹配（用 webrtc-rs 方法却配 webrtc-sys feature），待 P4 回归处理。
+
+**验证**: `cargo test -p audemsp-webrtc` (stub 46 passed) + `cargo test -p audemsp-webrtc --features backend-webrtc-sys` (除 4 预存失败全过) + `cargo check -p audemsp-host` 通过 + C18 检查 `grep build_remote_sdp src/` 无残留。
