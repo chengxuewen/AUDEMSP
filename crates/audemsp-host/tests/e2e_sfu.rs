@@ -465,6 +465,7 @@ async fn e2e_sfu_host_produce() {
         // Produce video (VP8)
         let produce = SignalingMessage::Produce {
             room_id: produce_room.into(),
+            peer_id: "host".into(),
             transport_direction: TransportDirection::Send,
             kind: MediaKind::Video,
             rtp_parameters: serde_json::json!({
@@ -578,6 +579,7 @@ async fn e2e_sfu_host_produce() {
         // Now send Consume for the host's producer
         let consume = SignalingMessage::Consume {
             room_id: produce_room.into(),
+            peer_id: "consumer".into(),
             producer_id: pid.clone(),
             rtp_capabilities: serde_json::json!({
                 "codecs": [{"mimeType": "video/VP8", "clockRate": 90000, "kind": "video"}],
@@ -743,6 +745,7 @@ async fn e2e_sfu_full_pipeline() {
         // Produce video
         let produce = SignalingMessage::Produce {
             room_id: pipeline_room.into(),
+            peer_id: "host".into(),
             transport_direction: TransportDirection::Send,
             kind: MediaKind::Video,
             rtp_parameters: serde_json::json!({
@@ -903,6 +906,7 @@ async fn e2e_sfu_full_pipeline() {
         // Consume
         let consume = SignalingMessage::Consume {
             room_id: pipeline_room.into(),
+            peer_id: "consumer".into(),
             producer_id: pid.clone(),
             rtp_capabilities: serde_json::json!({
                 "codecs": [{"mimeType": "video/VP8", "clockRate": 90000, "kind": "video"}],

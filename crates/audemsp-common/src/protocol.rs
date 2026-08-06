@@ -104,6 +104,7 @@ pub enum SignalingMessage {
     /// rtp_parameters is opaque JSON — server passes it through to mediasoup.
     Produce {
         room_id: String,
+        peer_id: String,
         transport_direction: TransportDirection,
         kind: MediaKind,
         rtp_parameters: serde_json::Value,
@@ -127,6 +128,7 @@ pub enum SignalingMessage {
     /// rtp_capabilities is opaque JSON — server passes it through to mediasoup.
     Consume {
         room_id: String,
+        peer_id: String,
         producer_id: String,
         rtp_capabilities: serde_json::Value,
     },
@@ -466,6 +468,7 @@ mod tests {
     fn roundtrip_produce() {
         let msg = SignalingMessage::Produce {
             room_id: "room-1".into(),
+            peer_id: "peer-1".into(),
             transport_direction: TransportDirection::Send,
             kind: MediaKind::Video,
             rtp_parameters: serde_json::json!({"codecs": [{"mimeType": "video/VP8"}]}),
@@ -512,6 +515,7 @@ mod tests {
     fn roundtrip_consume() {
         let msg = SignalingMessage::Consume {
             room_id: "room-1".into(),
+            peer_id: "peer-1".into(),
             producer_id: "prod-1".into(),
             rtp_capabilities: serde_json::json!({"codecs": [{"mimeType": "video/VP8"}]}),
         };

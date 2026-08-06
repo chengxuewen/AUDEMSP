@@ -386,12 +386,13 @@ async fn handle_admin_sfu(
         }
         SignalingMessage::Consume {
             room_id,
+            peer_id,
             producer_id,
             rtp_capabilities,
         } => {
-            // ponytail: admin WS has no per-connection peer_id; use "admin"
+            // PIT-65: 用消息 peer_id (每连接唯一), 非硬编码 admin — 多连接隔离
             match sfu
-                .create_consumer(room_id, "admin", producer_id, rtp_capabilities.clone())
+                .create_consumer(room_id, &peer_id, producer_id, rtp_capabilities.clone())
                 .await
             {
                 Ok(result) => {

@@ -234,7 +234,7 @@ export class SfuConsumerClient {
           console.log('SfuClient: consuming producer', msg.producer_id);
           const rtpCaps = videoRtpCapabilities();
           this.ws?.send(JSON.stringify({
-            type: 'consume', room_id: this.roomId, transport_id: this.transportId,
+            type: 'consume', room_id: this.roomId, peer_id: this.sfuPeerId, transport_id: this.transportId,
             producer_id: msg.producer_id, kind: msg.kind, rtp_capabilities: rtpCaps,
           }));
         } else {
@@ -250,7 +250,7 @@ export class SfuConsumerClient {
           // PIT-55: rtp_capabilities 需完整 codec 字段, 见 videoRtpCapabilities()
           const rtpCaps = videoRtpCapabilities();
           this.ws?.send(JSON.stringify({
-            type: 'consume', room_id: this.roomId, transport_id: this.transportId,
+            type: 'consume', room_id: this.roomId, peer_id: this.sfuPeerId, transport_id: this.transportId,
             producer_id: this.pendingProducer.producer_id, kind: this.pendingProducer.kind, rtp_capabilities: rtpCaps,
           }));
         }

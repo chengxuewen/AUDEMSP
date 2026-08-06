@@ -90,6 +90,9 @@ node_modules
 .sisyphus
 .omo
 
+# Official reference source clones (git-ignored, script-managed)
+.refinfo
+
 # Test and build artifacts
 test-results
 *.tsbuildinfo

@@ -280,6 +280,7 @@ async fn e2e_sfu_consume_pipeline() {
         // Produce video
         let produce = serde_json::to_string(&SignalingMessage::Produce {
             room_id: "sfu-consume-room".into(),
+            peer_id: "host".into(),
             transport_direction: audemsp_common::protocol::TransportDirection::Send,
             kind: audemsp_common::protocol::MediaKind::Video,
             rtp_parameters: serde_json::json!({"mid": "0", "codecs": [{"mimeType": "video/VP8", "payloadType": 100, "clockRate": 90000}], "headerExtensions": [], "encodings": [{"ssrc": 12345}], "rtcp": {"reducedSize": true}}),
@@ -343,6 +344,7 @@ async fn e2e_sfu_consume_pipeline() {
         // Consume the Host's producer
         let consume = serde_json::to_string(&SignalingMessage::Consume {
             room_id: "sfu-consume-room".into(),
+            peer_id: "consumer".into(),
             producer_id: pid.clone(),
             rtp_capabilities: serde_json::json!({
                 "codecs": [{"mimeType": "video/VP8", "clockRate": 90000, "kind": "video"}],

@@ -610,13 +610,15 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
     match msg {
         SignalingMessage::CreateWebRtcTransport {
             room_id,
+            peer_id: msg_peer_id,
             direction,
-            ..
         } => {
+            // PIT-65: 用消息 peer_id (每网页唯一 sfuPeerId), 非 session relay_peer_id
+            let sfu_peer_id = msg_peer_id.as_str();
             tracing::info!(
                 "SFU: creating {} transport for peer {} in room {}",
                 serde_json::to_string(direction).unwrap_or_default(),
-                        peer_id, room_id
+                        sfu_peer_id, room_id
             );
             let dir_str = match direction {
                 audemsp_common::protocol::TransportDirection::Send => "send",
@@ -624,7 +626,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
             };
             match tokio::time::timeout(
                 std::time::Duration::from_secs(5),
-                sfu.create_webrtc_transport(room_id, peer_id, dir_str)
+                sfu.create_webrtc_transport(room_id, sfu_peer_id, dir_str)
             ).await {
                 Ok(Ok(created)) => Some(SignalingMessage::WebRtcTransportCreated {
                     room_id: room_id.clone(),
@@ -652,14 +654,16 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
         }
         SignalingMessage::ConnectWebRtcTransport {
             room_id,
+            peer_id: msg_peer_id,
             transport_id,
             dtls_parameters,
-            ..
         } => {
-            match sfu.connect_transport(&room_id, peer_id, &transport_id, dtls_parameters.clone()).await {
+            // PIT-65: 用消息 peer_id — 与 create/consume 一致
+            let sfu_peer_id = msg_peer_id.as_str();
+            match sfu.connect_transport(&room_id, sfu_peer_id, &transport_id, dtls_parameters.clone()).await {
                 Ok(()) => {
                     tracing::info!(
-                        "SFU: transport {transport_id} connected for peer {peer_id}"
+                        "SFU: transport {transport_id} connected for peer {sfu_peer_id}"
                     );
                     Some(SignalingMessage::Error {
                         code: 0,
@@ -677,10 +681,13 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
         }
         SignalingMessage::Produce {
             room_id,
+            peer_id: msg_peer_id,
             transport_direction,
             kind,
             rtp_parameters,
         } => {
+            // PIT-65: 用消息 peer_id — 与 create/connect/consume 一致
+            let sfu_peer_id = msg_peer_id.as_str();
             tracing::info!("SFU: Produce received room={} kind={:?} dir={:?} rtp={}", room_id, kind, transport_direction, rtp_parameters);
             if !matches!(transport_direction, audemsp_common::protocol::TransportDirection::Send) {
                 return Some(SignalingMessage::Error {
@@ -689,7 +696,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                 });
             }
             match sfu
-                .create_producer(room_id, peer_id, kind, rtp_parameters.clone())
+                .create_producer(room_id, sfu_peer_id, kind, rtp_parameters.clone())
                 .await
             {
                 Ok(result) => {
@@ -721,11 +728,15 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
         }
         SignalingMessage::Consume {
             room_id,
+            peer_id: msg_peer_id,
             producer_id,
             rtp_capabilities,
         } => {
+            // PIT-65: 用消息 peer_id (每网页唯一 sfuPeerId), 非 session relay_peer_id —
+            // 否则多网页共享 admin → recv_transport 互相覆盖 → consumer 挂错 transport → 黑屏
+            let sfu_peer_id = msg_peer_id.as_str();
             match sfu
-                .create_consumer(room_id, peer_id, producer_id, rtp_capabilities.clone())
+                .create_consumer(room_id, sfu_peer_id, producer_id, rtp_capabilities.clone())
                 .await
             {
                 Ok(result) => Some(SignalingMessage::Consumed {

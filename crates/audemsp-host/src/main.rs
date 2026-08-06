@@ -214,6 +214,11 @@ let app = axum::Router::new()
                         SignalingMessage::RoomLeave { peer_id, .. } => {
                             tracing::info!("SFU: RoomLeave for peer {} ignored", peer_id);
                         }
+                        // PIT-65: 旧 Host 的 producer 残留 server → 新 Host 连接时广播 stale NewProducer → 忽略
+                        // (本 Host 关注视频帧, 不消费 NewProducer; 只等 transport + produce 响应)
+                        SignalingMessage::NewProducer { .. } => {
+                            tracing::debug!("SFU: NewProducer ignored");
+                        }
                         other => {
                             return Err(anyhow::anyhow!("SFU: unexpected {:?}", other));
                         }
@@ -350,6 +355,7 @@ let app = axum::Router::new()
         tracing::debug!("SFU: negotiated send ssrc={}", negotiated_ssrc);
         let produce = SignalingMessage::Produce {
             room_id: sfu_room,
+            peer_id: peer_id.to_string(), // PIT-65: 与 create/connect 一致 (host)
             transport_direction: TransportDirection::Send,
             kind: MediaKind::Video,
             rtp_parameters: sfu_media::build_produce_rtp_parameters(negotiated_ssrc),

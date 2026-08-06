@@ -43,7 +43,7 @@ pub fn build_remote_sdp(
         // answer recvonly → 不建发送管线 → 无 RTP
         "a=recvonly".to_string(),
         format!("a=rtpmap:{H264_PT} H264/90000"),
-        format!("a=fmtp:{H264_PT} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f"),
+        format!("a=fmtp:{H264_PT} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f;x-google-max-keyframe-interval=2000"),
     ]);
     // candidates 必须在 media section 内（m= 行之后）— PIT-46
     for (foundation, protocol, priority, port, ip) in candidates {
