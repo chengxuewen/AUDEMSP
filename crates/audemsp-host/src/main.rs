@@ -20,7 +20,8 @@ use audemsp_media::engine::PipelineEngine;
 use audemsp_common::protocol::{DtlsParameters, Fingerprint, IceCandidate, IceParameters, MediaKind, SignalingMessage, TransportDirection};
 use tokio_tungstenite::tungstenite::Message;
 use signaling::SignalingClient;
-use audemsp_webrtc::{RTCPeerConnectionFactory, RTCConfiguration, RTCIceServer, RTCIceTransportPolicy, RTCSessionDescription, RTCSdpType, RTCAnswerOptions, TrackKind, TrackSender, TrackRef, RTCPeerConnectionState};
+use audemsp_webrtc::{RTCPeerConnectionFactory, RTCConfiguration, RTCIceServer, RTCIceTransportPolicy, RTCSessionDescription, RTCSdpType, RTCAnswerOptions, RTCOfferOptions, TrackKind, TrackSender, TrackRef, RTCPeerConnectionState};
+use audemsp_webrtc::rtp::{RTCRtpTransceiverInit, RTCRtpTransceiverDirection, RTCRtpParameters};
 use audemsp_webrtc::traits::PeerConnectionApi;
 mod config;
 mod control;
@@ -274,34 +275,9 @@ let app = axum::Router::new()
         // B1: Build remote SDP from real server ICE candidates (not 127.0.0.1)
         // PIT-48: a=candidate 行必须位于 m= 行之后（media section 内）——
         // 会话级 candidate 被 libwebrtc 忽略 → remote candidate 丢失 → ICE 不发起 STUN
-        let remote_sdp = {
-            let fp = &dtls_parameters.fingerprints[0];
-            // sfu_media::build_remote_sdp — 纯函数 (PIT-54/56 单测锁定)
-            let cands: Vec<(String, String, u32, u16, String)> = ice_candidates
-                .as_ref()
-                .map(|cs| {
-                    cs.iter()
-                        .map(|c| {
-                            (c.foundation.clone(), c.protocol.clone(), c.priority, c.port, c.ip.clone())
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            sfu_media::build_remote_sdp(
-                &ice_parameters.username_fragment,
-                &ice_parameters.password,
-                &fp.algorithm,
-                &fp.value,
-                &cands,
-            )
-        };
-        tracing::debug!("SFU remote SDP:\n{}", remote_sdp);
-
-        let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
-        pc.set_remote_description(&remote_desc).await
-            .map_err(|e| anyhow::anyhow!("set remote: {}", e))?;
-
-        // B2: add_track BEFORE create_answer (correct timing!)
+        // P3 (v2): 标准协商 — add_transceiver_with_track → create_offer → set_local (对齐 Chrome74.ts/Handler.cpp)
+        // 不再构建手工 recvonly SDP (C18: 禁止手工 SDP 拼接)
+        // 先创建 track (复用 create_track_sender 链路: WebrtcSysTrack + media_track staged)
         let track_id = pc.add_track("video", TrackKind::Video)
             .map_err(|e| anyhow::anyhow!("add_track: {}", e))?;
         let track_ref = pc.get_track(&track_id)
@@ -312,10 +288,21 @@ let app = axum::Router::new()
         };
         tracing::info!("SFU: video track added (id={})", track_id);
 
-        let answer = pc.create_answer(&RTCAnswerOptions::default()).await
-            .map_err(|e| anyhow::anyhow!("create answer: {}", e))?;
-        tracing::debug!("SFU local answer SDP:\n{}", answer.sdp);
-        pc.set_local_description(&answer).await
+        // 标准时序: addTransceiver(track, {direction: sendonly, sendEncodings})
+        let init = RTCRtpTransceiverInit {
+            direction: RTCRtpTransceiverDirection::Sendonly,
+            send_encodings: vec![],
+            stream_ids: vec![],
+        };
+        let _transceiver = pc.add_transceiver_with_track(&video_track, init)
+            .map_err(|e| anyhow::anyhow!("add_transceiver_with_track: {}", e))?;
+        tracing::info!("SFU: add_transceiver_with_track done (sendonly)");
+
+        let offer = pc.create_offer(&RTCOfferOptions::default()).await
+            .map_err(|e| anyhow::anyhow!("create offer: {}", e))?;
+
+        tracing::debug!("SFU local offer SDP:\n{}", offer.sdp);
+        pc.set_local_description(&offer).await
             .map_err(|e| anyhow::anyhow!("set local: {}", e))?;
 
         // B3: Extract DTLS fingerprint via audemsp-webrtc API (not SDP parsing)
@@ -346,19 +333,19 @@ let app = axum::Router::new()
             Err(_) => return Err(anyhow::anyhow!("SFU: ICE/DTLS connection timeout after 30s")),
         }
 
-        // Step 4: Produce video (B6: 10s WS timeout)
-        const H264_PT2: u16 = 101;
-        // PIT-56: 从 answer SDP 提取 libwebrtc 实际协商的发送 ssrc (替代硬编码 12345)
-        // — mediasoup 按 produce encodings 的 ssrc 匹配 RTP 流，不一致则收不到
-        let negotiated_ssrc: u32 = sfu_media::negotiated_ssrc_from_sdp(&answer.sdp)
-            .ok_or_else(|| anyhow::anyhow!("no a=ssrc in answer SDP"))?;
-        tracing::debug!("SFU: negotiated send ssrc={}", negotiated_ssrc);
+        // Step 4: Produce video (P3 v2: 从 get_sending_rtp_parameters 推导，非手工)
+        // PIT-56 替代: 不再手工解析 answer ssrc — 走 transceiver.sender.get_parameters() 官方路径
+        let rtp_params: RTCRtpParameters = pc.get_sending_rtp_parameters(&track_id)
+            .map_err(|e| anyhow::anyhow!("get_sending_rtp_parameters: {}", e))?;
+        tracing::debug!("SFU: negotiated rtp params mid={} codecs={} encodings={}",
+            rtp_params.mid, rtp_params.codecs.len(), rtp_params.encodings.len());
+
         let produce = SignalingMessage::Produce {
             room_id: sfu_room,
             peer_id: peer_id.to_string(), // PIT-65: 与 create/connect 一致 (host)
             transport_direction: TransportDirection::Send,
             kind: MediaKind::Video,
-            rtp_parameters: sfu_media::build_produce_rtp_parameters(negotiated_ssrc),
+            rtp_parameters: sfu_media::build_produce_rtp_parameters_from_rtp(&rtp_params),
         };
         let json = serde_json::to_string(&produce)?;
         match tokio::time::timeout(Duration::from_secs(10), ws_sender.send(Message::Text(json.into()))).await {
