@@ -247,16 +247,21 @@ impl RTCPeerConnection {
     {
         self.backend.set_on_ice_candidate(Box::new(callback));
     }
+
+    /// v2: 通用 incoming data channel 回调（三后端）。
+    /// 替代 webrtc-rs cfg 版 on_data_channel（现在 webrtc-sys 也支持）。
+    pub fn on_data_channel<F>(&self, callback: F)
+    where
+        F: Fn(RTCDataChannel) + Send + Sync + 'static,
+    {
+        self.backend.set_on_data_channel(Box::new(callback));
+    }
 }
 
 // ── webrtc-rs specific callback methods ──
 
 #[cfg(feature = "backend-webrtc-rs")]
 impl RTCPeerConnection {
-    pub fn on_data_channel(
-        &self,
-        f: Box<dyn FnMut(Arc<webrtc::data_channel::RTCDataChannel>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + Send + Sync + 'static>,
-    ) { self.backend.on_data_channel(f); }
     /// webrtc-rs 原生候选回调 (P2P 路径) — 与通用 trickle 版 (on_ice_candidate) 区分命名。
     pub fn on_ice_candidate_native(
         &self,

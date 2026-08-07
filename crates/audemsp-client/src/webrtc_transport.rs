@@ -70,58 +70,53 @@ impl WebrtcTransport {
         // c. Set remote description
         pc.set_remote_description(&offer).await?;
 
-        // d. Register on_data_channel: spool → spawn task → forward frames
+        // d. Register on_data_channel (通用版): spool → spawn task → forward frames
         let frame_tx = self.frame_tx.clone();
         let dc_task = self.dc_task.clone();
-        pc.on_data_channel(Box::new(move |d| {
+        pc.on_data_channel(move |dc| {
             let frame_tx = frame_tx.clone();
             let dc_task = dc_task.clone();
-            Box::pin(async move {
-                // ponytail: abort previous DC reader before spawning new one
-                {
-                    let mut guard = dc_task.lock().unwrap();
-                    if let Some(prev) = guard.take() {
-                        prev.abort();
-                    }
+            // ponytail: abort previous DC reader before spawning new one
+            {
+                let mut guard = dc_task.lock().unwrap();
+                if let Some(prev) = guard.take() {
+                    prev.abort();
                 }
-                let dc = audemsp_webrtc::RTCDataChannel::from_webrtc(d).await;
+            }
+            let frame_tx2 = frame_tx.clone();
+            let handle = tokio::spawn(async move {
                 let mut rx = dc.spool().await;
-                let handle = tokio::spawn(async move {
-                    loop {
-                        match rx.recv().await {
-                            Some(RTCDataChannelEvent::Open) => {
-                                tracing::info!("Signaling: RTCDataChannel opened (remote)");
-                            }
-                            Some(RTCDataChannelEvent::Message(RTCDataMessage { data })) => {
-                                let size = data.len();
-                                tracing::debug!("Signaling: frame received via RTCDataChannel ({} bytes)", size);
-                                tracing::info!("Signaling: frame received via RTCDataChannel ({} bytes)", size);
-                                let _ = frame_tx.send(data).await;
-                            }
-                            Some(RTCDataChannelEvent::Closed) | None => break,
-                            _ => {} // Open, Error — ignore
+                loop {
+                    match rx.recv().await {
+                        Some(RTCDataChannelEvent::Open) => {
+                            tracing::info!("Signaling: RTCDataChannel opened (remote)");
                         }
-                    }
-                });
-                *dc_task.lock().unwrap() = Some(handle);
-            })
-        }));
-
-        // e. Register on_ice_candidate: serialize to JSON, push via ice_tx
-        let ice_tx = self.ice_tx.clone();
-        pc.on_ice_candidate_native(Box::new(move |candidate| {
-            let ice_tx = ice_tx.clone();
-            Box::pin(async move {
-                if let Some(c) = candidate {
-                    if let Ok(init) = c.to_json() {
-                        if let Ok(json) = serde_json::to_string(&init) {
-                            let _ = ice_tx.send(json).await;
+                        Some(RTCDataChannelEvent::Message(RTCDataMessage { data })) => {
+                            let size = data.len();
+                            tracing::debug!("Signaling: frame received via RTCDataChannel ({} bytes)", size);
+                            let _ = frame_tx2.send(data).await;
                         }
+                        Some(RTCDataChannelEvent::Closed) | None => break,
+                        _ => {} // Open, Error — ignore
                     }
                 }
-                // ponytail: None = gathering complete, no-op for now
-            })
-        }));
+            });
+            *dc_task.lock().unwrap() = Some(handle);
+        });
+
+        // e. Register on_ice_candidate (通用版): serialize to JSON, push via ice_tx
+        let ice_tx = self.ice_tx.clone();
+        pc.on_ice_candidate(move |candidate| {
+            let ice_tx = ice_tx.clone();
+            // audemsp RTCIceCandidate 无 serde derive — 手动构造 camelCase JSON
+            let json = format!(
+                "{{\"candidate\":{},\"sdpMid\":{},\"sdpMLineIndex\":{}}}",
+                serde_json::to_string(&candidate.candidate).unwrap_or_default(),
+                serde_json::to_string(&candidate.sdp_mid).unwrap_or("null".into()),
+                candidate.sdp_mline_index.map(|v| v.to_string()).unwrap_or("null".into()),
+            );
+            let _ = ice_tx.try_send(json);
+        });
 
         // f. Create answer and set local description
         let answer = pc.create_answer(&RTCAnswerOptions::default()).await?;
@@ -153,9 +148,17 @@ impl WebrtcTransport {
     /// `candidate_json` is a JSON representation of RTCIceCandidateInit
     /// (with camelCase fields: candidate, sdpMid, sdpMLineIndex).
     pub async fn handle_ice(&self, candidate_json: &str) -> Result<(), RTCError> {
-        let init: audemsp_webrtc::webrtc::ice_transport::ice_candidate::RTCIceCandidateInit =
-            serde_json::from_str(candidate_json)
-                .map_err(|e| RTCError::Internal(format!("parse ICE candidate: {e}")))?;
+        // 本地 serde struct — audemsp RTCIceCandidate 无 serde derive，用 camelCase 字段解析
+        #[derive(serde::Deserialize)]
+        struct IceInit {
+            candidate: String,
+            #[serde(rename = "sdpMid")]
+            sdp_mid: Option<String>,
+            #[serde(rename = "sdpMLineIndex")]
+            sdp_mline_index: Option<u16>,
+        }
+        let init: IceInit = serde_json::from_str(candidate_json)
+            .map_err(|e| RTCError::Internal(format!("parse ICE candidate: {e}")))?;
 
         // Clone PC outside the lock scope
         let pc = {

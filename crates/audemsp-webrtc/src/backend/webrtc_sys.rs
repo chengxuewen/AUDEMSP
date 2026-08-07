@@ -370,6 +370,10 @@ impl PcBackend for WebrtcSysPc {
         *self.callbacks.on_track.lock().unwrap() = Some(cb);
     }
 
+    fn set_on_data_channel(&self, cb: Box<dyn Fn(crate::data_channel::RTCDataChannel) + Send + Sync + 'static>) {
+        *self.callbacks.on_data_channel.lock().unwrap() = Some(cb);
+    }
+
 
     fn set_on_ice_connection_state_change(
         &self,
@@ -826,6 +830,8 @@ pub(crate) struct ObserverCallbacks {
     pub on_ice_connection_state_change: Mutex<Option<Box<dyn Fn(RTCIceConnectionState) + Send + Sync + 'static>>>,
     pub on_peer_connection_state_change: Mutex<Option<Box<dyn Fn(RTCPeerConnectionState) + Send + Sync + 'static>>>,
     pub on_ice_candidate: Mutex<Option<Box<dyn Fn(RTCIceCandidate) + Send + Sync + 'static>>>,
+    /// v2: incoming data channel callback (通用 on_data_channel)
+    pub on_data_channel: Mutex<Option<Box<dyn Fn(crate::data_channel::RTCDataChannel) + Send + Sync + 'static>>>,
     /// Staged media tracks awaiting register_track consumption (webrtc-sys only).
     pub staged_media_tracks: Mutex<Vec<cxx::SharedPtr<webrtc_sys::media_stream_track::ffi::MediaStreamTrack>>>,
 }
@@ -839,7 +845,16 @@ impl webrtc_sys::peer_connection_factory::PeerConnectionObserver for RealObserve
     fn on_signaling_change(&self, _: webrtc_sys::peer_connection::ffi::SignalingState) {}
     fn on_add_stream(&self, _: cxx::SharedPtr<webrtc_sys::media_stream::ffi::MediaStream>) {}
     fn on_remove_stream(&self, _: cxx::SharedPtr<webrtc_sys::media_stream::ffi::MediaStream>) {}
-    fn on_data_channel(&self, _: cxx::SharedPtr<webrtc_sys::data_channel::ffi::DataChannel>) {}
+    fn on_data_channel(&self, dc: cxx::SharedPtr<webrtc_sys::data_channel::ffi::DataChannel>) {
+        let rtc_dc = crate::data_channel::RTCDataChannel {
+            label: dc.label(),
+            id: dc.id(),
+            backend: WebrtcSysDc { dc },
+        };
+        if let Some(ref cb) = *self.callbacks.on_data_channel.lock().unwrap() {
+            cb(rtc_dc);
+        }
+    }
     fn on_renegotiation_needed(&self) {}
     fn on_negotiation_needed_event(&self, _: u32) {}
     fn on_ice_connection_change(&self, state: webrtc_sys::peer_connection::ffi::IceConnectionState) {
@@ -1070,6 +1085,7 @@ impl WebrtcSysFactory {
             on_ice_connection_state_change: Mutex::new(None),
             on_peer_connection_state_change: Mutex::new(None),
             on_ice_candidate: Mutex::new(None),
+            on_data_channel: Mutex::new(None),
             staged_media_tracks: Mutex::new(Vec::new()),
         });
         let observer = webrtc_sys::peer_connection_factory::PeerConnectionObserverWrapper::new(
