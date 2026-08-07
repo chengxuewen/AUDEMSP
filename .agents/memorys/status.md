@@ -1,8 +1,8 @@
 # AUDEMSP Status
 
-**生成**: 2026-08-06 | 决策: 190+ (D1-D215, 含跳号) | Phase: 3 完成 | 222 commits | 22 skills | mediasoup 0.24.1 | PIT-71
+**生成**: 2026-08-07 | 决策: 190+ (D1-D216, 含跳号) | Phase: 3 完成 | 226 commits | 22 skills | mediasoup 0.24.1 | PIT-75
 
-**Agent 上下文治理 D213 完成** — instructions 瘦身（pitfalls.md 59KB 移出 instructions → 按需读取，18 文件 ~70KB）+ 六模型 premium/1024K + .agents 精简（删 zh/ 翻译副本 + book-to-skill 瘦身 956K→192K，非项目语言规则保留）。**W3C API 补全 D214 完成** — audemsp-webrtc 补全所有 W3C API（transceiver/parameters/capabilities/sender-receiver 对象方法 + 三后端），Host SFU produce 走标准协商（get_sending_rtp_parameters 推导替代手工 SDP/硬编码），C18 检查 src/ 无残留。**client P2P 迁移 D215 完成** — webrtc_transport 迁移到通用 W3C API（on_data_channel 三后端），修复 client feature 不匹配，5 crate 全编译通过。**待办**: admin dist 修复；e2e_sfu.rs 纯外部模式改造（C21 架构回归：移除 host 对 audemsp-server 依赖，PIT-71 链接冲突）→ 见 .sisyphus/plans/mediasoup-e2e-docker（P0-P5）
+**Agent 上下文治理 D213 完成** — instructions 瘦身（pitfalls.md 59KB 移出 instructions → 按需读取，18 文件 ~70KB）+ 六模型 premium/1024K + .agents 精简（删 zh/ 翻译副本 + book-to-skill 瘦身 956K→192K，非项目语言规则保留）。**W3C API 补全 D214 完成** — audemsp-webrtc 补全所有 W3C API（transceiver/parameters/capabilities/sender-receiver 对象方法 + 三后端），Host SFU produce 走标准协商（get_sending_rtp_parameters 推导替代手工 SDP/硬编码），C18 检查 src/ 无残留。**client P2P 迁移 D215 完成** — webrtc_transport 迁移到通用 W3C API（on_data_channel 三后端），修复 client feature 不匹配，5 crate 全编译通过。**SFU E2E 全链路 D216 完成** — e2e_sfu 纯外部模式（C21 架构回归，4/4 通过，首次 Linux 真跑）+ Host 标准 answerer 协商（set_remote_description 先于 add_track，answer sendonly+ssrc）+ local answer 注入 x-google-max-keyframe-interval（关键帧 99s→0.3s）+ 浏览器 sfu-client codec 对齐 VP8 96 → **Host produce → mediasoup → 浏览器 consume → 视频渲染全通**（640×480, 153 帧, jitter 0.001, 0 dropped）。**待办**: admin dist 修复；P4 cargo-sfu.sh 退役（C20）；CI 追加 e2e_sfu 测试。
 
 ## 测试
 
@@ -85,8 +85,8 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | Browser SFU Client | ✅ (Server-Offer) |
 | Admin WS SFU Routing | ✅ |
 | Web UI (Video Grid + Metrics) | 🟡 |
-| Host SFU Produce | ✅ (VideoFrameGenerator squares) |
-| Integration E2E | ✅ (transport connect + consume pipeline) |
+| Host SFU Produce | ✅ (标准 answerer 协商, squares) |
+| Integration E2E | ✅ (4/4 纯外部模式 + 浏览器渲染) |
 
 ### SFU 已完成
 

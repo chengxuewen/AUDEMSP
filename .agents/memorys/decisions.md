@@ -233,3 +233,13 @@
 **影响**: client 现可编译（5 crate 全通过）；通用 on_data_channel 补全了 W3C 接口面；webrtc-rs cfg 专属 on_data_channel 删除（被通用版取代）。client P2P 收帧走 webrtc-sys DataChannel（future: spool 需 webrtc-sys 实现，当前 stub）。
 
 **验证**: `cargo check -p audemsp-client` 通过（之前 E0433/E0599 失败）+ `cargo check -p audemsp-host -p audemsp-client -p audemsp-webrtc -p audemsp-common -p audemsp-media` 全通过。
+
+## D216: SFU E2E 统一 Docker + C21 架构回归 (2026-08-07)
+
+**决策**: ① e2e_sfu.rs 改为**纯外部模式**——Host 模拟端通过 WS 信令协议连 Docker server（SFU_E2E_WS_URL），不 import server 类型（C21）。② Host SFU produce 走**标准 answerer 协商**：用 server transport 参数构造 remote SDP（build_remote_sdp）→ set_remote_description → add_track → create_answer → set_local，对齐 libmediasoupclient Handler.cpp。③ local answer 注入 `x-google-max-keyframe-interval=2000`（PIT-65 正解：libwebrtc 从 local answer 读 GOP 配置，remote 注入无效）。④ 浏览器 sfu-client.ts codec 对齐 VP8 96（router 默认）。
+
+**原因**: ① PIT-71 webrtc-sys×mediasoup-sys 双 OpenSSL 链接冲突（架构性）+ C21 用户架构强调。② main.rs 原 offerer 流程（create_offer）从不 set_remote_description → ICE 无远端信息 → 30s 超时；add_transceiver_with_track 空 staged 队列 + 空 send_encodings → answer inactive。③ 稳态 GOP ~99s > 浏览器 90s 等待 → 黑屏（PIT-65 遗留）。④ 浏览器 capabilities 只有 H264（PIT-55 时代 router 配置）与当前 VP8 producer 不匹配 → No compatible media codecs。
+
+**影响**: 全链路验证通过——Host produce → mediasoup → 浏览器 consume → 视频渲染（640×480, 153 帧, jitter 0.001）；关键帧间隔 99s→0.3s；e2e_sfu 4/4 通过（首次 Linux 真跑）。
+
+**验证**: `docker exec audemsp-server-1 sh -c 'cd /workspace && SFU_E2E_WS_URL="ws://127.0.0.1:9800/ws" SFU_E2E_PSK="audemsp-dev" cargo test -p audemsp-host --test e2e_sfu'` 4/4 + `node scripts/e2e-sfu-consume.cjs $TOKEN` videoWidth>0。

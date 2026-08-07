@@ -789,3 +789,51 @@ close() { this.closed = true; ... }
 **验证**: `cargo tree -p audemsp-host -i mediasoup-sys` 应为空；容器内 `cargo test -p audemsp-host --features sfu-mediasoup --test e2e_sfu`（外部模式）通过。
 
 **禁止**: ① host/client/SDK 任何代码（含测试）依赖含 mediasoup 的 crate；② 进程内 spawn mediasoup 的测试设计（测试便利不得凌驾架构边界）。
+
+## PIT-72: 测试文件 build_remote_sdp 未同步 PIT-48 修复 — candidate 在会话级被忽略 (2026-08-07)
+
+**症状**: e2e_sfu 首次 Linux 真跑，3/4 测试 ICE/DTLS 超时 30s；容器内 tcpdump 抓 20000 端口 **0 个包**——libwebrtc 从未发起 STUN。
+
+**根因**: 测试文件 `build_remote_sdp` 把 `a=candidate` 行放在 `m=video` 行**之前**（会话级）——libwebrtc 忽略会话级 candidate → 无候选对 → ICE 不发 STUN。main.rs 已修过 PIT-48（candidate 必须在 m= 行之后），但测试文件是旧拷贝未同步。
+
+**解法**: build_remote_sdp 把 candidate 块移到 m= 段内（media section 后、end-of-candidates 前）。同时修正方向 `a=sendonly`→`a=recvonly`（remote 是 server 视角）。
+
+**验证**: 修复后 ICE 3ms Connected（worker 日志 `ICE connected` + `DTLS connecting`）。
+
+**禁止**: 测试/生产代码重复维护 SDP 构造逻辑（同一函数两份拷贝漂移）——main.rs 与 e2e_sfu.rs 的 build_remote_sdp 应共用 sfu_media 模块。
+
+## PIT-73: 协商顺序错误 → answer a=inactive → codecs=0 → produce 被拒 (2026-08-07)
+
+**症状**: Host 二进制 produce 被 mediasoup 拒：`empty codecs`。调试发现 answer SDP 是 `a=inactive`、`get_sending_rtp_parameters` 返回 codecs=0。
+
+**根因**: ① `set_remote_description` 必须**先于** `add_track`（对齐 libmediasoupclient Handler.cpp 顺序）——反之 transceiver 不匹配 remote m-line → answer inactive。② `add_transceiver_with_track` + 空 `send_encodings` → libwebrtc 生成无 encoding 的 sender → inactive；`add_track` 自动生成默认 encoding。③ `add_track` 内部 `register_track` 会消费 staged_media_tracks 队列 → 之后 `add_transceiver_with_track` 取空报 "no staged media track"。
+
+**解法**: main.rs 用 `add_track`（sendrecv + 默认 encoding）替代 `create_track_sender + add_transceiver_with_track` 组合，且 set_remote_description 先于 add_track。
+
+**验证**: answer 变 `a=sendonly` + ssrc 生成 + codecs=1 → Producer created。
+
+**禁止**: 协商顺序倒置（先 addTrack 后 setRemoteDescription）；空 send_encodings 的 add_transceiver_with_track 用于发送轨。
+
+## PIT-74: 浏览器 E2E 黑屏 — 宿主残留 Firefox 僵尸进程劫持 ICE tuple (2026-08-07)
+
+**症状**: 浏览器 consume 成功（ONTRACK fired + consumed）但 videoWidth=0、getStats 无 inbound RTP；tcpdump 显示 mediasoup 持续向 `192.168.2.127:40218` 发 RTP，而浏览器每次 candidate 端口不同（36547/37266...）。
+
+**根因**: 宿主有残留 Firefox 僵尸进程（8月04 起的 `Socket Process`）占着 UDP 40218，**持续向 mediasoup 发 STUN 保活** → mediasoup 的 ICE tuple 绑定到僵尸端口 → RTP 全发给僵尸进程，当前浏览器收不到。
+
+**解法**: `ss -ulnp | grep <端口>` 找到占端口的僵尸进程（`Socket Process`/firefox），kill 后重跑立即渲染。
+
+**验证**: kill 1989369 后浏览器 E2E videoWidth=640×480、153 帧解码。
+
+**禁止**: 调试前先 `ps aux | grep -i firefox/chromium` 确认无残留浏览器进程（尤其跨日期的僵尸）；怀疑 ICE tuple 异常时用 tcpdump 对比 mediasoup 实际发包端口 vs 浏览器 candidate 端口。
+
+## PIT-75: SDP 字符串注入必须 split/join '\n' — lines()+join('\r\n') 产生 \r\r\n 破坏 SDP (2026-08-07)
+
+**症状**: local answer 注入 fmtp 后 set_local_description 报 `SDP error: ...Invalid SDP line`。
+
+**根因**: Rust `sdp.lines()` 保留行尾 `\r`，再 `join("\r\n")` 变成 `\r\r\n`——SDP 解析失败。SDP 是 `\r\n` 行分隔，注入必须用 `split('\n')` 保留原行 + `join('\n')`。
+
+**解法**: inject_keyframe_interval 用 `sdp.split('\n')` 迭代（strip_suffix('\r') 做匹配），`out.join('\n')` 保持结构。
+
+**验证**: 注入后 set_local_description 通过，关键帧间隔 99s→0.3s。
+
+**禁止**: 对含 `\r\n` 的字符串用 `lines()` + `join("\r\n")` 重组（CRLF 会翻倍）。
