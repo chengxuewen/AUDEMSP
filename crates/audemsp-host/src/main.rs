@@ -309,9 +309,11 @@ let app = axum::Router::new()
         };
         tracing::info!("SFU: video track added (id={})", track_id);
 
-        // ③ answer + set local
-        let answer = pc.create_answer(&RTCAnswerOptions::default()).await
+        // ③ answer + set local — PIT-65: local answer 注入 x-google-max-keyframe-interval
+        // (libwebrtc 从 local answer 读 GOP 配置; remote 注入无效, 稳态 GOP 99s)
+        let mut answer = pc.create_answer(&RTCAnswerOptions::default()).await
             .map_err(|e| anyhow::anyhow!("create answer: {}", e))?;
+        answer.sdp = sfu_media::inject_keyframe_interval(&answer.sdp, 96, 2000);
         tracing::debug!("SFU local answer SDP:\n{}", answer.sdp);
         pc.set_local_description(&answer).await
             .map_err(|e| anyhow::anyhow!("set local: {}", e))?;

@@ -5,10 +5,21 @@
 // PIT-55: mediasoup consume 匹配要求完整 codec 字段 (clockRate/parameters/preferredPayloadType)，
 // 缺任一 → match_codecs strict 匹配失败 → "No compatible media codecs"
 // 参数与 Router/Producer 一致 (4d0032 Main, packetization-mode=1)
+// PIT-55: mediasoup consume 匹配要求完整 codec 字段 (clockRate/parameters/preferredPayloadType)，
+// 缺任一 → match_codecs strict 匹配失败 → "No compatible media codecs"
+// P3 (2026-08-07): router 默认 VP8 (PT 96) — capabilities 必须含 VP8 才能匹配 Host produce
+// (Host 标准协商 answer 选 VP8 96); H264 保留作备选
 function videoRtpCapabilities() {
   return {
     codecs: [{
       kind: 'video', // serde(tag="kind") 必需 (PIT-55)
+      mimeType: 'video/VP8',
+      clockRate: 90000,
+      preferredPayloadType: 96,
+      parameters: {},
+      rtcpFeedback: [],
+    }, {
+      kind: 'video',
       mimeType: 'video/H264',
       clockRate: 90000,
       preferredPayloadType: 101,
@@ -307,14 +318,14 @@ export class SfuConsumerClient {
       `a=ice-pwd:${ice.password}`,
       `a=fingerprint:${fp.algorithm.toLowerCase()} ${fp.value}`,
       'a=setup:passive', // PIT-56: offer setup 决定 answerer 角色 — passive → 浏览器 active (ClientHello 发起方)；mediasoup 是 DTLS server 等 ClientHello (Host 侧 actpass 同理)
-      // Video: H264
-      'm=video 7 UDP/TLS/RTP/SAVPF 101',
+      // Video: VP8 (P3: router/producer 默认 VP8 96 — 与 videoRtpCapabilities 一致;
+      // offer codec 必须匹配 consume codec, 否则浏览器不接收 RTP → 无视频)
+      'm=video 7 UDP/TLS/RTP/SAVPF 96',
       'c=IN IP4 127.0.0.1',
       'a=rtcp-mux',
       'a=mid:video',
       'a=sendonly', // PIT-56: offer 描述 mediasoup (发送方) — recvonly+浏览器recvonly → 协商 inactive → 无媒体轨
-      'a=rtpmap:101 H264/90000',
-      'a=fmtp:101 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f',
+      'a=rtpmap:96 VP8/90000',
       ...(videoCandidates ? [videoCandidates] : []),
       'a=end-of-candidates',
       // Audio: Opus
