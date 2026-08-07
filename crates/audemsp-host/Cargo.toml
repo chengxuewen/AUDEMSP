@@ -52,8 +52,6 @@ bytes = "1"
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
-# audemsp-server for SFU integration tests (optional, Linux only)
-audemsp-server = { path = "../audemsp-server", optional = true }
 
 
 [features]
@@ -62,8 +60,6 @@ gstreamer = ["dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video"]
 production = ["gstreamer"]
 # Legacy P2P WebRTC transport (webrtc-rs)
 webrtc-p2p = ["dep:webrtc"]
-# SFU integration tests (Linux only, requires mediasoup)
-sfu-mediasoup = ["dep:audemsp-server", "audemsp-server/sfu-mediasoup"]
 [dev-dependencies]
 tempfile = "3"
 tokio-tungstenite = { version = "0.24", features = ["connect"] }

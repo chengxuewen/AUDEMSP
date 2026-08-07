@@ -3,8 +3,8 @@
 //! Tests the integration between Host-side audemsp-webrtc
 //! (backend-webrtc-sys) and Server-side mediasoup SFU.
 //!
-//! Feature-gated behind `sfu-mediasoup` and only runs on Linux
-//! (mediasoup crate requires Linux kernel features).
+//! Runs on Linux only — connects to an external mediasoup server (C21).
+//! mediasoup 仅限 audemsp-server；本测试仅通过 WS 信令协议交互。
 //!
 //! Tests:
 //! - D1: Host creates RTCPeerConnection, negotiates with SFU, connects
@@ -12,19 +12,17 @@
 //! - D2: Host produce → Consumer consume via SFU
 //! - D3: Full pipeline with actual video frames
 
-#![cfg(all(feature = "sfu-mediasoup", target_os = "linux"))]
+#![cfg(target_os = "linux")]
 
 use futures_util::{SinkExt, StreamExt};
 use audemsp_common::protocol::{
     DtlsParameters, Fingerprint, IceCandidate, IceParameters, MediaKind, PeerRole,
     SignalingMessage, TransportDirection,
 };
-use audemsp_server::sfu::SfuManager;
-use audemsp_server::signaling::{signaling_router, SignalingServer};
 use audemsp_webrtc::{
-    RTCAnswerOptions, RTCConfiguration, RTCIceServer, RTCIceTransportPolicy,
+    RTCAnswerOptions, RTCConfiguration,
     RTCPeerConnectionFactory, RTCPeerConnectionState, RTCSdpType, RTCSessionDescription,
-    TrackKind, TrackRef, TrackSender,
+    TrackKind, TrackRef,
 };
 use audemsp_webrtc::traits::PeerConnectionApi;
 use std::sync::Arc;
@@ -32,7 +30,10 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message as WsMsg;
 
-const PSK: &str = "e2e-host-sfu-psk";
+// v2: PSK 可配置 — 外部 Docker server 模式用 SFU_E2E_PSK env 覆盖（server 用 AUDEMSP_PSK=audemsp-dev）
+fn psk() -> String {
+    std::env::var("SFU_E2E_PSK").unwrap_or_else(|_| "e2e-host-sfu-psk".to_string())
+}
 const ROOM: &str = "host-sfu-test-room";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -118,37 +119,25 @@ fn build_remote_sdp(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Test helper: start a signaling server with SFU on a random port
+// Test harness: 纯外部模式 — 连外部 mediasoup server（C21）
 // ═══════════════════════════════════════════════════════════════════════════
 
+/// SfuTestHarness — 纯外部模式：连外部 mediasoup server（C21）。
+/// mediasoup 仅限 audemsp-server；测试仅通过 WS 信令协议交互，不 import server 类型。
 struct SfuTestHarness {
-    sfu: Arc<SfuManager>,
     ws_url: String,
 }
 
 impl SfuTestHarness {
     async fn new() -> Self {
-        unsafe { std::env::set_var("AUDEMSP_PSK", PSK) };
-
-        let sfu = SfuManager::new()
-            .await
-            .expect("Failed to create SFU manager");
-        let sfu = Arc::new(sfu);
-
-        let server = SignalingServer::new(Arc::clone(&sfu), 65536, None);
-        let app = signaling_router(server);
-
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let ws_url = format!("ws://{}/ws", addr);
-
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
+        let url = std::env::var("SFU_E2E_WS_URL").unwrap_or_else(|_| {
+            panic!(
+                "SFU_E2E_WS_URL 未设置 — e2e_sfu 需连外部 mediasoup server (C21: 禁止进程内 spawn;
+                例: SFU_E2E_WS_URL=ws://127.0.0.1:9800/ws)"
+            )
         });
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        Self { sfu, ws_url }
+        tracing::info!("SfuTestHarness: 外部 mediasoup server 模式 ({url})");
+        Self { ws_url: url }
     }
 }
 
@@ -162,8 +151,9 @@ async fn ws_auth_and_join<S>(
     room_id: &str,
 ) where
     S: SinkExt<WsMsg> + StreamExt<Item = Result<WsMsg, tokio_tungstenite::tungstenite::Error>> + Unpin,
+    <S as futures_util::Sink<WsMsg>>::Error: std::fmt::Debug,
 {
-    ws.send(WsMsg::Text(PSK.into())).await.unwrap();
+    ws.send(WsMsg::Text(psk().into())).await.unwrap();
     let ack = tokio::time::timeout(Duration::from_secs(5), ws.next())
         .await
         .unwrap()
@@ -203,7 +193,6 @@ async fn ws_auth_and_join<S>(
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn e2e_sfu_host_webrtc_connect() {
     let harness = SfuTestHarness::new().await;
-    let initial_rooms = harness.sfu.room_count();
 
     let host_url = harness.ws_url.clone();
     let host_handle = tokio::spawn(async move {
@@ -332,12 +321,6 @@ async fn e2e_sfu_host_webrtc_connect() {
     assert!(!transport_id.is_empty());
     assert!(!track_id.is_empty());
 
-    // SFU should have exactly one room
-    assert_eq!(
-        harness.sfu.room_count(),
-        initial_rooms + 1,
-        "SFU should have one room after transport creation"
-    );
 
     // Cleanup
     drop(host_ws);
@@ -620,8 +603,6 @@ async fn e2e_sfu_host_produce() {
         "Consumer should have received NewProducer (broadcast or late-joiner sync)"
     );
 
-    // Verify SFU state
-    assert!(harness.sfu.room_count() > 0, "Room should exist");
 
     // Cleanup
     drop(host_ws);
@@ -946,22 +927,6 @@ async fn e2e_sfu_full_pipeline() {
 
     let consumer_ws = consumer_handle.await.unwrap();
 
-    // Verify SFU state — room exists and producer was registered
-    assert!(
-        harness.sfu.room_count() > 0,
-        "Room should exist after full pipeline"
-    );
-
-    // Verify producer was registered in SFU (via list_producers)
-    let producers = harness
-        .sfu
-        .list_producers(pipeline_room)
-        .expect("Room should have producers");
-    assert!(
-        producers.iter().any(|(id, _, _)| id == &producer_id),
-        "Producer {} should be in list_producers",
-        producer_id
-    );
 
     // Cleanup
     drop(host_ws);

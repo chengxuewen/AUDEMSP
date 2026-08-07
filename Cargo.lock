@@ -746,7 +746,6 @@ dependencies = [
  "async-trait",
  "audemsp-common",
  "audemsp-media",
- "audemsp-server",
  "audemsp-webrtc",
  "axum",
  "base64",
