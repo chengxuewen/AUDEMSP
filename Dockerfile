@@ -92,7 +92,6 @@ RUN mkdir -p crates/audemsp-common/src && touch crates/audemsp-common/src/lib.rs
 # 3. Fetch and build dependencies (cached — only re-runs on Cargo.toml changes)
 RUN cargo fetch && \
     cargo build --release --bin audemsp-server --features sfu-mediasoup
-
 # 4. Remove dummy sources
 RUN rm -rf crates/*/src
 
@@ -103,7 +102,16 @@ COPY . .
 #     源码未变，链接空 common rlib 导致 cannot find protocol 连锁错误。touch 更新 mtime 解决。
 RUN find crates -name '*.rs' -exec touch {} +
 
-# 6. Final build — only recompiles changed source
+# 5c. PIT-23: admin dist 必须在 cargo build 前构建（build.rs 依赖 www/apps/admin/dist 存在）
+#     dist 是 gitignore 产物（不在仓库）→ 容器内必须现场构建；否则 build.rs 回退
+#     ADMIN_DIST_DIR=/nonexistent → /admin 运行时 404。Node 20 + pnpm 10。
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    npm install -g pnpm@10.32.1 && \
+    cd www && pnpm install --frozen-lockfile && pnpm build:admin && \
+    cd / && rm -rf /workspace/www/node_modules
+
+# 6. Final build — only recompiles changed source（含正确 ADMIN_DIST_DIR）
 RUN cargo build --release --bin audemsp-server --features sfu-mediasoup
 
 # ---- Runtime: minimal Ubuntu 22.04 ----
