@@ -58,8 +58,9 @@ RUN mkdir -p crates/audemsp-common/src && touch crates/audemsp-common/src/lib.rs
              crates/audemsp-host/src crates/audemsp-client/src && \
     touch crates/audemsp-media/src/lib.rs crates/audemsp-webrtc/src/lib.rs \
           crates/audemsp-codec/src/lib.rs crates/audemsp-host/src/lib.rs crates/audemsp-client/src/lib.rs && \
-    mkdir -p crates/audemsp-media/examples && touch crates/audemsp-media/examples/square-gen-egui.rs \
-          crates/audemsp-media/examples/viewer.rs crates/audemsp-media/examples/square-gen.rs
+    mkdir -p crates/audemsp-media/examples crates/audemsp-webrtc/examples && touch crates/audemsp-media/examples/square-gen-egui.rs \
+          crates/audemsp-media/examples/viewer.rs crates/audemsp-media/examples/square-gen.rs \
+          crates/audemsp-webrtc/examples/webrtc_loopback_egui.rs
 RUN cargo fetch
 RUN rm -rf crates/*/src
 COPY . .
@@ -86,8 +87,9 @@ RUN mkdir -p crates/audemsp-common/src && touch crates/audemsp-common/src/lib.rs
              crates/audemsp-host/src crates/audemsp-client/src && \
     touch crates/audemsp-media/src/lib.rs crates/audemsp-webrtc/src/lib.rs \
           crates/audemsp-codec/src/lib.rs crates/audemsp-host/src/lib.rs crates/audemsp-client/src/lib.rs && \
-    mkdir -p crates/audemsp-media/examples && touch crates/audemsp-media/examples/square-gen-egui.rs \
-          crates/audemsp-media/examples/viewer.rs crates/audemsp-media/examples/square-gen.rs
+    mkdir -p crates/audemsp-media/examples crates/audemsp-webrtc/examples && touch crates/audemsp-media/examples/square-gen-egui.rs \
+          crates/audemsp-media/examples/viewer.rs crates/audemsp-media/examples/square-gen.rs \
+          crates/audemsp-webrtc/examples/webrtc_loopback_egui.rs
 
 # 3. Fetch and build dependencies (cached — only re-runs on Cargo.toml changes)
 RUN cargo fetch && \
@@ -108,7 +110,7 @@ RUN find crates -name '*.rs' -exec touch {} +
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     npm install -g pnpm@10.32.1 && \
-    cd www && pnpm install --frozen-lockfile && pnpm build:admin && \
+    cd www && CI=true pnpm install --frozen-lockfile && CI=true pnpm build:admin && \
     cd / && rm -rf /workspace/www/node_modules
 
 # 6. Final build — only recompiles changed source（含正确 ADMIN_DIST_DIR）
