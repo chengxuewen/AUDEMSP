@@ -79,7 +79,16 @@ fn map_rtp_parameters(p: webrtc_sys::rtp_parameters::ffi::RtpParameters) -> crat
         payload_type: c.payload_type as u8,
         clock_rate: c.clock_rate.max(0) as u32,
         channels: if c.has_num_channels { Some(c.num_channels as u16) } else { None },
-        sdp_fmtp_line: None,
+        // PIT-54: mediasoup 严格按 codec parameters 匹配 (packetization-mode/profile-level-id)
+        // webrtc-sys RtpCodecParameters.parameters (Vec<StringKeyValue>) -> sdp_fmtp_line
+        sdp_fmtp_line: if c.parameters.is_empty() {
+            None
+        } else {
+            Some(c.parameters.iter()
+                .map(|kv| format!("{}={}", kv.key, kv.value))
+                .collect::<Vec<_>>()
+                .join(";"))
+        },
     }).collect();
     let encodings = p.encodings.iter().map(|e| RTCRtpEncodingParameters {
         ssrc: if e.has_ssrc { Some(e.ssrc as u64) } else { None },
@@ -1142,4 +1151,56 @@ mod tests {
         assert!(t2 > t1, "时间戳必须单调递增");
         assert!(t1 > 1_000_000_000_000, "wall-clock 量级 (µs): {t1}");
     }
+
+    #[test]
+    fn map_rtp_parameters_codec_fmtp_mapping() {
+        // PIT-54: mediasoup 严格按 codec parameters 匹配 — 验证 map_rtp_parameters 映射 H264 fmtp
+        use webrtc_sys::rtp_parameters::ffi::{RtpParameters, RtpCodecParameters, RtpEncodingParameters, RtcpParameters, RtpExtension, StringKeyValue};
+        let params = RtpParameters {
+            transaction_id: "tx".into(),
+            mid: "0".into(),
+            codecs: vec![RtpCodecParameters {
+                mime_type: "video/H264".into(),
+                name: "H264".into(),
+                kind: webrtc_sys::webrtc::ffi::MediaType::Video,
+                payload_type: 101,
+                has_clock_rate: true,
+                clock_rate: 90000,
+                has_num_channels: false,
+                num_channels: 0,
+                has_max_ptime: false,
+                max_ptime: 0,
+                has_ptime: false,
+                ptime: 0,
+                rtcp_feedback: vec![],
+                parameters: vec![
+                    StringKeyValue { key: "packetization-mode".into(), value: "1".into() },
+                    StringKeyValue { key: "profile-level-id".into(), value: "42e01f".into() },
+                ],
+            }],
+            header_extensions: vec![],
+            encodings: vec![RtpEncodingParameters {
+                has_ssrc: true, ssrc: 1949911776, bitrate_priority: 1.0,
+                network_priority: webrtc_sys::webrtc::ffi::Priority::Medium,
+                has_max_bitrate_bps: false, max_bitrate_bps: 0,
+                has_min_bitrate_bps: false, min_bitrate_bps: 0,
+                has_max_framerate: false, max_framerate: 0.0,
+                has_num_temporal_layers: false, num_temporal_layers: 0,
+                has_scale_resolution_down_by: false, scale_resolution_down_by: 1.0,
+                has_scalability_mode: false, scalability_mode: String::new(),
+                active: true, rid: String::new(), adaptive_ptime: false,
+            }],
+            rtcp: RtcpParameters { has_ssrc: false, ssrc: 0, cname: String::new(), reduced_size: true, mux: true },
+            has_degradation_preference: false,
+            degradation_preference: webrtc_sys::rtp_parameters::ffi::DegradationPreference::Balanced,
+        };
+        let mapped = map_rtp_parameters(params);
+        assert_eq!(mapped.codecs.len(), 1);
+        let fmtp = mapped.codecs[0].sdp_fmtp_line.as_deref().unwrap_or("");
+        // PIT-54: 必须含 packetization-mode 和 profile-level-id
+        assert!(fmtp.contains("packetization-mode=1"), "fmtp: {fmtp}");
+        assert!(fmtp.contains("profile-level-id=42e01f"), "fmtp: {fmtp}");
+        assert_eq!(mapped.encodings[0].ssrc, Some(1949911776));
+    }
+
 }
