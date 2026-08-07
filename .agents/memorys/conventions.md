@@ -252,7 +252,6 @@ audemsp-webrtc = { path = "../audemsp-webrtc", features = ["backend-webrtc-sys"]
 | `check` | `cargo check --workspace --exclude audemsp-server` | 原生 |
 | `check-server` | `scripts/docker-cargo.sh check -p audemsp-server --features sfu-mediasoup` | Docker |
 | `build-server` | `scripts/docker-cargo.sh build -p audemsp-server --features sfu-mediasoup` | Docker |
-| `check-native` | `scripts/cargo-sfu.sh check --workspace` | 原生备选 |
 
 **原因**：
 - mediasoup-sys 的 meson wrap 依赖 wrapdb.mesonbuild.com（不可达时无法下载 flatbuffers patch）

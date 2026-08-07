@@ -46,9 +46,6 @@ check-server = "sh -c 'scripts/docker-cargo.sh check -p audemsp-server --feature
 build-server = "sh -c 'scripts/docker-cargo.sh build -p audemsp-server --features sfu-mediasoup'"
 test-server = "sh -c 'scripts/docker-cargo.sh test -p audemsp-server --features sfu-mediasoup'"
 
-# Linux 原生备选 (需 wrapdb.mesonbuild.com 可达)
-check-native = "sh -c 'scripts/cargo-sfu.sh check --workspace'"
-build-native = "sh -c 'scripts/cargo-sfu.sh build --workspace'"
 
 # 工具 (无变更)
 format = "cargo fmt --all -- --check"

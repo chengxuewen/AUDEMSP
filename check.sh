@@ -17,7 +17,6 @@ if [ -z "${PIXI}" ]; then
 fi
 
 echo "=== Checking audemsp-server (sfu-mediasoup) ==="
-bash scripts/cargo-sfu.sh check -p audemsp-server --features sfu-mediasoup 2>&1
-echo ""
+bash scripts/docker-cargo.sh check -p audemsp-server --features sfu-mediasoup 2>&1
 echo "=== Checking audemsp-server (no features) ==="
-bash scripts/cargo-sfu.sh check -p audemsp-server --no-default-features 2>&1
+bash scripts/docker-cargo.sh check -p audemsp-server --no-default-features 2>&1

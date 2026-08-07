@@ -37,11 +37,12 @@ cargo test --workspace
 ### Full (with mediasoup)
 
 ```bash
-pixi run check          # via scripts/cargo-sfu.sh wrapper
-pixi run build          # via scripts/cargo-sfu.sh wrapper
-pixi run lint           # clippy via wrapper
-pixi run test           # test via wrapper
-pixi run test-sfu       # audemsp-server with sfu-mediasoup feature
+pixi run check          # workspace (excludes audemsp-server)
+pixi run build          # workspace (excludes audemsp-server)
+pixi run lint           # clippy workspace
+pixi run test           # workspace (excludes audemsp-server)
+pixi run check-server   # audemsp-server via Docker (mediasoup)
+pixi run test-sfu       # audemsp-server with sfu-mediasoup feature (Docker)
 ```
 
 ## Docker Compose Workflow
@@ -77,17 +78,19 @@ docker compose down
 
 ## pixi Task Reference
 
-### Cargo Wrapper Tasks (mediasoup-safe)
+### Cargo Tasks (mediasoup 分离)
 
-These run through `scripts/cargo-sfu.sh` which handles mediasoup-sys build quirks:
+audemsp-server 走 Docker（C13）— `scripts/docker-cargo.sh` / `docker compose exec server`；
+其余 crate 原生编译。
 
 | Task | Command | When |
 |------|---------|------|
-| `pixi run check` | `cargo check --workspace` | After any code change |
-| `pixi run build` | `cargo build --workspace` | Before running bins |
+| `pixi run check` | `cargo check --workspace --exclude audemsp-server` | After any code change |
+| `pixi run build` | `cargo build --workspace --exclude audemsp-server` | Before running bins |
 | `pixi run lint` | `cargo clippy --workspace --all-targets -- -D warnings` | Before commit |
-| `pixi run test` | `cargo test --workspace` | Before PR |
-| `pixi run test-sfu` | `cargo test -p audemsp-server --features sfu-mediasoup` | SFU changes only |
+| `pixi run test` | `cargo test --workspace --exclude audemsp-server` | Before PR |
+| `pixi run check-server` | `scripts/docker-cargo.sh check -p audemsp-server --features sfu-mediasoup` | Server 变更 |
+| `pixi run test-server` | `scripts/docker-cargo.sh test -p audemsp-server --features sfu-mediasoup` | SFU changes only |
 
 ### Vanilla Tasks (no wrapper, faster)
 
@@ -243,7 +246,7 @@ Rules:
 
 | Pitfall | Reference | Fix |
 |---------|-----------|-----|
-| mediasoup-sys buildtype conflict | PIT-11 | Use `scripts/cargo-sfu.sh` wrapper |
+| mediasoup-sys buildtype conflict | PIT-11 | 已解决（registry 官方原版）— 本机编译走 Docker（C13） |
 | MESON must be absolute path | PIT-12 | `pixi run -- which meson` |
 | cargo clean -p doesn't clear build cache | PIT-13 | `rm -rf target/debug/build/<pkg>-*` |
 | macOS Docker volume mount slow | constraints.md | Use cargo-cache named volume |
