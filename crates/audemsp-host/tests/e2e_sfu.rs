@@ -54,6 +54,11 @@ fn build_remote_sdp(
     fmtp: Option<&str>,
 ) -> String {
     let fp = &dtls_parameters.fingerprints[0];
+    let conn_ip = ice_candidates
+        .and_then(|cs| cs.iter().find(|c| !c.ip.contains(".local")))
+        .map(|c| c.ip.clone())
+        .unwrap_or_else(|| "0.0.0.0".to_string());
+
     let mut lines = vec![
         "v=0".to_string(),
         "o=- 0 0 IN IP4 0.0.0.0".to_string(),
@@ -70,6 +75,21 @@ fn build_remote_sdp(
         ),
         "a=setup:actpass".to_string(), // ICE-Lite responder expects client to initiate
     ];
+
+    // PIT-48: a=candidate 行必须位于 m= 行之后（media section 内）——
+    // 会话级 candidate 被 libwebrtc 忽略 → remote candidate 丢失 → ICE 不发起 STUN
+    lines.extend_from_slice(&[
+        format!("m=video 7 UDP/TLS/RTP/SAVPF {}", payload_type),
+        format!("c=IN IP4 {}", conn_ip),
+        "a=rtcp-mux".to_string(),
+        "a=mid:video".to_string(),
+        "a=recvonly".to_string(),
+        format!("a=rtpmap:{} {}/{}", payload_type, codec_name, clock_rate),
+    ]);
+
+    if let Some(fmtp_val) = fmtp {
+        lines.push(format!("a=fmtp:{} {}", payload_type, fmtp_val));
+    }
 
     if let Some(candidates) = ice_candidates {
         for c in candidates {
@@ -95,24 +115,6 @@ fn build_remote_sdp(
         }
     }
     lines.push("a=end-of-candidates".to_string());
-
-    let conn_ip = ice_candidates
-        .and_then(|cs| cs.iter().find(|c| !c.ip.contains(".local")))
-        .map(|c| c.ip.clone())
-        .unwrap_or_else(|| "0.0.0.0".to_string());
-
-    lines.extend_from_slice(&[
-        format!("m=video 7 UDP/TLS/RTP/SAVPF {}", payload_type),
-        format!("c=IN IP4 {}", conn_ip),
-        "a=rtcp-mux".to_string(),
-        "a=mid:video".to_string(),
-        "a=sendonly".to_string(),
-        format!("a=rtpmap:{} {}/{}", payload_type, codec_name, clock_rate),
-    ]);
-
-    if let Some(fmtp_val) = fmtp {
-        lines.push(format!("a=fmtp:{} {}", payload_type, fmtp_val));
-    }
 
     lines.push(String::new());
     lines.join("\r\n")
@@ -283,6 +285,7 @@ async fn e2e_sfu_host_webrtc_connect() {
         pc.set_local_description(&answer)
             .await
             .expect("set_local_description");
+        let _ = remote_sdp;
 
         // Extract DTLS fingerprint → send ConnectWebRtcTransport
         let fp_hex = pc
@@ -462,13 +465,19 @@ async fn e2e_sfu_host_produce() {
         ws.send(WsMsg::Text(serde_json::to_string(&produce).unwrap().into()))
             .await
             .unwrap();
-        let prod_resp = tokio::time::timeout(Duration::from_secs(5), ws.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        let produced: SignalingMessage =
-            serde_json::from_str(prod_resp.to_text().unwrap()).unwrap();
+        let produced: SignalingMessage = loop {
+            let resp = tokio::time::timeout(Duration::from_secs(5), ws.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let sig: SignalingMessage =
+                serde_json::from_str(resp.to_text().unwrap()).unwrap();
+            match sig {
+                SignalingMessage::NewProducer { .. } => continue, // broadcast, skip
+                other => break other,
+            }
+        };
         let producer_id = match produced {
             SignalingMessage::Produced { producer_id, .. } => producer_id,
             other => panic!("Expected Produced, got: {other:?}"),
@@ -502,6 +511,7 @@ async fn e2e_sfu_host_produce() {
         ws.send(WsMsg::Text(serde_json::to_string(&create).unwrap().into()))
             .await
             .unwrap();
+        let mut saw_new_producer = false;
         let (recv_tid, recv_dtls) = loop {
             let resp = tokio::time::timeout(Duration::from_secs(5), ws.next())
                 .await
@@ -516,6 +526,10 @@ async fn e2e_sfu_host_produce() {
                     dtls_parameters,
                     ..
                 } => break (transport_id, dtls_parameters),
+                SignalingMessage::NewProducer { .. } => {
+                    saw_new_producer = true;
+                    continue;
+                }
                 SignalingMessage::RoomLeave { .. } => continue,
                 other => panic!("Unexpected: {other:?}"),
             }
@@ -538,15 +552,14 @@ async fn e2e_sfu_host_produce() {
             .unwrap();
         assert!(conn_resp.to_text().unwrap().contains("transport_connected"));
 
-        // Drain any NewProducer messages (from late-joiner sync or broadcast)
-        // until we receive something non-NewProducer
-        let mut saw_new_producer = false;
+        // Drain any remaining NewProducer messages (late-joiner sync / broadcast).
+        // Timeout tolerated — the broadcast may already have been consumed
+        // by the transport-creation loop above.
         loop {
-            let msg = tokio::time::timeout(Duration::from_secs(5), ws.next())
-                .await
-                .unwrap()
-                .unwrap()
-                .unwrap();
+            let msg = match tokio::time::timeout(Duration::from_secs(2), ws.next()).await {
+                Ok(Some(Ok(msg))) => msg,
+                _ => break, // no more messages pending
+            };
             let text = msg.to_text().unwrap();
             if let Ok(sig) = serde_json::from_str::<SignalingMessage>(text) {
                 if matches!(sig, SignalingMessage::NewProducer { .. }) {
@@ -723,6 +736,24 @@ async fn e2e_sfu_full_pipeline() {
             .expect("PC connection timeout");
         assert_eq!(pc.connection_state(), RTCPeerConnectionState::Connected);
 
+        // Drain transport_connected ack + any NewProducer broadcasts before Produce
+        loop {
+            let msg = match tokio::time::timeout(Duration::from_secs(2), ws.next()).await {
+                Ok(Some(Ok(msg))) => msg,
+                _ => break,
+            };
+            let text = msg.to_text().unwrap();
+            if let Ok(sig) = serde_json::from_str::<SignalingMessage>(text) {
+                match sig {
+                    SignalingMessage::Error { message, .. } if message == "transport_connected" => continue,
+                    SignalingMessage::NewProducer { .. } => continue,
+                    _ => break,
+                }
+            } else {
+                break;
+            }
+        }
+
         // Produce video
         let produce = SignalingMessage::Produce {
             room_id: pipeline_room.into(),
@@ -740,13 +771,20 @@ async fn e2e_sfu_full_pipeline() {
         ws.send(WsMsg::Text(serde_json::to_string(&produce).unwrap().into()))
             .await
             .unwrap();
-        let prod_resp = tokio::time::timeout(Duration::from_secs(5), ws.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        let produced: SignalingMessage =
-            serde_json::from_str(prod_resp.to_text().unwrap()).unwrap();
+        let produced: SignalingMessage = loop {
+            let resp = tokio::time::timeout(Duration::from_secs(5), ws.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let sig: SignalingMessage =
+                serde_json::from_str(resp.to_text().unwrap()).unwrap();
+            match sig {
+                SignalingMessage::NewProducer { .. } => continue, // broadcast, skip
+                SignalingMessage::Error { message, .. } if message == "transport_connected" => continue,
+                other => break other,
+            }
+        };
         let producer_id = match produced {
             SignalingMessage::Produced { producer_id, .. } => producer_id,
             other => panic!("Expected Produced, got: {other:?}"),
@@ -826,6 +864,7 @@ async fn e2e_sfu_full_pipeline() {
         ws.send(WsMsg::Text(serde_json::to_string(&create).unwrap().into()))
             .await
             .unwrap();
+        let mut got_producer = false;
         let (recv_tid, recv_dtls) = loop {
             let resp = tokio::time::timeout(Duration::from_secs(5), ws.next())
                 .await
@@ -840,6 +879,12 @@ async fn e2e_sfu_full_pipeline() {
                     dtls_parameters,
                     ..
                 } => break (transport_id, dtls_parameters),
+                SignalingMessage::NewProducer { producer_id: np_id, .. } => {
+                    if np_id == pid {
+                        got_producer = true;
+                    }
+                    continue;
+                }
                 SignalingMessage::RoomLeave { .. } => continue,
                 other => panic!("Unexpected: {other:?}"),
             }
@@ -860,22 +905,24 @@ async fn e2e_sfu_full_pipeline() {
             .unwrap();
         assert!(conn_resp.to_text().unwrap().contains("transport_connected"));
 
-        // Wait for NewProducer (broadcast or late-joiner sync)
-        let mut got_producer = false;
-        for _ in 0..10 {
-            let msg = tokio::time::timeout(Duration::from_secs(3), ws.next())
-                .await
-                .unwrap()
-                .unwrap()
-                .unwrap();
-            let text = msg.to_text().unwrap();
-            if let Ok(SignalingMessage::NewProducer {
-                producer_id: np_id, ..
-            }) = serde_json::from_str(text)
-            {
-                if np_id == pid {
-                    got_producer = true;
-                    break;
+        // Wait for NewProducer (broadcast or late-joiner sync) — may already
+        // have been consumed by the transport-creation loop above.
+        if !got_producer {
+            for _ in 0..10 {
+                let msg = tokio::time::timeout(Duration::from_secs(3), ws.next())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap();
+                let text = msg.to_text().unwrap();
+                if let Ok(SignalingMessage::NewProducer {
+                    producer_id: np_id, ..
+                }) = serde_json::from_str(text)
+                {
+                    if np_id == pid {
+                        got_producer = true;
+                        break;
+                    }
                 }
             }
         }
@@ -883,7 +930,6 @@ async fn e2e_sfu_full_pipeline() {
             got_producer,
             "Consumer should receive NewProducer for producer {pid}"
         );
-
         // Consume
         let consume = SignalingMessage::Consume {
             room_id: pipeline_room.into(),
