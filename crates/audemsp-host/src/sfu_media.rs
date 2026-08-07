@@ -1,11 +1,89 @@
 //! SFU 媒体协商的纯函数构造 — 从 main.rs 抽出以便单测。
 //!
-//! P3 (v2): Host 走标准协商（add_transceiver_with_track → create_offer → get_sending_rtp_parameters），
-//! 不再手工构造 remote SDP / 手工解析 ssrc / 手工硬编码 rtp_parameters (C18)。
-//! 本模块只保留「从协商结果 RTCRtpParameters 构造 mediasoup produce 请求」的纯函数。
+//! P3 (v2)+P2 修复: Host 走标准 answerer 协商 — 用 server transport 参数构造 remote SDP
+//! → set_remote_description → create_answer (对齐 libmediasoupclient SdpUtils / e2e_sfu 验证路径)。
+//! 本模块提供 remote SDP 构造 + 从协商结果 RTCRtpParameters 构造 produce 请求。
 
 use serde_json::{json, Value};
+use audemsp_common::protocol::{DtlsParameters, IceCandidate, IceParameters};
 use audemsp_webrtc::rtp::RTCRtpParameters;
+
+/// 用 mediasoup transport 参数构造 remote SDP (ICE-Lite server offer)。
+/// PIT-48: a=candidate 行必须位于 m= 行之后（media section 内）——
+/// 会话级 candidate 被 libwebrtc 忽略 → remote candidate 丢失 → ICE 不发起 STUN
+pub fn build_remote_sdp(
+    ice_parameters: &IceParameters,
+    dtls_parameters: &DtlsParameters,
+    ice_candidates: Option<&Vec<IceCandidate>>,
+    payload_type: u16,
+    codec_name: &str,
+    clock_rate: u32,
+    fmtp: Option<&str>,
+) -> String {
+    let fp = &dtls_parameters.fingerprints[0];
+    let conn_ip = ice_candidates
+        .and_then(|cs| cs.iter().find(|c| !c.ip.contains(".local")))
+        .map(|c| c.ip.clone())
+        .unwrap_or_else(|| "0.0.0.0".to_string());
+
+    let mut lines = vec![
+        "v=0".to_string(),
+        "o=- 0 0 IN IP4 0.0.0.0".to_string(),
+        "s=-".to_string(),
+        "t=0 0".to_string(),
+        "a=group:BUNDLE video".to_string(),
+        "a=ice-lite".to_string(),
+        format!("a=ice-ufrag:{}", ice_parameters.username_fragment),
+        format!("a=ice-pwd:{}", ice_parameters.password),
+        format!(
+            "a=fingerprint:{} {}",
+            fp.algorithm.to_lowercase(),
+            fp.value
+        ),
+        "a=setup:actpass".to_string(), // ICE-Lite responder expects client to initiate
+    ];
+
+    lines.extend_from_slice(&[
+        format!("m=video 7 UDP/TLS/RTP/SAVPF {}", payload_type),
+        format!("c=IN IP4 {}", conn_ip),
+        "a=rtcp-mux".to_string(),
+        "a=mid:video".to_string(),
+        "a=recvonly".to_string(),
+        format!("a=rtpmap:{} {}/{}", payload_type, codec_name, clock_rate),
+    ]);
+
+    if let Some(fmtp_val) = fmtp {
+        lines.push(format!("a=fmtp:{} {}", payload_type, fmtp_val));
+    }
+
+    if let Some(candidates) = ice_candidates {
+        for c in candidates {
+            if c.ip.contains(".local") {
+                continue;
+            } // skip mDNS
+            let ctype = match c.candidate_type.as_str() {
+                "host" => "host",
+                "srflx" => "srflx",
+                "prflx" => "prflx",
+                "relay" => "relay",
+                _ => "host",
+            };
+            lines.push(format!(
+                "a=candidate:{} 1 {} {} {} {} typ {}",
+                c.foundation,
+                c.protocol.to_uppercase(),
+                c.priority,
+                c.ip,
+                c.port,
+                ctype
+            ));
+        }
+    }
+    lines.push("a=end-of-candidates".to_string());
+
+    lines.push(String::new());
+    lines.join("\r\n")
+}
 
 /// P3 (v2): 从协商结果 (RTCRtpParameters) 构造 mediasoup produce 的 rtp_parameters。
 /// 对齐官方客户端 — 数据来自 transceiver.sender.get_parameters()，非手工硬编码。

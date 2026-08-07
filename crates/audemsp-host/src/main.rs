@@ -272,12 +272,33 @@ let app = axum::Router::new()
             });
         }
 
-        // B1: Build remote SDP from real server ICE candidates (not 127.0.0.1)
+        // P3 (v2)+P2: 标准 answerer 协商（对齐 libmediasoupclient Handler.cpp 顺序）:
+        //  ① 用 server transport 参数构造 remote SDP → set_remote_description
+        //  ② add_track (sendrecv transceiver + 默认 encoding; libwebrtc 自动生成)
+        //  ③ create_answer → set_local_description
+        // 顺序关键: set_remote_description 必须先于 add_track — 反之 transceiver
+        // 不匹配 remote m-line → answer a=inactive → codecs=0 → produce 被拒
+        // 不用 add_transceiver_with_track: 空 send_encodings → libwebrtc 生成无 encoding
+        // sender → answer inactive (P2 实测); add_track 与 e2e_sfu 验证路径一致
         // PIT-48: a=candidate 行必须位于 m= 行之后（media section 内）——
         // 会话级 candidate 被 libwebrtc 忽略 → remote candidate 丢失 → ICE 不发起 STUN
-        // P3 (v2): 标准协商 — add_transceiver_with_track → create_offer → set_local (对齐 Chrome74.ts/Handler.cpp)
-        // 不再构建手工 recvonly SDP (C18: 禁止手工 SDP 拼接)
-        // 先创建 track (复用 create_track_sender 链路: WebrtcSysTrack + media_track staged)
+
+        // ① remote SDP from real server ICE candidates (VP8 PT 96 = router 默认)
+        let remote_sdp = sfu_media::build_remote_sdp(
+            &ice_parameters,
+            &dtls_parameters,
+            ice_candidates.as_ref(),
+            96,
+            "VP8",
+            90000,
+            None,
+        );
+        let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
+        pc.set_remote_description(&remote_desc).await
+            .map_err(|e| anyhow::anyhow!("set remote: {}", e))?;
+        tracing::info!("SFU: remote description set (server ICE-Lite offer)");
+
+        // ② add track (sendrecv; answer 协商后 host 侧 sendonly)
         let track_id = pc.add_track("video", TrackKind::Video)
             .map_err(|e| anyhow::anyhow!("add_track: {}", e))?;
         let track_ref = pc.get_track(&track_id)
@@ -288,23 +309,12 @@ let app = axum::Router::new()
         };
         tracing::info!("SFU: video track added (id={})", track_id);
 
-        // 标准时序: addTransceiver(track, {direction: sendonly, sendEncodings})
-        let init = RTCRtpTransceiverInit {
-            direction: RTCRtpTransceiverDirection::Sendonly,
-            send_encodings: vec![],
-            stream_ids: vec![],
-        };
-        let _transceiver = pc.add_transceiver_with_track(&video_track, init)
-            .map_err(|e| anyhow::anyhow!("add_transceiver_with_track: {}", e))?;
-        tracing::info!("SFU: add_transceiver_with_track done (sendonly)");
-
-        let offer = pc.create_offer(&RTCOfferOptions::default()).await
-            .map_err(|e| anyhow::anyhow!("create offer: {}", e))?;
-
-        tracing::debug!("SFU local offer SDP:\n{}", offer.sdp);
-        pc.set_local_description(&offer).await
+        // ③ answer + set local
+        let answer = pc.create_answer(&RTCAnswerOptions::default()).await
+            .map_err(|e| anyhow::anyhow!("create answer: {}", e))?;
+        tracing::debug!("SFU local answer SDP:\n{}", answer.sdp);
+        pc.set_local_description(&answer).await
             .map_err(|e| anyhow::anyhow!("set local: {}", e))?;
-
         // B3: Extract DTLS fingerprint via audemsp-webrtc API (not SDP parsing)
         let fp_hex = pc.local_dtls_fingerprint()
             .ok_or_else(|| anyhow::anyhow!("no DTLS fingerprint"))?;
@@ -335,7 +345,7 @@ let app = axum::Router::new()
 
         // Step 4: Produce video (P3 v2: 从 get_sending_rtp_parameters 推导，非手工)
         // PIT-56 替代: 不再手工解析 answer ssrc — 走 transceiver.sender.get_parameters() 官方路径
-        let rtp_params: RTCRtpParameters = pc.get_sending_rtp_parameters(&track_id)
+        let rtp_params: RTCRtpParameters = pc.get_sending_rtp_parameters("video")
             .map_err(|e| anyhow::anyhow!("get_sending_rtp_parameters: {}", e))?;
         tracing::debug!("SFU: negotiated rtp params mid={} codecs={} encodings={}",
             rtp_params.mid, rtp_params.codecs.len(), rtp_params.encodings.len());

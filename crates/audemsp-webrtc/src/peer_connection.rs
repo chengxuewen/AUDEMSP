@@ -183,7 +183,8 @@ impl crate::traits::PeerConnectionApi for RTCPeerConnection {
 
 impl RTCPeerConnection {
     /// Create a TrackSender, binding to real backend via factory when available.
-    fn create_track_sender(&self, track_id: &str, kind: TrackKind) -> TrackSender {
+    /// Stages the underlying media track for `add_transceiver_with_track` (webrtc-sys).
+    pub fn create_track_sender(&self, track_id: &str, kind: TrackKind) -> TrackSender {
         if kind == TrackKind::Video {
             #[cfg(feature = "backend-webrtc-sys")]
             {
