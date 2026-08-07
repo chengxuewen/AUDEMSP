@@ -346,3 +346,13 @@ docs/reference/
 **检查**：`ls docs/reference/` — 顶层应为 `README.md` + 模块活参考（webrtc/codec）+ `research/`；`docs/reference/research/` 下才是竞品调研。
 
 **来源**：Diátaxis 框架（2026-08-06 用户确认架构），替代此前按领域子目录的平铺方案
+
+## C20: 禁止硬编码路径规避 — 第三方硬编码须用户同意后正规修复 (2026-08-07)
+
+**约束**: ① **禁止创建符号链接/伪造目录让第三方硬编码路径"生效"**——用硬编码绕硬编码是错误规避（PIT-70：为规避 mediasoup-sys tasks.py 硬编码的旧 pixi 路径，创建 `/home/maxsense/Documents/OMSPBase/.../ninja` 符号链接，被用户当场否决）。② 第三方依赖（cargo registry 源码、npm 包、meson wrap 等）中的硬编码路径，**不得通过修改 registry 缓存或伪造路径规避**——registry 修改会被 hash 校验检测，伪造路径是隐蔽副作用。③ 正确路径：**优先用官方支持的环境变量/配置覆盖**（如 tasks.py 是否支持 NINJA env）；若无官方机制，**必须向用户说明并取得同意**后才能做本地 patch（cargo `[patch]`/vendored）或接受环境限制。
+
+**适用范围**: 构建工具硬编码路径（meson/ninja/pip）、CI 硬编码、Docker 路径映射。
+
+**检查**: `grep -rn "/home/maxsense\|OMSPBase" .pixi/ scripts/ Dockerfile* docker-compose*.yml 2>/dev/null` — 应无伪造目录/符号链接规避；发现第三方硬编码 → 列方案问用户，不擅自规避。
+
+**来源**: PIT-70 (2026-08-07 mediasoup 构建 ninja 路径规避被否决)

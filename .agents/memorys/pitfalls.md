@@ -765,3 +765,15 @@ close() { this.closed = true; ... }
 **禁止**: ① 多个 cargo target 目录并存不清理（历史 `audemsp-target` + 新 `/tmp/w3c-target`）；② 编译前不检查 `df -h /`。编译大 crate（libwebrtc）前先确认磁盘 > 5G 可用。
 
 **检查**: `df -h /` 可用 > 5G；`du -sh ~/audemsp-target /tmp/*-target` 排查历史编译产物。
+
+## PIT-70: 符号链接规避第三方硬编码路径 — 被用户否决 (2026-08-07)
+
+**症状**: mediasoup-sys 0.14.1 `tasks.py:82` 硬编码 `os.environ["NINJA"] = "/home/maxsense/Documents/OMSPBase/.pixi/envs/default/bin/ninja"`（项目改名前的旧路径，已不存在）。为让构建通过，创建符号链接 `/home/maxsense/Documents/OMSPBase/.pixi/envs/default/bin/ninja → /home/maxsense/Documents/AUDEMSP/.pixi/envs/default/bin/ninja`，让旧路径"生效"。
+
+**根因**: ① mediasoup-sys 上游把开发者本机路径硬编码进 tasks.py（上游 bug，`os.environ["NINJA"] = ...` 无条件赋值覆盖外部 NINJA env）；② 我未先评估"官方覆盖机制"（tasks.py 是否支持 NINJA env）就直接用符号链接规避——用硬编码绕硬编码，且未获用户同意。
+
+**解法**: ① 撤销符号链接（已删，OMSPBase 目录清空）；② 正确路径：先查官方覆盖机制（tasks.py `os.getenv("NINJA")`？这里是无条件赋值，不生效）→ 若无官方机制，**向用户说明并取得同意**后选：cargo `[patch]` 本地修复 tasks.py（把硬编码改 `os.getenv("NINJA", default)`）/ vendored 依赖 / 接受 Docker 构建（C13）。
+
+**验证**: `ls /home/maxsense/Documents/OMSPBase` → 不存在（符号链接已清）；`grep -rn "OMSPBase" .pixi/ scripts/` → 无规避残留。
+
+**禁止**: ① 创建符号链接/伪造目录让第三方硬编码路径"生效"；② 修改 cargo registry 缓存源码（hash 校验会被检测）；③ 未经用户同意做任何本地 patch 或 workaround（C20 约束）。
