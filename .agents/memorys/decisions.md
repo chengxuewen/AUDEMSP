@@ -223,3 +223,13 @@
 **影响**: ① Host produce rtp_parameters 从 transceiver.sender.get_parameters() 推导（含 ssrc/PT），非手工硬编码；② 三后端（webrtc-sys/webrtc-rs/stub）对称实现，stub 状态化；③ 无法实现的 API（DTMF/identity/浏览器专属）在 docs/reference/webrtc/webrtc-w3c-alignment.md §5 标注未来实现；④ webrtc-sys 下 w3c_api_tests 有 4 个预存失败（ice/sdp 测试假设 stub 宽松状态机，非本次改动）；⑤ client crate 预存 feature 不匹配（用 webrtc-rs 方法却配 webrtc-sys feature），待 P4 回归处理。
 
 **验证**: `cargo test -p audemsp-webrtc` (stub 46 passed) + `cargo test -p audemsp-webrtc --features backend-webrtc-sys` (除 4 预存失败全过) + `cargo check -p audemsp-host` 通过 + C18 检查 `grep build_remote_sdp src/` 无残留。
+
+## D215: client P2P 迁移到通用 W3C API — 修复 feature 不匹配 (2026-08-06)
+
+**决策**: ① audemsp-webrtc 加通用 `RTCPeerConnection::on_data_channel`（三后端，替代 webrtc-rs cfg 专属版），webrtc-sys observer 的 on_data_channel 接线到 callbacks。② client `webrtc_transport.rs` 迁移：`on_data_channel` 用通用版（`Fn(RTCDataChannel)` 异步 spawn spool），删 `from_webrtc`；`on_ice_candidate_native` → 通用 `on_ice_candidate`；`handle_ice` 用本地 serde struct 解析 camelCase ICE JSON（替代 webrtc-rs `RTCIceCandidateInit` 类型）。
+
+**原因**: client Cargo.toml 配 `backend-webrtc-sys`（C12 webrtc-sys 为主），但 `webrtc_transport.rs` 仍用 webrtc-rs 专属方法（`on_data_channel`/`from_webrtc`/`on_ice_candidate_native`，均 `#[cfg(backend-webrtc-rs)]`）→ 编译失败。历史遗留：client 代码是 webrtc-rs 时代写的，未随 C12 迁移，且 audemsp-webrtc 之前只对 webrtc-rs 暴露这些方法。
+
+**影响**: client 现可编译（5 crate 全通过）；通用 on_data_channel 补全了 W3C 接口面；webrtc-rs cfg 专属 on_data_channel 删除（被通用版取代）。client P2P 收帧走 webrtc-sys DataChannel（future: spool 需 webrtc-sys 实现，当前 stub）。
+
+**验证**: `cargo check -p audemsp-client` 通过（之前 E0433/E0599 失败）+ `cargo check -p audemsp-host -p audemsp-client -p audemsp-webrtc -p audemsp-common -p audemsp-media` 全通过。
