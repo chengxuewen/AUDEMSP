@@ -487,8 +487,8 @@ crates/
 ├── audemsp-common/         微内核 (PluginManager, LicenseManager, PipelineEngine, AuthProvider trait)
 ├── audemsp-host/         Host 应用 (headless, 采集+编码+推流+信令+配置, 单体架构 D155)
 ├── audemsp-client/       Remote 应用 (拉流+解码+渲染+控制)
-├── audemsp-server/       Server 应用 (信令 relay+监控+会话管理, mediasoup SFU)
-├── audemsp-webrtc/       WebRTC 封装 (W3C API, webrtc-sys 默认后端/libwebrtc, 多后端 feature gate; C12: 所有 client crate 仅经此层使用 WebRTC)
+├── audemsp-server/       Server 应用 (信令 relay+监控+会话管理, mediasoup SFU; C21: mediasoup 仅限本 crate 依赖树，host/client 禁止依赖)
+├── audemsp-webrtc/       WebRTC 封装 (W3C API, webrtc-sys 默认后端/libwebrtc, 多后端 feature gate; C12: 所有 client crate 仅经此层使用 WebRTC，禁止与 mediasoup 同链)
 ├── audemsp-media/        媒体管线 (PipelineEngine, BroadcastEngine, Transform 接口)
 └── audemsp-codec/        编解码 (stub + FFmpeg 静态链接 + GStreamer pixi)
   

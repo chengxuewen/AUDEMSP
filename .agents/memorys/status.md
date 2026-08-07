@@ -1,8 +1,8 @@
 # AUDEMSP Status
 
-**生成**: 2026-08-06 | 决策: 190+ (D1-D215, 含跳号) | Phase: 3 完成 | 222 commits | 22 skills | mediasoup 0.24.1 | PIT-70
+**生成**: 2026-08-06 | 决策: 190+ (D1-D215, 含跳号) | Phase: 3 完成 | 222 commits | 22 skills | mediasoup 0.24.1 | PIT-71
 
-**Agent 上下文治理 D213 完成** — instructions 瘦身（pitfalls.md 59KB 移出 instructions → 按需读取，18 文件 ~70KB）+ 六模型 premium/1024K + .agents 精简（删 zh/ 翻译副本 + book-to-skill 瘦身 956K→192K，非项目语言规则保留）。**W3C API 补全 D214 完成** — audemsp-webrtc 补全所有 W3C API（transceiver/parameters/capabilities/sender-receiver 对象方法 + 三后端），Host SFU produce 走标准协商（get_sending_rtp_parameters 推导替代手工 SDP/硬编码），C18 检查 src/ 无残留。**client P2P 迁移 D215 完成** — webrtc_transport 迁移到通用 W3C API（on_data_channel 三后端），修复 client feature 不匹配，5 crate 全编译通过。**待办**: admin dist 修复；e2e_sfu.rs 需在真实 mediasoup 环境更新标准协商（C13 原生编译受 flatbuffers wrapdb 网络限制）
+**Agent 上下文治理 D213 完成** — instructions 瘦身（pitfalls.md 59KB 移出 instructions → 按需读取，18 文件 ~70KB）+ 六模型 premium/1024K + .agents 精简（删 zh/ 翻译副本 + book-to-skill 瘦身 956K→192K，非项目语言规则保留）。**W3C API 补全 D214 完成** — audemsp-webrtc 补全所有 W3C API（transceiver/parameters/capabilities/sender-receiver 对象方法 + 三后端），Host SFU produce 走标准协商（get_sending_rtp_parameters 推导替代手工 SDP/硬编码），C18 检查 src/ 无残留。**client P2P 迁移 D215 完成** — webrtc_transport 迁移到通用 W3C API（on_data_channel 三后端），修复 client feature 不匹配，5 crate 全编译通过。**待办**: admin dist 修复；e2e_sfu.rs 纯外部模式改造（C21 架构回归：移除 host 对 audemsp-server 依赖，PIT-71 链接冲突）→ 见 .sisyphus/plans/mediasoup-e2e-docker（P0-P5）
 
 ## 测试
 

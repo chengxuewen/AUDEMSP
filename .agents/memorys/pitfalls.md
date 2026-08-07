@@ -777,3 +777,15 @@ close() { this.closed = true; ... }
 **验证**: `ls /home/maxsense/Documents/OMSPBase` → 不存在（符号链接已清）；`grep -rn "OMSPBase" .pixi/ scripts/` → 无规避残留。
 
 **禁止**: ① 创建符号链接/伪造目录让第三方硬编码路径"生效"；② 修改 cargo registry 缓存源码（hash 校验会被检测）；③ 未经用户同意做任何本地 patch 或 workaround（C20 约束）。
+
+## PIT-71: e2e_sfu.rs 进程内模式链接必挂 — webrtc-sys × mediasoup-sys OpenSSL 冲突 (2026-08-07)
+
+**症状**: `cargo test -p audemsp-host --features sfu-mediasoup --test e2e_sfu` 链接失败：`rust-lld: error: duplicate symbol: X509_PUBKEY_it`——webrtc-sys（libwebrtc 内嵌 OpenSSL）与 mediasoup-sys（静态 openssl-3.0.8）都定义该符号。cargo check 通过（只查类型），test 链接失败（真实链接）。
+
+**根因**: audemsp-host 的 e2e_sfu.rs 为"进程内 spawn SfuManager"引入了 audemsp-server 依赖（f7705f4, 966 行）——**违背 C12/C21 依赖方向**（mediasoup 仅限 server）。host 测试二进制同时链接 webrtc-sys + mediasoup-sys → 双 OpenSSL 静态链接符号冲突（架构性，无法绕过）。且该测试在 Linux 下从未编译通过过（CI 不覆盖此文件，macOS 因 `#![cfg(target_os="linux")]` 跳过整个文件——"编译通过"是假象，C14）。
+
+**解法**: ① e2e_sfu.rs 移除 audemsp_server import + 进程内分支 → **纯外部模式**（SFU_E2E_WS_URL 连 Docker server，通过 WS 信令断言，不 import server 类型）；② audemsp-host/Cargo.toml 移除 audemsp-server 依赖（sfu-mediasoup feature 删除）；③ mediasoup 状态断言改走 server API/WS 响应。C21 约束固化。
+
+**验证**: `cargo tree -p audemsp-host -i mediasoup-sys` 应为空；容器内 `cargo test -p audemsp-host --features sfu-mediasoup --test e2e_sfu`（外部模式）通过。
+
+**禁止**: ① host/client/SDK 任何代码（含测试）依赖含 mediasoup 的 crate；② 进程内 spawn mediasoup 的测试设计（测试便利不得凌驾架构边界）。

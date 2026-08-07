@@ -356,3 +356,13 @@ docs/reference/
 **检查**: `grep -rn "/home/maxsense\|OMSPBase" .pixi/ scripts/ Dockerfile* docker-compose*.yml 2>/dev/null` — 应无伪造目录/符号链接规避；发现第三方硬编码 → 列方案问用户，不擅自规避。
 
 **来源**: PIT-70 (2026-08-07 mediasoup 构建 ninja 路径规避被否决)
+
+## C21: mediasoup 仅限 audemsp-server 使用 — 禁止反向依赖 (2026-08-07)
+
+**约束**: ① **mediasoup（mediasoup-sys）只允许出现在 audemsp-server 的依赖树**——host/client/SDK 及其测试**禁止依赖 audemsp-server 或任何含 mediasoup 的 crate**（含 dev-dependencies / 测试专用 feature）。② 跨 crate 的 SFU 集成测试必须通过 **WS 信令协议**交互（Host 模拟端连外部 server），不得 import server 内部类型（SfuManager/SignalingServer）。③ 违背 C12 的历史遗留：`audemsp-host/tests/e2e_sfu.rs` 曾依赖 audemsp-server（进程内 spawn SfuManager）——导致 webrtc-sys（libwebrtc 内嵌 OpenSSL）与 mediasoup-sys（静态 openssl-3.0.8）**X509 符号冲突，链接必挂**，且测试从未在 Linux 编译通过（C14）。
+
+**原因**: ① 依赖方向单向（C12: server 用 mediasoup，host/client 用 audemsp-webrtc，两者不交叉）；② 双 OpenSSL 静态链接符号冲突（X509_PUBKEY_it duplicate symbol）——架构性，无法绕过；③ 测试便利不得凌驾架构边界（PIT-71 教训：进程内模式设计从诞生起未真正跑通）。
+
+**检查**: `cargo tree -p audemsp-host -i mediasoup-sys` 应为空（host 依赖树无 mediasoup）；`grep -rn "audemsp-server" crates/audemsp-host/Cargo.toml crates/audemsp-client/Cargo.toml` 应无引用。
+
+**来源**: 用户架构强调 (2026-08-07) + PIT-71 e2e_sfu.rs 链接冲突根因。
