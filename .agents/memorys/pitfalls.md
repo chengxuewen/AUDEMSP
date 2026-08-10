@@ -873,3 +873,15 @@ close() { this.closed = true; ... }
 **验证**: `docker inspect audemsp-server-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | grep ANNOUNCED` 应显示 192.168.2.127；浏览器 candidate 应为 192.168.2.127。
 
 **禁止**: 用 CLI 启动 server 后不检查容器 env；浏览器 candidate 出现 0.0.0.0 时先查 ANNOUNCED_IP 再查网络。
+
+## PIT-80: clean 删 target 后容器启动重建 root target — 权限污染复发 (2026-08-10)
+
+**症状**: `audemsp clean host` 删除 target 后，`up server` 或后续 cargo build 报 `Permission denied (os error 13)`——target 目录被重建且属主 root:root（空目录）。
+
+**根因**: 时序竞态——clean 的 shutil.rmtree 删除期间（5.5G 需数秒），docker compose up 的容器启动（cargo run）以 root 尝试创建挂载点/工作目录 → 宿主 target 被 root 重建。chown 修复后同样操作不再污染（属主保持 maxsense）。
+
+**解法**: ① 修复: `docker run --rm -v $PWD/target:/work ubuntu:22.04 chown -R 1000:1000 /work`（daemon root 权限，无需 sudo）；② 预防: clean 与 up 不要并发（顺序执行，rmtree 完成后再启动容器）；③ 构建前若 Permission denied，先查 `ls -ld target` 属主，root 则 chown。
+
+**验证**: chown 后 up server + cargo build 12m 全量成功，target 属主 maxsense，0 root 文件。
+
+**禁止**: 在 clean（rmtree 大目录）未完成时启动容器；Permission denied 时不查属主直接重试。
