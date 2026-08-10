@@ -1,0 +1,347 @@
+// OMO configuration
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/omo.schema.json",
+  "[opencode]": {
+    "sisyphus_agent": {
+      "disabled": false,
+      "default_builder_enabled": true,
+      "replace_plan": false
+    },
+    "team_mode": {
+      "enabled": true,
+      "tmux_visualization": false,
+      "max_parallel_members": 4
+    },
+    "teams": {
+      "dev": {
+        "description": "通用开发团队：实现 + 测试 + 审查",
+        "members": [
+          {
+            "role": "implementer",
+            "category": "deep"
+          },
+          {
+            "role": "test-writer",
+            "category": "deep"
+          },
+          {
+            "role": "reviewer",
+            "category": "unspecified-high"
+          }
+        ]
+      }
+    },
+    "agents": {
+      "oracle": {
+        "temperature": 0.2,
+        "models": [
+          "new-api/premium-max",
+          {
+            "model": "new-api/premium-max",
+            "reasoning": "high"
+          },
+          "new-api/premium-max-1",
+          "new-api/premium-max-2"
+        ],
+        "model": "new-api/premium-max",
+        "fallback_models": [
+          "new-api/premium-max-1",
+          "new-api/premium-max-2"
+        ],
+        "reasoningEffort": "high"
+      },
+      "sisyphus": {
+        "temperature": 0.2,
+        "models": [
+          "new-api/premium",
+          "new-api/premium",
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ],
+        "model": "new-api/premium",
+        "fallback_models": [
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ]
+      },
+      "hephaestus": {
+        "temperature": 0.2,
+        "models": [
+          "new-api/premium",
+          "new-api/premium",
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ],
+        "model": "new-api/premium",
+        "fallback_models": [
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ]
+      },
+      "prometheus": {
+        "prompt_append": "Leverage deep & quick agents heavily, always in parallel.",
+        "temperature": 0.2,
+        "models": [
+          "new-api/premium-max",
+          "new-api/premium-max",
+          "new-api/premium-max-1",
+          "new-api/premium-max-2"
+        ],
+        "model": "new-api/premium-max",
+        "fallback_models": [
+          "new-api/premium-max-1",
+          "new-api/premium-max-2"
+        ],
+        "reasoningEffort": "high"
+      },
+      "atlas": {
+        "temperature": 0.2,
+        "models": [
+          "new-api/premium",
+          "new-api/premium",
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ],
+        "model": "new-api/premium",
+        "fallback_models": [
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ]
+      },
+      "librarian": {
+        "temperature": 0,
+        "models": [
+          "new-api/fast",
+          "new-api/fast",
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ],
+        "model": "new-api/fast",
+        "fallback_models": [
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ]
+      },
+      "explore": {
+        "temperature": 0.1,
+        "models": [
+          "new-api/fast",
+          "new-api/fast",
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ],
+        "model": "new-api/fast",
+        "fallback_models": [
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ]
+      },
+      "metis": {
+        "temperature": 0.1,
+        "models": [
+          "new-api/premium",
+          "new-api/premium",
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ],
+        "model": "new-api/fast",
+        "fallback_models": [
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ]
+      },
+      "momus": {
+        "temperature": 0.3,
+        "models": [
+          "new-api/premium",
+          "new-api/premium",
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ],
+        "model": "new-api/premium",
+        "fallback_models": [
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ]
+      },
+      "sisyphus-junior": {
+        "temperature": 0,
+        "models": [
+          "new-api/fast",
+          "new-api/fast",
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ],
+        "model": "new-api/fast",
+        "fallback_models": [
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ]
+      },
+      "multimodal-looker": {
+        "temperature": 0.1,
+        "models": [
+          "new-api/vision",
+          "new-api/vision",
+          "new-api/vision-1",
+          "new-api/vision-2"
+        ],
+        "model": "new-api/vision",
+        "fallback_models": [
+          "new-api/vision-1",
+          "new-api/vision-2"
+        ]
+      }
+    },
+    "categories": {
+      "visual-engineering": {
+        "temperature": 0.4,
+        "model": "new-api/premium",
+        "models": [
+          "new-api/premium",
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ],
+        "fallback_models": [
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ]
+      },
+      "ultrabrain": {
+        "temperature": 0.2,
+        "model": "new-api/premium-max",
+        "models": [
+          {
+            "model": "new-api/premium-max",
+            "reasoning": "high"
+          },
+          "new-api/premium-max-1",
+          "new-api/premium-max-2"
+        ],
+        "fallback_models": [
+          "new-api/premium-max-1",
+          "new-api/premium-max-2"
+        ],
+        "reasoningEffort": "high"
+      },
+      "deep": {
+        "temperature": 0.2,
+        "model": "new-api/premium",
+        "models": [
+          "new-api/premium",
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ],
+        "fallback_models": [
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ]
+      },
+      "unspecified-high": {
+        "temperature": 0.1,
+        "model": "new-api/premium",
+        "models": [
+          {
+            "model": "new-api/premium",
+            "reasoning": "medium"
+          },
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ],
+        "fallback_models": [
+          "new-api/premium-1",
+          "new-api/premium-2"
+        ],
+        "reasoningEffort": "medium"
+      },
+      "artistry": {
+        "temperature": 0.6,
+        "model": "new-api/fast",
+        "models": [
+          "new-api/fast",
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ],
+        "fallback_models": [
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ]
+      },
+      "quick": {
+        "temperature": 0,
+        "model": "new-api/fast",
+        "models": [
+          "new-api/fast",
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ],
+        "maxTokens": 4096,
+        "fallback_models": [
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ]
+      },
+      "unspecified-low": {
+        "temperature": 0.2,
+        "model": "new-api/fast",
+        "models": [
+          "new-api/fast",
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ],
+        "fallback_models": [
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ]
+      },
+      "writing": {
+        "temperature": 0.3,
+        "model": "new-api/fast",
+        "models": [
+          "new-api/fast",
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ],
+        "fallback_models": [
+          "new-api/fast-1",
+          "new-api/fast-2"
+        ]
+      }
+    },
+    "background_task": {
+      "defaultConcurrency": 8,
+      "staleTimeoutMs": 600000
+    },
+    "runtime_fallback": {
+      "enabled": true,
+      "retry_on_errors": [
+        402,
+        429,
+        500,
+        502,
+        503,
+        504
+      ],
+      "max_fallback_attempts": 2,
+      "cooldown_seconds": 60,
+      "timeout_seconds": 60,
+      "notify_on_fallback": true
+    },
+    "experimental": {
+      "aggressive_truncation": false,
+      "task_system": true
+    },
+    "hashline_edit": true,
+    "disabled_hooks": [
+      "no-sisyphus-gpt",
+      "no-hephaestus-non-gpt"
+    ],
+    "codegraph": {
+      "enabled": false
+    }
+  },
+  "_migrations": [
+    "2026-08-reasoning-unification",
+    "2026-07-opencode-config-unification"
+  ]
+}

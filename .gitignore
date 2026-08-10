@@ -78,6 +78,7 @@ node_modules
 # Don't ignore files
 # --------
 !.vscode/settings.json
+!.omo/omo.jsonc
 
 # Agent dirs
 .venv-openspace
@@ -88,7 +89,7 @@ node_modules
 .pixi-pack
 .pixi-cache
 .sisyphus
-.omo
+.omo/*
 
 # Official reference source clones (git-ignored, script-managed)
 .refinfo
