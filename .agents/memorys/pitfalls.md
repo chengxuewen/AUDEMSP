@@ -861,3 +861,15 @@ close() { this.closed = true; ... }
 **验证**: 复制缓存后构建 2m51s 完成零下载；重试逻辑正常路径无副作用。
 
 **禁止**: 换 CARGO_TARGET_DIR 后不检查缓存直接重下（687MB 缓存可复制）；依赖单次下载成功（网络波动必现）。
+
+## PIT-79: CLI 启动 server 未注入 ANNOUNCED_IP — mediasoup 公告 0.0.0.0 拉流失败 (2026-08-10)
+
+**症状**: 用 audemsp restart/up 启动 server 后，浏览器拉流失败：ICE candidate `{"ip":"0.0.0.0","port":20000}`（不可路由），transport_connected 后 room_leave。
+
+**根因**: docker-compose.dev.yml `AUDEMSP_SFU_ANNOUNCED_IP: ${AUDEMSP_SFU_ANNOUNCED_IP:-}` 从 shell env 读取——CLI subprocess 未注入该变量（此前手动 export 才生效）→ 容器 env 空 → mediasoup announced address 默认 0.0.0.0。
+
+**解法**: CLI `_compose_env()` — 显式 env 优先，否则 `hostname -I` 自动探测宿主机第一 IP 注入；up/restart 的 docker compose 调用统一传 env。C22 关联：announced IP 必须宿主可达 IP（非容器网段）。
+
+**验证**: `docker inspect audemsp-server-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | grep ANNOUNCED` 应显示 192.168.2.127；浏览器 candidate 应为 192.168.2.127。
+
+**禁止**: 用 CLI 启动 server 后不检查容器 env；浏览器 candidate 出现 0.0.0.0 时先查 ANNOUNCED_IP 再查网络。
