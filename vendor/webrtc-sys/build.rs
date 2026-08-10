@@ -109,8 +109,27 @@ fn main() {
     let webrtc_include = webrtc_dir.join("include");
     let webrtc_lib = webrtc_dir.join("lib");
 
+    // AUDEMSP vendored (PIT-77+): 优先缓存（webrtc_dir.exists 命中即跳过下载），
+    // 下载失败自动重试（默认 3 次，退避 2s*attempt；LK_WEBRTC_RETRIES 可配）。
+    // 上游 webrtc-sys-build 无重试 — 大文件经代理下载 TLS 中断是间歇性网络问题。
     if !webrtc_dir.exists() {
-        webrtc_sys_build::download_webrtc().unwrap();
+        let max_attempts: u32 = std::env::var("LK_WEBRTC_RETRIES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3);
+        let mut attempt: u32 = 0;
+        loop {
+            attempt += 1;
+            match webrtc_sys_build::download_webrtc() {
+                Ok(()) => break,
+                Err(e) if attempt < max_attempts => {
+                    eprintln!("[webrtc-sys] libwebrtc 下载失败 (attempt {attempt}/{max_attempts}): {e}; {:.0}s 后重试...",
+                        2.0 * attempt as f64);
+                    std::thread::sleep(std::time::Duration::from_secs(2 * u64::from(attempt)));
+                }
+                Err(e) => panic!("libwebrtc 下载失败（已重试 {max_attempts} 次）: {e}"),
+            }
+        }
     }
 
     builder.includes(&[
