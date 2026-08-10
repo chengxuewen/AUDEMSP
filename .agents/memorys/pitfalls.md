@@ -837,3 +837,15 @@ close() { this.closed = true; ... }
 **验证**: 注入后 set_local_description 通过，关键帧间隔 99s→0.3s。
 
 **禁止**: 对含 `\r\n` 的字符串用 `lines()` + `join("\r\n")` 重组（CRLF 会翻倍）。
+
+## PIT-77: libwebrtc SetParameters 校验 codecs/transaction_id — 上层映射往返必炸 (2026-08-10)
+
+**症状**: 按计划在 audemsp-webrtc 上层实现 `sender_set_parameters`（RTCRtpParameters → cxx RtpParameters 正向转换）前，审查发现 libwebrtc `RtpSenderBase::SetParameters` 校验三个不变条件：`parameters.codecs != params_.codecs`、`encodings.size()` 变化、`transaction_id != params_.transaction_id` → 均 INVALID_MODIFICATION 报错。上层 `map_rtp_parameters` 映射丢弃 codec `name`/`kind`/`rtcp_feedback`，重建 codecs 必然与内部不一致 → 每次 set 失败。
+
+**根因**: W3C API 往返（get→modify→set）要求**保真**，但 cxx 结构体的扁平字段无法表达"未指定"；任何信息损失都会触发 libwebrtc 的不变校验。transaction_id 同理（必须原值往返）。
+
+**解法**: `request_key_frame()` 在 webrtc-sys 后端 **override 为 cxx 保真往返**——`sender.get_parameters()` 拿 cxx 原样 → 只改 `encodings[i].request_key_frame = true` → `set_parameters` 原样传回。codecs/encodings 数量/transaction_id 三个校验天然满足。上层 `sender_set_parameters` 保持 NotSupported（codecs 保真限制，若要实现需先扩展 RTCRtpCodecParameters 保真字段）。
+
+**验证**: 周期触发实测 mediasoup `key frame received` 间隔 99s→2.0s（连续 12 周期），e2e_sfu 4/4。
+
+**禁止**: 用上层映射往返调 libwebrtc `set_parameters`（codecs 必然不保真 → INVALID_MODIFICATION 静默失败）；改 transaction_id（libwebrtc 校验原值）。
