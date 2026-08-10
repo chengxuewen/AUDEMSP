@@ -47,6 +47,23 @@ AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一�
 
 当前处于 Phase 3 完成阶段。7 crate workspace，webrtc triple-backend，codec 三后端 (stub+FFmpeg+GStreamer)，400+ tests 全部通过，Docker/CI/DevContainer 就位。
 
+## 构建与开发
+
+统一 CLI 入口（bootstrap 后可用）：
+
+```bash
+./audemsp.sh -h            # 全部子命令（Windows: audemsp.bat）
+./audemsp.sh build         # 全量构建（host/client 原生 + server Docker）
+./audemsp.sh up            # 启动 server 容器
+./audemsp.sh e2e           # e2e_sfu 回归（前置: server + host + vite 运行中）
+./audemsp.sh status        # 环境诊断（pixi/cargo/docker/node）
+./audemsp.sh config validate   # 配置校验（pyyaml）
+./audemsp.sh clean         # 清构建产物（保留 cargo-cache 卷）; clean --all 全清
+```
+
+首次使用：`source bootstrap.sh`（Linux/macOS）或 `bootstrap.bat`（Windows）。
+Windows 为 best-effort（pixi.toml platforms 需含 win-64）。
+
 ## 许可
 
 Apache 2.0

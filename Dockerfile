@@ -50,6 +50,8 @@ COPY crates/audemsp-codec/Cargo.toml crates/audemsp-codec/
 COPY crates/audemsp-server/Cargo.toml crates/audemsp-server/
 COPY crates/audemsp-host/Cargo.toml crates/audemsp-host/
 COPY crates/audemsp-client/Cargo.toml crates/audemsp-client/
+# PIT-76: vendored [patch] 依赖需要 manifest（fetch 阶段）
+COPY vendor/webrtc-sys/Cargo.toml vendor/webrtc-sys/
 # dummy src 全建 — cargo fetch 要求依赖 crate 有 targets（缺 src 报 no targets specified）
 # 且 media crate 声明了 [[example]]（square-gen-egui/viewer/square-gen）→ 需 touch 对应文件
 RUN mkdir -p crates/audemsp-common/src && touch crates/audemsp-common/src/lib.rs && \
@@ -79,6 +81,8 @@ COPY crates/audemsp-codec/Cargo.toml crates/audemsp-codec/
 COPY crates/audemsp-server/Cargo.toml crates/audemsp-server/
 COPY crates/audemsp-host/Cargo.toml crates/audemsp-host/
 COPY crates/audemsp-client/Cargo.toml crates/audemsp-client/
+# PIT-76: vendored [patch] 依赖需要 manifest（fetch 阶段）
+COPY vendor/webrtc-sys/Cargo.toml vendor/webrtc-sys/
 
 # 2. Create dummy sources to build & cache dependencies (全部 member + media [[example]] 声明文件)
 RUN mkdir -p crates/audemsp-common/src && touch crates/audemsp-common/src/lib.rs && \

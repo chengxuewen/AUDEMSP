@@ -23,3 +23,4 @@ echo   AUDEMSP environment ready!
 echo ================================================
 echo.
 echo Next time, just run: pixi.bat
+echo CLI ready: audemsp.bat -h   (build/up/e2e/clean/config/status...)

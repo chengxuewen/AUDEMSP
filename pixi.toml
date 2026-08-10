@@ -10,6 +10,7 @@ rust = ">=1.85.0,<2"
 flatbuffers = ">=24.3.25,<26"
 python = "3.12.*"
 pip = ">=24.0,<26"
+pyyaml = ">=6.0,<7"  # build-cli: audemsp config validate (PIT-76 审核 BLOCKER-2)
 ripgrep = ">=14.1.0,<15"
 # GStreamer 1.24+ (gstreamer-rs 0.23 min=1.14, tested=1.24)
 gstreamer = ">=1.24.0,<2"
