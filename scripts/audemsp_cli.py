@@ -215,10 +215,9 @@ def main() -> None:
     sub.add_parser("up", help="启动 server 容器")
     sub.add_parser("down", help="停止容器（保留 cargo-cache 卷）")
     sub.add_parser("logs", help="跟踪 server 日志")
-    e2e_p = sub.add_parser(
+    sub.add_parser(
         "e2e", help="e2e_sfu 回归（前置: server 容器 + host + vite(5173) 运行中）"
     )
-    e2e_p.set_defaults(func=_cmd_e2e)
     sub.add_parser("test", help="workspace 测试（排除 audemsp-server）")
     sub.add_parser("ci", help="CI 全链: fmt → clippy → test → e2e")
     clean_p = sub.add_parser("clean", help="清构建产物（默认保留卷）")
@@ -231,7 +230,7 @@ def main() -> None:
     sub.add_parser("version", help="CLI 版本")
 
     args = parser.parse_args()
-    if args.command in ("build", "build-host", "build-server", "up", "down", "logs", "test", "ci"):
+    if args.command in ("build", "build-host", "build-server", "up", "down", "logs", "e2e", "test", "ci"):
         globals()[f"_cmd_{args.command}"]()
     elif args.command == "status":
         _cmd_status()
