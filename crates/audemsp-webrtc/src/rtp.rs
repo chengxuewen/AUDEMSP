@@ -99,6 +99,9 @@ pub struct RTCRtpEncodingParameters {
     pub codec: Option<String>,
     /// W3C: 音频断续传输 (discontinuous transmission) — v2 补
     pub dtx: Option<bool>,
+    /// W3C requestKeyFrame — 周期关键帧触发（PIT-76）。
+    /// libwebrtc 消费后内部清标志；每次 set_parameters 传 true 恰好触发一次。
+    pub request_key_frame: bool,
 }
 
 impl Default for RTCRtpEncodingParameters {
@@ -112,6 +115,7 @@ impl Default for RTCRtpEncodingParameters {
             rid: None,
             codec: None,
             dtx: None,
+            request_key_frame: false,
         }
     }
 }

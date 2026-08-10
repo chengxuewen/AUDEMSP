@@ -80,10 +80,24 @@ pub(crate) trait PcBackend: Send + Sync + 'static {
         Err(RTCError::NotSupported("receiver_get_parameters".into()))
     }
 
-    /// W3C RTCRtpSender.setParameters — v2 补
-    fn sender_set_parameters(&self, _track_id: &str, _params: &RTCRtpParameters) -> Result<(), RTCError> {
-        tracing::warn!("sender_set_parameters: not supported by backend");
-        Err(RTCError::NotSupported("sender_set_parameters".into()))
+/// W3C RTCRtpSender.setParameters — v2 补
+fn sender_set_parameters(&self, _track_id: &str, _params: &RTCRtpParameters) -> Result<(), RTCError> {
+tracing::warn!("sender_set_parameters: not supported by backend");
+Err(RTCError::NotSupported("sender_set_parameters".into()))
+    }
+
+    /// W3C RTCRtpSender.requestKeyFrame — 周期关键帧触发（PIT-76）。
+    ///
+    /// 默认实现: get → 全 encodings 设 request_key_frame=true → set（上层往返）。
+    /// webrtc-sys 后端 override 为 cxx 保真往返（libwebrtc SetParameters 校验
+    /// codecs/encodings 数量/transaction_id 与内部一致，上层映射有信息损失）。
+    /// libwebrtc 每次消费后内部清标志：每次调用传 true 恰好触发一次，无需复位。
+    fn request_key_frame(&self, track_id: &str) -> Result<(), RTCError> {
+        let mut params = self.sender_get_parameters(track_id)?;
+        for enc in &mut params.encodings {
+            enc.request_key_frame = true;
+        }
+        self.sender_set_parameters(track_id, &params)
     }
 
     /// W3C RTCRtpSender.replaceTrack — v2 补

@@ -130,8 +130,12 @@ impl crate::traits::PeerConnectionApi for RTCPeerConnection {
         self.backend.add_transceiver_with_track(track, &init)
     }
 
-    fn get_sending_rtp_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError> {
-        self.backend.sender_get_parameters(track_id)
+fn get_sending_rtp_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError> {
+self.backend.sender_get_parameters(track_id)
+    }
+
+    fn request_key_frame(&self, track_id: &str) -> Result<(), RTCError> {
+        self.backend.request_key_frame(track_id)
     }
 
     fn get_receiving_rtp_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError> {

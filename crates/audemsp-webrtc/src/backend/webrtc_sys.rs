@@ -99,6 +99,7 @@ fn map_rtp_parameters(p: webrtc_sys::rtp_parameters::ffi::RtpParameters) -> crat
         rid: if e.rid.is_empty() { None } else { Some(e.rid.clone()) },
         codec: None,
         dtx: None,
+        request_key_frame: e.request_key_frame,
     }).collect();
     let header_extensions = p.header_extensions.iter().map(|h| RTCRtpHeaderExtensionParameters {
         uri: h.uri.clone(),
@@ -505,14 +506,40 @@ impl PcBackend for WebrtcSysPc {
         ))
     }
 
-    fn sender_get_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError> {
-        // 遍历 transceivers，按 sender track_id 匹配
+fn sender_get_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError> {
+// 遍历 transceivers，按 sender track_id 匹配
+for tc in self.pc.get_transceivers() {
+let t = &tc.ptr;
+let sender = t.sender();
+let track = sender.track();
+if track.id() == track_id {
+return Ok(map_rtp_parameters(sender.get_parameters()));
+}
+}
+Err(RTCError::Track(format!("sender not found: {track_id}")))
+    }
+
+    /// PIT-76: 周期关键帧触发 — cxx 保真往返（override 默认实现）。
+    ///
+    /// 必须走 cxx 原样往返（不经 map_rtp_parameters 上层映射）：
+    /// libwebrtc RtpSenderBase::SetParameters 校验 codecs / encodings 数量 /
+    /// transaction_id 与内部存储一致，上层映射丢弃 codec name/kind/rtcp_feedback，
+    /// 重建必然 INVALID_MODIFICATION。get 原样 → 只改 request_key_frame → set，
+    /// 三个校验全部天然满足。libwebrtc 每次消费后内部清标志：每次调用传 true
+    /// 恰好触发一次 GenerateKeyFrame（Oracle 已确认，无需复位）。
+    fn request_key_frame(&self, track_id: &str) -> Result<(), RTCError> {
         for tc in self.pc.get_transceivers() {
             let t = &tc.ptr;
             let sender = t.sender();
             let track = sender.track();
             if track.id() == track_id {
-                return Ok(map_rtp_parameters(sender.get_parameters()));
+                let mut params = sender.get_parameters();
+                for enc in &mut params.encodings {
+                    enc.request_key_frame = true;
+                }
+                return sender
+                    .set_parameters(params)
+                    .map_err(|e| RTCError::Internal(e.what().to_owned()));
             }
         }
         Err(RTCError::Track(format!("sender not found: {track_id}")))
@@ -1195,7 +1222,7 @@ mod tests {
                 has_scale_resolution_down_by: false, scale_resolution_down_by: 1.0,
                 has_scalability_mode: false, scalability_mode: String::new(),
                 active: true, rid: String::new(), adaptive_ptime: false,
-                request_key_frame: false,
+                request_key_frame: true,  // PIT-76: 验证透传
             }],
             rtcp: RtcpParameters { has_ssrc: false, ssrc: 0, cname: String::new(), reduced_size: true, mux: true },
             has_degradation_preference: false,
@@ -1208,6 +1235,37 @@ mod tests {
         assert!(fmtp.contains("packetization-mode=1"), "fmtp: {fmtp}");
         assert!(fmtp.contains("profile-level-id=42e01f"), "fmtp: {fmtp}");
         assert_eq!(mapped.encodings[0].ssrc, Some(1949911776));
+        // PIT-76: request_key_frame 字段必须透传
+        assert_eq!(mapped.encodings[0].request_key_frame, true);
     }
 
+    #[test]
+    fn map_rtp_parameters_request_key_frame_false() {
+        // PIT-76: request_key_frame 默认 false 也必须透传（非默认值依赖）
+        use webrtc_sys::rtp_parameters::ffi::{RtpParameters, RtcpParameters, RtpEncodingParameters};
+        let params = RtpParameters {
+            transaction_id: "tx".into(),
+            mid: "0".into(),
+            codecs: vec![],
+            header_extensions: vec![],
+            encodings: vec![RtpEncodingParameters {
+                has_ssrc: false, ssrc: 0, bitrate_priority: 1.0,
+                network_priority: webrtc_sys::webrtc::ffi::Priority::Medium,
+                has_max_bitrate_bps: false, max_bitrate_bps: 0,
+                has_min_bitrate_bps: false, min_bitrate_bps: 0,
+                has_max_framerate: false, max_framerate: 0.0,
+                has_num_temporal_layers: false, num_temporal_layers: 0,
+                has_scale_resolution_down_by: false, scale_resolution_down_by: 1.0,
+                has_scalability_mode: false, scalability_mode: String::new(),
+                active: true, rid: String::new(), adaptive_ptime: false,
+                request_key_frame: false,
+            }],
+            rtcp: RtcpParameters { has_ssrc: false, ssrc: 0, cname: String::new(), reduced_size: true, mux: true },
+            has_degradation_preference: false,
+            degradation_preference: webrtc_sys::rtp_parameters::ffi::DegradationPreference::Balanced,
+        };
+        let mapped = map_rtp_parameters(params);
+        assert_eq!(mapped.encodings[0].request_key_frame, false);
+    }
 }
+

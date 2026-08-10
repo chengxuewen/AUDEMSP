@@ -104,7 +104,10 @@ pub trait PeerConnectionApi: Send + Sync + 'static {
     /// W3C addTransceiver(track, init) — track 版（P3 核心）
     fn add_transceiver_with_track(&self, track: &TrackSender, init: crate::rtp::RTCRtpTransceiverInit) -> Result<crate::rtp::RTCRtpTransceiver, RTCError>;
     /// W3C RTCRtpSender.getParameters 对应（经 track_id）
+    /// W3C RTCRtpSender.getParameters 对应（经 track_id）
     fn get_sending_rtp_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError>;
+    /// PIT-76: 请求关键帧（经 track_id，同步）— libwebrtc 每次调用触发一次
+    fn request_key_frame(&self, track_id: &str) -> Result<(), RTCError>;
     /// W3C RTCRtpReceiver.getParameters 对应（经 track_id）
     fn get_receiving_rtp_parameters(&self, track_id: &str) -> Result<crate::rtp::RTCRtpParameters, RTCError>;
     /// W3C 静态 getCapabilities
