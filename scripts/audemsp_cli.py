@@ -231,7 +231,7 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command in ("build", "build-host", "build-server", "up", "down", "logs", "e2e", "test", "ci"):
-        globals()[f"_cmd_{args.command}"]()
+        globals()[f"_cmd_{args.command.replace('-', '_')}"]()
     elif args.command == "status":
         _cmd_status()
     elif args.command == "version":
