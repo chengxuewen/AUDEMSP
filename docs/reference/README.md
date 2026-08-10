@@ -12,6 +12,7 @@
 | `webrtc/mediasoup-client.md` | 官方客户端架构参考（画像/用法/架构/案例） |
 | `webrtc/webrtc-w3c-alignment.md` | Host SFU 对齐 W3C API 重构分析（含团队审核修正） |
 | `webrtc/keyframe-black-screen-analysis.md` | PIT-65 关键帧黑屏根因分析 |
+| `webrtc/gop-control-internal-encoder.md` | **GOP 控制根因与修复路径** — libwebrtc 内部编码器关键帧机制 + 方案对比 + vendor 决策 |
 
 ### 🧰 Codec / 构建策略 — `codec/`
 | 文档 | 内容 |
@@ -43,6 +44,7 @@ webrtc/mediasoup-refs.md (源码导航)
    ├── webrtc/mediasoup-client.md (官方架构参考)
    ├── webrtc/webrtc-w3c-alignment.md (对齐重构分析)
    └── webrtc/keyframe-black-screen-analysis.md (PIT-65 根因)
+        ├── webrtc/gop-control-internal-encoder.md (GOP 机制 + 修复路径, 2026-08-10)
         └── .agents/memorys/ (C18 官方用法优先, PIT-46/54/56/65)
 ```
 
