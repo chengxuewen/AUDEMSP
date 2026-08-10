@@ -849,3 +849,15 @@ close() { this.closed = true; ... }
 **验证**: 周期触发实测 mediasoup `key frame received` 间隔 99s→2.0s（连续 12 周期），e2e_sfu 4/4。
 
 **禁止**: 用上层映射往返调 libwebrtc `set_parameters`（codecs 必然不保真 → INVALID_MODIFICATION 静默失败）；改 transaction_id（libwebrtc 校验原值）。
+
+## PIT-78: libwebrtc 大文件下载 TLS 中断 — 缓存复制 + 重试 (2026-08-10)
+
+**症状**: 换构建目录（CARGO_TARGET_DIR）后 `webrtc-sys` build.rs 报 `peer closed connection without sending TLS close_notify`（下载 https://github.com/livekit/rust-sdks/releases/download/webrtc-51ef663/...zip 失败），构建必挂。
+
+**根因**: ① 代理（http_proxy）对 ~150MB github releases 大文件下载间歇性 TLS 中断；② webrtc-sys-build 0.3.18 **无重试**（一次失败即 panic unwrap）；③ 下载缓存绑定 build script OUT_DIR（`target/debug/build/scratch-<hash>/out/livekit_webrtc/livekit/<triple>-webrtc-<tag>/`）——换 CARGO_TARGET_DIR 缓存不命中重新下载。
+
+**解法**: ① vendored build.rs 包装重试（默认 3 次、退避 2s*attempt、`LK_WEBRTC_RETRIES` 可配）；② 已有缓存的机器可复制：`cp -r <旧target>/debug/build/scratch-*/out/livekit_webrtc/livekit <新target>/debug/build/scratch-*/out/livekit_webrtc/`（注意可能有多个 scratch-<hash> 变体，逐个补）；③ 官方 env 备选：`LK_CUSTOM_WEBRTC=<本地已解压目录>` 直接指定。
+
+**验证**: 复制缓存后构建 2m51s 完成零下载；重试逻辑正常路径无副作用。
+
+**禁止**: 换 CARGO_TARGET_DIR 后不检查缓存直接重下（687MB 缓存可复制）；依赖单次下载成功（网络波动必现）。
