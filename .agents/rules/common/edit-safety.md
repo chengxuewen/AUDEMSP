@@ -128,3 +128,15 @@ After claiming tests are written or features are working:
 - **验证必须是全量对比，不能抽样**：恢复/删除 N 个目录后，逐个 `for d in ...; do echo "[$d] index=$(git ls-files $d/ | wc -l) worktree=$(ls $d/ 2>/dev/null | wc -l)"; done` 核对，index 与 worktree 计数必须全部相等。只 `ls` 部分目录 = 遗漏（PIT-68：恢复 10 个目录仅 7 个实际写回，3 个磁盘为空未被发现）。
 
 **来源**：PIT-68 (2026-08-06 .agents 精简恢复轮)
+
+### 8. edit 工具多行替换后必须验证行唯一性 (PIT-78a)
+
+**规则**: 对 .py/.rs 文件用 edit 做多行替换后，若替换内容含重复模式（相同行），必须 grep 验证唯一性：
+
+```bash
+grep -c "重复模式" <file>    # 期望 1；>1 = edit 重复插入
+```
+
+**先例**: 2026-08-10 会话内 edit 工具三次异常——① 替换丢失前几行（main.rs 配置路径缩进损坏但语法合法，编译通过但逻辑旧）；② 重复插入分派行（audemsp_cli.py 287/288 相同行 → restart/run-host 执行两轮容器重建）。**修复**: ① 改用 python 精确字符串替换（读文件→replace→写回）；② 删除重复行后 grep -c 验证。
+
+**阻塞条件**: 多行 edit 后未验证唯一性/行数即提交。
