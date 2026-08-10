@@ -53,7 +53,11 @@ async fn main() -> anyhow::Result<()> {
         let args: Vec<String> = std::env::args().collect();
         if args.len() > 2 && args[1] == "--config" {
             args[2].clone()
+        } else if std::path::Path::new("crates/audemsp-host/config/host.conf").exists() {
+            // dev 默认（仓库根 cwd）— 不带 --config 时优先项目内配置
+            "crates/audemsp-host/config/host.conf".to_string()
         } else {
+            // 部署默认
             "/opt/audemsp/etc/host.conf".to_string()
         }
     };
