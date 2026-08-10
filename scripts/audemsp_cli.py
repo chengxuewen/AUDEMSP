@@ -32,14 +32,14 @@ def _check(tool: str, hint: str) -> None:
         sys.exit(1)
 
 
-def _run(cmd: list[str]) -> int:
-    """执行命令（继承环境），失败透传退出码。"""
+def _run(cmd: list[str], env: dict[str, str] | None = None) -> int:
+    """执行命令（默认继承环境），失败透传退出码。"""
     print(f"$ {' '.join(cmd)}")
-    return subprocess.run(cmd).returncode
+    return subprocess.run(cmd, env=env).returncode
 
 
-def _run_or_exit(cmd: list[str]) -> None:
-    code = _run(cmd)
+def _run_or_exit(cmd: list[str], env: dict[str, str] | None = None) -> None:
+    code = _run(cmd, env=env)
     if code != 0:
         sys.exit(code)
 
@@ -59,18 +59,37 @@ def _cmd_build() -> None:
     _cmd_build_server()
 
 
+def _compose_env() -> dict[str, str]:
+    """docker compose 调用环境 — 确保 AUDEMSP_SFU_ANNOUNCED_IP 有值。
+    PIT-79: CLI 启动 server 时若未注入，mediasoup 公告 0.0.0.0 → 浏览器拉流失败。
+    显式 env 优先，否则自动探测宿主机第一非 loopback IP。"""
+    env = {**os.environ}
+    if not env.get("AUDEMSP_SFU_ANNOUNCED_IP"):
+        try:
+            out = subprocess.run(
+                ["hostname", "-I"], capture_output=True, text=True, timeout=5, check=False
+            )
+            ip = out.stdout.split()[0] if out.stdout.strip() else ""
+            if ip:
+                env["AUDEMSP_SFU_ANNOUNCED_IP"] = ip
+                print(f"AUDEMSP_SFU_ANNOUNCED_IP 自动探测: {ip}")
+        except OSError:
+            pass  # hostname 不可用时不注入，沿用 compose 默认
+    return env
+
+
 def _cmd_up() -> None:
     """启动 server 容器 — 幂等（运行中不动作，compose 惯例）。"""
     _check("docker", "安装 docker 并启动 daemon")
-    _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"])
+    _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"], env=_compose_env())
 
 
 def _cmd_restart() -> None:
     """重启 server — 清除已运行的再启动（显式中断语义，保留卷）。"""
     _check("docker", "安装 docker 并启动 daemon")
     print("重启 server: 停止旧容器...")
-    subprocess.run(COMPOSE_BASE + ["down"], check=False)  # 无容器时忽略错误
-    _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"])
+    subprocess.run(COMPOSE_BASE + ["down"], check=False, env=_compose_env())  # 无容器时忽略错误
+    _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"], env=_compose_env())
     print("✓ server 已重启")
 
 
