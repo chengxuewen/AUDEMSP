@@ -3,7 +3,7 @@
 > 计划: 2026-08-10 (v1) | **v2 修订: 2026-08-10（Momus + Oracle 双审核吸收）** | 触发: PIT-76 首帧延迟 68s（稳态 GOP 99s）
 > 分支: `feat/webrtc-request-key-frame`
 > 调研文档: `docs/reference/webrtc/gop-control-internal-encoder.md`（根因链 + 方案对比 + vendored 决策，commit `349e964`）
-> 状态: **T0-T2 完成，T3 关键指标达成（关键帧 99s→2.0s 实测 12 周期），T4 回归完成；浏览器首帧 <2s 待用户验证**
+> 状态: **✅ 全部完成（2026-08-10 用户浏览器实测）— 关键帧 99s→2.0s，首帧 68s→1.26s**
 >
 > **v2 修订要点（审核吸收）**:
 > - 🔴 **BLOCKER（Oracle）**: `SetParameters` 要求 `transaction_id` 与 `get_parameters()` 返回一致，否则每次 set 直接报错 → T1 必须实现 **get → modify → set 往返**（含 `sender_get_parameters`，当前后端 NotSupported）
