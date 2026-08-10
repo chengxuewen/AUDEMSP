@@ -88,15 +88,15 @@ def _compose_env() -> dict[str, str]:
     return env
 
 
-def _cmd_up(target: str) -> None:
-    """up <target> — server: compose 幂等启动; host: 启动推流进程（杀旧）。"""
+def _cmd_start(target: str) -> None:
+    """start <target> — server: compose 幂等启动; host: 启动推流进程（杀旧）。"""
     if target == "server":
         _check("docker", "安装 docker 并启动 daemon")
         _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"], env=_compose_env())
     elif target == "host":
         _cmd_run_host()
     else:  # client
-        print("up client: 待实现（client 骨架阶段）", file=sys.stderr)
+        print("start client: 待实现（client 骨架阶段）", file=sys.stderr)
         sys.exit(1)
 
 
@@ -155,12 +155,11 @@ def _cmd_run_host() -> None:
         print(f"✗ host 启动失败 (exit {proc.returncode}) — 日志: {log_path}", file=sys.stderr)
         sys.exit(1)
 
-def _cmd_down(target: str) -> None:
-    """down <target> — server: 停容器（保留卷）; host: 杀进程。"""
+def _cmd_stop(target: str) -> None:
+    """stop <target> — server: compose stop（保留容器，秒级再启）; host/client: 杀进程。"""
     if target == "server":
         _check("docker", "安装 docker 并启动 daemon")
-        # v2 (审核 BLOCKER-1): 默认不带 -v — cargo-cache 命名卷必须保留
-        _run_or_exit(COMPOSE_BASE + ["down"])
+        _run_or_exit(COMPOSE_BASE + ["stop", "server"])
     elif target == "host":
         subprocess.run(["pkill", "-x", "audemsp-host"], check=False)
         print("✓ host 已停止")
@@ -327,8 +326,8 @@ def main() -> None:
     build_p = sub.add_parser("build", help="构建 <target>: all|host|server|client（默认 all）")
     build_p.add_argument("target", nargs="?", choices=["all", "host", "server", "client"], default="all")
     for verb, help_txt in (
-        ("up", "启动 <target>: server(compose) | host(推流进程) | client"),
-        ("down", "停止 <target>: server(容器) | host/client(进程)"),
+        ("start", "启动 <target>: server(compose) | host(推流进程) | client"),
+        ("stop", "停止 <target>: server(compose stop 保留容器) | host/client(进程)"),
         ("restart", "重启 <target>: 清旧再启（保留卷）"),
         ("logs", "日志 <target>: server(compose) | host(/tmp/audemsp-host.log)"),
     ):
@@ -353,13 +352,15 @@ def main() -> None:
     ALIASES = {
         "build-host": ["build", "host"],
         "build-server": ["build", "server"],
-        "run-host": ["up", "host"],
+        "run-host": ["start", "host"],
+        "up": ["start"],
+        "down": ["stop"],
     }
     argv = sys.argv[1:]
     if argv and argv[0] in ALIASES:
         argv = ALIASES[argv[0]] + argv[1:]
     args = parser.parse_args(argv)
-    if args.command in ("build", "up", "down", "restart", "logs"):
+    if args.command in ("build", "start", "stop", "restart", "logs"):
         globals()[f"_cmd_{args.command}"](args.target)
     elif args.command in ("e2e", "test", "ci"):
         globals()[f"_cmd_{args.command}"]()

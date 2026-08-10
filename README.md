@@ -58,10 +58,11 @@ AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一�
 ./audemsp.sh build         # 构建 all（host/client 原生 + server Docker）
 ./audemsp.sh build host    # 仅宿主侧（别名: build-host）
 ./audemsp.sh build server  # 仅 server（别名: build-server）
-./audemsp.sh up server     # 启动 server 容器（幂等，自动注入 ANNOUNCED_IP）
-./audemsp.sh up host       # 启动 host 推流（杀旧进程；别名: run-host）
-./audemsp.sh restart server    # 重启 server（清旧再启）
-./audemsp.sh down host     # 停止 host 进程
+./audemsp.sh start server  # 启动 server 容器（幂等，自动注入 ANNOUNCED_IP）
+./audemsp.sh start host    # 启动 host 推流（杀旧进程；别名: run-host）
+./audemsp.sh stop server   # 停止 server（compose stop 保留容器，秒级再启）
+./audemsp.sh stop host     # 停止 host 进程
+./audemsp.sh restart server    # 重启 server（清旧再启，配置变更生效）
 ./audemsp.sh logs host     # host 日志（/tmp/audemsp-host.log）
 ./audemsp.sh e2e           # e2e_sfu 回归（前置: server + host + vite 运行中）
 ./audemsp.sh status        # 环境诊断（pixi/cargo/docker/node）
