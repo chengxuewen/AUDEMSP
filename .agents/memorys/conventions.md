@@ -365,3 +365,13 @@ docs/reference/
 **检查**: `cargo tree -p audemsp-host -i mediasoup-sys` 应为空（host 依赖树无 mediasoup）；`grep -rn "audemsp-server" crates/audemsp-host/Cargo.toml crates/audemsp-client/Cargo.toml` 应无引用。
 
 **来源**: 用户架构强调 (2026-08-07) + PIT-71 e2e_sfu.rs 链接冲突根因。
+
+## C22: Host 禁止在 Docker 中运行 — 含测试 (2026-08-10)
+
+**约束**: ① **audemsp-host（二进制、测试、E2E 流程）不允许在 Docker 容器内运行**——宿主原生编译/运行（macOS 或 Linux 宿主直接 `cargo build/run/test`）。② e2e_sfu 等 Host 侧测试在**宿主原生**执行，仅 server（mediasoup）在 Docker 容器内。③ Host 连 Docker server 时用宿主可达 IP（`AUDEMSP_SFU_ANNOUNCED_IP=宿主IP`），不得用容器内 IP（172.18.x）作为 announced address——容器内 host 经宿主 IP 有 hairpin NAT 问题（P1 实证：容器→宿主 IP:20000 的 STUN 不通）。
+
+**原因**: 用户显式要求（2026-08-10）——host 是边缘侧部署形态（车端/设备），开发/测试环境必须与部署一致；容器内跑 host 引入 NAT/网络抽象，掩盖真实网络行为（ICE/STUN/延迟），且 P1 已实证容器内 host 连宿主 IP 的 UDP 路径不通。
+
+**检查**: `grep -rn "docker exec.*audemsp-host\|docker.*cargo.*audemsp-host\|audemsp-host" scripts/*.sh .github/workflows/ci.yml` — host 相关命令应宿主原生；`AUDEMSP_SFU_ANNOUNCED_IP` 应为宿主可达 IP（非 172.18.x）。
+
+**来源**: 用户显式要求 (2026-08-10)
