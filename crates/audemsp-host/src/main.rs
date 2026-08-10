@@ -291,7 +291,10 @@ let app = axum::Router::new()
             96,
             "VP8",
             90000,
-            None,
+            // PIT-76: remote SDP (offer) 也注入 fmtp — libwebrtc 发送编码器配置
+            // 从 remote description 读取（x-google-max-keyframe-interval 是发送方参数）
+            // local answer 注入实测无效（livekit fork 裁剪 local 读取路径）
+            Some("x-google-max-keyframe-interval=500"),
         );
         let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
         pc.set_remote_description(&remote_desc).await
@@ -379,7 +382,7 @@ let app = axum::Router::new()
             let mut u = vec![128u8; uv_size];
             let mut v = vec![128u8; uv_size];
             let mut pattern = SquaresPattern::with_config(width, height, SquaresConfig {
-                count: 40, min_size: 20, max_size: 300, motion_speed: 50,
+                count: 40, min_size: 20, max_size: 300, motion_speed: 10,
                 color_strategy: ColorStrategy::default(),
             });
             let mut frame = vec![0u8; y_size + 2 * uv_size];

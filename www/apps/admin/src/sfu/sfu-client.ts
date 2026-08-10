@@ -80,13 +80,19 @@ export class SfuConsumerClient {
   private onTrack: StreamCallback;
   private onStatus: StatusCallback;
   private onMetrics: MetricsCallback;
-  private pendingSdp: any = null;
-  private metricsTimer: ReturnType<typeof setInterval> | null = null;
   private transportId: string | null = null;
   // PIT-65: 每连接唯一 SFU peer_id — 多网页同 peer_id 导致 SfuManager recv_transport 互相覆盖
   private sfuPeerId: string;
   private transportResolver: ((params: TransportCreated) => void) | null = null;
   private pendingProducer: any = null;
+  private pendingSdp: any = null;
+  private metricsTimer: ReturnType<typeof setInterval> | null = null;
+  // PIT-76: 首帧/渲染时间戳观测 — 从 startPlay 起计时，各节点打 [T+nms]
+  private t0 = 0;
+  private logT(msg: string): void {
+    const t = performance.now();
+    console.log(`[T+${Math.round(t - this.t0)}ms] ${msg}`);
+  }
 
 
   constructor(
@@ -167,13 +173,16 @@ export class SfuConsumerClient {
     if (!this.ws) throw new Error('Not connected');
 
     // Create RTCPeerConnection upfront (shared for SFU and P2P)
+    this.t0 = performance.now();
+    this.logT('startPlay: 创建 RTCPeerConnection');
     this.pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
     (window as any).__sfuPc = this.pc; // PIT-64 观测: 暴露 pc 供 getStats 查询
-    this.pc.ontrack = (event) => { console.log('SfuClient: ONTRACK fired, streams=', event.streams.length, 'track=', event.track?.kind); this.onTrack(event.streams[0]); this.onStatus('playing'); this.startMetrics(); };
+    this.pc.ontrack = (event) => { this.logT('ONTRACK fired (track=' + event.track?.kind + ')'); console.log('SfuClient: ONTRACK fired, streams=', event.streams.length, 'track=', event.track?.kind); this.onTrack(event.streams[0]); this.onStatus('playing'); this.startMetrics(); };
     this.pc.oniceconnectionstatechange = () => {
       console.log('SfuClient: iceConnectionState =', this.pc?.iceConnectionState); // PIT-56 观测
+      this.logT('iceConnectionState = ' + this.pc?.iceConnectionState);
       if (this.pc?.iceConnectionState === 'disconnected' || this.pc?.iceConnectionState === 'failed') {
         this.onStatus('disconnected'); this.stopMetrics();
       }
@@ -188,27 +197,27 @@ export class SfuConsumerClient {
     // Try SFU (mediasoup) with 3s timeout. Fall back to P2P if no response.
     // Set resolver BEFORE sending to avoid race condition
     const sfuPromise = new Promise<TransportCreated | null>(r => { this.transportResolver = r; });
-    console.log("SfuClient: sending create_web_rtc_transport"); this.ws.send(JSON.stringify({ type: "create_web_rtc_transport", room_id: this.roomId, peer_id: this.sfuPeerId, direction: 'recv' }));
+    this.logT('发送 create_web_rtc_transport'); console.log("SfuClient: sending create_web_rtc_transport"); this.ws.send(JSON.stringify({ type: "create_web_rtc_transport", room_id: this.roomId, peer_id: this.sfuPeerId, direction: 'recv' }));
     const sfuResult = await Promise.race([
       sfuPromise,
       new Promise<null>(r => setTimeout(() => r(null), 3000)),
     ]);
 
     if (sfuResult) {
-      console.log('SfuClient: SFU transport created, building SDP...');
+      this.logT('收到 web_rtc_transport_created'); console.log('SfuClient: SFU transport created, building SDP...');
       this.transportId = sfuResult.transport_id;
       // pending producer will be processed after connect_web_rtc_transport succeeds
-      console.log('SfuClient: setting remote description...');
+      this.logT('开始 setRemoteDescription'); console.log('SfuClient: setting remote description...');
       const offerSdp = this.buildRemoteSdp(sfuResult.ice_parameters, sfuResult.dtls_parameters, sfuResult.ice_candidates ?? []);
       try {
         console.log('SfuClient: offer SDP:\n' + offerSdp); // PIT-56 观测
         await this.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
-        console.log('SfuClient: remote description set OK');
+        this.logT('setRemoteDescription 完成'); console.log('SfuClient: remote description set OK');
         const answer = await this.pc.createAnswer();
-        console.log('SfuClient: answer created');
+        this.logT('createAnswer 完成'); console.log('SfuClient: answer created');
         console.log('SfuClient: answer SDP:\n' + answer.sdp); // PIT-56 观测
         await this.pc.setLocalDescription(answer);
-        console.log('SfuClient: local description set, sending connect_web_rtc_transport');
+        this.logT('setLocalDescription 完成, 发送 connect_web_rtc_transport'); console.log('SfuClient: local description set, sending connect_web_rtc_transport');
         // PIT-56: connect 的 fingerprints 必须是浏览器本地证书指纹 (从 answer SDP 提取),
         // 传 sfuResult 的 (mediasoup 指纹) → DTLS fingerprint mismatch → 无 SRTP → Consumer 不转发
         const localFp = (answer.sdp ?? '').match(/a=fingerprint:(\S+) (\S+)/);
@@ -253,11 +262,12 @@ export class SfuConsumerClient {
           this.pendingProducer = msg;
         }
       } else if (msg.type === 'consumed') {
+        this.logT('consumed (consumer 创建成功, 等待 RTP)');
         // ponytail: producer consumed, stream arrives via ontrack
       } else if (msg.type === 'error' && msg.code === 0) {
-        console.log('SfuClient: transport_connected (code: 0)');
+        this.logT('transport_connected'); console.log('SfuClient: transport_connected (code: 0)');
         if (this.pendingProducer && this.transportId) {
-          console.log('SfuClient: consuming pending producer', this.pendingProducer.producer_id);
+          this.logT('consuming pending producer ' + this.pendingProducer.producer_id); console.log('SfuClient: consuming pending producer', this.pendingProducer.producer_id);
           // PIT-55: rtp_capabilities 需完整 codec 字段, 见 videoRtpCapabilities()
           const rtpCaps = videoRtpCapabilities();
           this.ws?.send(JSON.stringify({

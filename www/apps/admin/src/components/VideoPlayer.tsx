@@ -29,18 +29,39 @@ export default function VideoPlayer({ roomId, serverUrl, token, onClose }: Props
   let controlsTimer: ReturnType<typeof setTimeout>;
 
   useEffect(() => {
+    // PIT-76: 首帧渲染时间观测
+    const t0 = performance.now();
+    const logT = (msg: string) => console.log(`[T+${Math.round(performance.now() - t0)}ms] [VideoPlayer] ${msg}`);
     const client = new SfuConsumerClient(serverUrl, roomId, token, {
       onTrack: (stream) => {
+        logT('onTrack 收到 stream');
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.play().catch(() => {});
+          // 首帧检测: loadedmetadata 触发时 videoWidth > 0
+          videoRef.current.onloadedmetadata = () => logT('video loadedmetadata (videoWidth=' + videoRef.current?.videoWidth + ')');
+          videoRef.current.onplaying = () => logT('video onplaying');
+          // 轮询 videoWidth 确认首帧实际渲染
+          const poll = setInterval(() => {
+            const v = videoRef.current;
+            if (v && v.videoWidth > 0) {
+              const now = performance.now();
+              const playT0 = (window as any).__playT0 as number | undefined;
+              const total = playT0 ? now - playT0 : null;
+              logT('首帧渲染确认 videoWidth=' + v.videoWidth + 'x' + v.videoHeight);
+              console.log(`[Play→首帧] 总耗时: ${total !== null ? Math.round(total) + 'ms' : 'N/A (无 __playT0)'} (点击Play→首帧渲染)`);
+              clearInterval(poll);
+            }
+          }, 100);
+          setTimeout(() => clearInterval(poll), 30000); // 30s 上限
         }
       },
-      onStatus: setStatus,
+      onStatus: (s) => { logT('status = ' + s); setStatus(s); },
       onMetrics: setMetrics,
     });
 
     clientRef.current = client;
+    logT('connect() 调用');
     client.connect().then(() => client.startPlay()).catch(() => setStatus('error'));
 
     return () => {

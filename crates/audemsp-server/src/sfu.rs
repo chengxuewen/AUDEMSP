@@ -422,6 +422,16 @@ mod imp {
                 }
             }
 
+            // PIT-76: consume 后立即请求关键帧 — 绕过 libwebrtc 99s GOP（x-google-
+            // max-keyframe-interval 注入对软件 VP8 编码器不生效，实测仍 99s）。
+            // mediasoup request_key_frame → producer 侧发送关键帧请求 → 编码器立即出 IDR
+            if protocol_kind == protocol::MediaKind::Video {
+                match consumer.request_key_frame().await {
+                    Ok(()) => tracing::info!("Consumer {consumer_id}: requested key frame (instant first-frame)"),
+                    Err(e) => tracing::warn!("Consumer {consumer_id}: request_key_frame failed: {e}"),
+                }
+            }
+
             peer.consumers.push(consumer);
 
             Ok(ConsumeResult {

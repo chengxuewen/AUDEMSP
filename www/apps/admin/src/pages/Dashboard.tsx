@@ -56,7 +56,7 @@ export default function Dashboard() {
       ) : (
         <div className="device-list">
           {devices.map((device) => (
-            <DeviceGroup key={device.device_id} device={device} expanded={expanded.has(device.device_id)} onToggle={() => toggle(device.device_id)} onSelectStream={(stream) => setSelectedStream({ deviceId: device.device_id, stream })} onPlayStream={() => setPlayingRoom(device.device_id)} />
+            <DeviceGroup key={device.device_id} device={device} expanded={expanded.has(device.device_id)} onToggle={() => toggle(device.device_id)} onSelectStream={(stream) => setSelectedStream({ deviceId: device.device_id, stream })} onPlayStream={() => { (window as any).__playT0 = performance.now(); console.log('[Play] 点击 Play (' + device.device_id + ') t0=' + Math.round((window as any).__playT0)); setPlayingRoom(device.device_id); }} />
           ))}
         </div>
       )}

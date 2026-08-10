@@ -771,6 +771,12 @@ use webrtc_sys::video_frame::ffi as vf;
             .clone()
             .ok_or_else(|| RTCError::Track("video source not initialized".into()))?;
 
+        // PIT-76 诊断: PLI 到达检测 — libwebrtc 收到 PLI 时置位共享 flag
+        // （VideoStreamEncoder → RtpVideoSender → EncoderRtcpFeedback 链路）
+        if source.take_keyframe_request() {
+            tracing::warn!("PLI/KeyFrameRequest 到达 VideoTrackSource (take_keyframe_request=true)");
+        }
+
         let w: i32 = width as i32;
         let h: i32 = height as i32;
         // I420 layout: Y plane (W×H) + U plane (W/2×H/2) + V plane (W/2×H/2)
