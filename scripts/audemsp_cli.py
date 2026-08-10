@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import time
 import subprocess
 import sys
 from pathlib import Path
@@ -59,9 +60,59 @@ def _cmd_build() -> None:
 
 
 def _cmd_up() -> None:
+    """启动 server 容器 — 幂等（运行中不动作，compose 惯例）。"""
     _check("docker", "安装 docker 并启动 daemon")
     _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"])
 
+
+def _cmd_restart() -> None:
+    """重启 server — 清除已运行的再启动（显式中断语义，保留卷）。"""
+    _check("docker", "安装 docker 并启动 daemon")
+    print("重启 server: 停止旧容器...")
+    subprocess.run(COMPOSE_BASE + ["down"], check=False)  # 无容器时忽略错误
+    _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"])
+    print("✓ server 已重启")
+
+
+def _cmd_run_host() -> None:
+    """启动 host 推流 — 先杀旧进程再启动（单实例端口 9801 独占，清旧是必要前置）。"""
+    if sys.platform == "win32":
+        print("run-host: Windows 暂不支持", file=sys.stderr)
+        sys.exit(1)
+    # 1) 找二进制（优先 CARGO_TARGET_DIR，回退项目 target）
+    cargo_target = os.environ.get("CARGO_TARGET_DIR")
+    candidates = []
+    if cargo_target:
+        candidates.append(Path(cargo_target) / "debug/audemsp-host")
+    candidates += [
+        ROOT / "target/debug/audemsp-host",
+        ROOT / "target/release/audemsp-host",
+    ]
+    bin_path = next((p for p in candidates if p.exists()), None)
+    if bin_path is None:
+        print("错误: 未找到 audemsp-host 二进制 — 先运行: audemsp build-host", file=sys.stderr)
+        sys.exit(1)
+    # 2) 杀旧进程（pkill -x 精确进程名，避免误杀）
+    subprocess.run(["pkill", "-x", "audemsp-host"], check=False)
+    time.sleep(1)
+    # 3) 后台启动（start_new_session 脱离终端，日志 /tmp/audemsp-host.log）
+    log_path = Path("/tmp/audemsp-host.log")
+    env = {**os.environ, "RUST_LOG": "info"}
+    proc = subprocess.Popen(
+        [str(bin_path)],
+        cwd=ROOT,
+        env=env,
+        stdout=open(log_path, "wb"),
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    time.sleep(3)
+    if proc.poll() is None:
+        print(f"✓ host 已启动 (PID {proc.pid}) — 配置: crates/audemsp-host/config/host.conf")
+        print(f"  日志: {log_path}")
+    else:
+        print(f"✗ host 启动失败 (exit {proc.returncode}) — 日志: {log_path}", file=sys.stderr)
+        sys.exit(1)
 
 def _cmd_down() -> None:
     _check("docker", "安装 docker 并启动 daemon")
@@ -212,7 +263,9 @@ def main() -> None:
     sub.add_parser("build", help="全量构建（build-host + build-server）")
     sub.add_parser("build-host", help="宿主原生构建 host/client（C22）")
     sub.add_parser("build-server", help="Docker 构建 server（mediasoup）")
-    sub.add_parser("up", help="启动 server 容器")
+    sub.add_parser("up", help="启动 server 容器（幂等）")
+    sub.add_parser("restart", help="重启 server（清旧再启，保留卷）")
+    sub.add_parser("run-host", help="启动 host 推流（先杀旧进程）")
     sub.add_parser("down", help="停止容器（保留 cargo-cache 卷）")
     sub.add_parser("logs", help="跟踪 server 日志")
     sub.add_parser(
@@ -230,7 +283,7 @@ def main() -> None:
     sub.add_parser("version", help="CLI 版本")
 
     args = parser.parse_args()
-    if args.command in ("build", "build-host", "build-server", "up", "down", "logs", "e2e", "test", "ci"):
+    if args.command in ("build", "build-host", "build-server", "up", "restart", "run-host", "down", "logs", "e2e", "test", "ci"):
         globals()[f"_cmd_{args.command.replace('-', '_')}"]()
     elif args.command == "status":
         _cmd_status()
