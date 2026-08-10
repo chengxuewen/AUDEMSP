@@ -53,13 +53,23 @@ AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一�
 
 ```bash
 ./audemsp.sh -h            # 全部子命令（Windows: audemsp.bat）
-./audemsp.sh build         # 全量构建（host/client 原生 + server Docker）
-./audemsp.sh up            # 启动 server 容器
+
+# 动词 × 目标矩阵（target: server | host | client | all）
+./audemsp.sh build         # 构建 all（host/client 原生 + server Docker）
+./audemsp.sh build host    # 仅宿主侧（别名: build-host）
+./audemsp.sh build server  # 仅 server（别名: build-server）
+./audemsp.sh up server     # 启动 server 容器（幂等，自动注入 ANNOUNCED_IP）
+./audemsp.sh up host       # 启动 host 推流（杀旧进程；别名: run-host）
+./audemsp.sh restart server    # 重启 server（清旧再启）
+./audemsp.sh down host     # 停止 host 进程
+./audemsp.sh logs host     # host 日志（/tmp/audemsp-host.log）
 ./audemsp.sh e2e           # e2e_sfu 回归（前置: server + host + vite 运行中）
 ./audemsp.sh status        # 环境诊断（pixi/cargo/docker/node）
 ./audemsp.sh config validate   # 配置校验（pyyaml）
 ./audemsp.sh clean         # 清构建产物（保留 cargo-cache 卷）; clean --all 全清
 ```
+
+> client 目标已注册（build 可用）；up/down/restart/logs client 待骨架完成后实现。
 
 首次使用：`source bootstrap.sh`（Linux/macOS）或 `bootstrap.bat`（Windows）。
 Windows 为 best-effort（pixi.toml platforms 需含 win-64）。

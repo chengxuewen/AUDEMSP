@@ -54,9 +54,19 @@ def _cmd_build_server() -> None:
     _run_or_exit(COMPOSE_BASE + ["build", "server"])
 
 
-def _cmd_build() -> None:
-    _cmd_build_host()
-    _cmd_build_server()
+def _cmd_build_client() -> None:
+    _check("cargo", "pixi 环境未激活? 先运行: source bootstrap.sh / pixi.bat")
+    _run_or_exit(["cargo", "build", "-p", "audemsp-client"])
+
+
+def _cmd_build(target: str) -> None:
+    """build <target> — all|host|server|client（默认 all）。"""
+    if target in ("all", "host"):
+        _cmd_build_host()
+    if target in ("all", "server"):
+        _cmd_build_server()
+    if target in ("all", "client"):
+        _cmd_build_client()
 
 
 def _compose_env() -> dict[str, str]:
@@ -78,19 +88,31 @@ def _compose_env() -> dict[str, str]:
     return env
 
 
-def _cmd_up() -> None:
-    """启动 server 容器 — 幂等（运行中不动作，compose 惯例）。"""
-    _check("docker", "安装 docker 并启动 daemon")
-    _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"], env=_compose_env())
+def _cmd_up(target: str) -> None:
+    """up <target> — server: compose 幂等启动; host: 启动推流进程（杀旧）。"""
+    if target == "server":
+        _check("docker", "安装 docker 并启动 daemon")
+        _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"], env=_compose_env())
+    elif target == "host":
+        _cmd_run_host()
+    else:  # client
+        print("up client: 待实现（client 骨架阶段）", file=sys.stderr)
+        sys.exit(1)
 
 
-def _cmd_restart() -> None:
-    """重启 server — 清除已运行的再启动（显式中断语义，保留卷）。"""
-    _check("docker", "安装 docker 并启动 daemon")
-    print("重启 server: 停止旧容器...")
-    subprocess.run(COMPOSE_BASE + ["down"], check=False, env=_compose_env())  # 无容器时忽略错误
-    _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"], env=_compose_env())
-    print("✓ server 已重启")
+def _cmd_restart(target: str) -> None:
+    """restart <target> — 清除已运行的再启动（显式中断语义）。"""
+    if target == "server":
+        _check("docker", "安装 docker 并启动 daemon")
+        print("重启 server: 停止旧容器...")
+        subprocess.run(COMPOSE_BASE + ["down"], check=False, env=_compose_env())  # 无容器时忽略错误
+        _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"], env=_compose_env())
+        print("✓ server 已重启")
+    elif target == "host":
+        _cmd_run_host()
+    else:  # client
+        print("restart client: 待实现（client 骨架阶段）", file=sys.stderr)
+        sys.exit(1)
 
 
 def _cmd_run_host() -> None:
@@ -133,15 +155,34 @@ def _cmd_run_host() -> None:
         print(f"✗ host 启动失败 (exit {proc.returncode}) — 日志: {log_path}", file=sys.stderr)
         sys.exit(1)
 
-def _cmd_down() -> None:
-    _check("docker", "安装 docker 并启动 daemon")
-    # v2 (审核 BLOCKER-1): 默认不带 -v — cargo-cache 命名卷必须保留
-    _run_or_exit(COMPOSE_BASE + ["down"])
+def _cmd_down(target: str) -> None:
+    """down <target> — server: 停容器（保留卷）; host: 杀进程。"""
+    if target == "server":
+        _check("docker", "安装 docker 并启动 daemon")
+        # v2 (审核 BLOCKER-1): 默认不带 -v — cargo-cache 命名卷必须保留
+        _run_or_exit(COMPOSE_BASE + ["down"])
+    elif target == "host":
+        subprocess.run(["pkill", "-x", "audemsp-host"], check=False)
+        print("✓ host 已停止")
+    else:  # client
+        subprocess.run(["pkill", "-x", "audemsp-client"], check=False)
+        print("✓ client 已停止")
 
 
-def _cmd_logs() -> None:
-    _check("docker", "安装 docker 并启动 daemon")
-    _run_or_exit(COMPOSE_BASE + ["logs", "-f", "server"])
+def _cmd_logs(target: str) -> None:
+    """logs <target> — server: compose 日志; host: /tmp/audemsp-host.log。"""
+    if target == "server":
+        _check("docker", "安装 docker 并启动 daemon")
+        _run_or_exit(COMPOSE_BASE + ["logs", "-f", "server"])
+    elif target == "host":
+        log_path = Path("/tmp/audemsp-host.log")
+        if not log_path.exists():
+            print(f"错误: 无 host 日志 {log_path} — 先运行: audemsp up host", file=sys.stderr)
+            sys.exit(1)
+        _run_or_exit(["tail", "-f", str(log_path)])
+    else:  # client
+        print("logs client: 待实现（client 骨架阶段）", file=sys.stderr)
+        sys.exit(1)
 
 
 def _cmd_e2e() -> None:
@@ -279,14 +320,16 @@ def main() -> None:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("build", help="全量构建（build-host + build-server）")
-    sub.add_parser("build-host", help="宿主原生构建 host/client（C22）")
-    sub.add_parser("build-server", help="Docker 构建 server（mediasoup）")
-    sub.add_parser("up", help="启动 server 容器（幂等）")
-    sub.add_parser("restart", help="重启 server（清旧再启，保留卷）")
-    sub.add_parser("run-host", help="启动 host 推流（先杀旧进程）")
-    sub.add_parser("down", help="停止容器（保留 cargo-cache 卷）")
-    sub.add_parser("logs", help="跟踪 server 日志")
+    build_p = sub.add_parser("build", help="构建 <target>: all|host|server|client（默认 all）")
+    build_p.add_argument("target", nargs="?", choices=["all", "host", "server", "client"], default="all")
+    for verb, help_txt in (
+        ("up", "启动 <target>: server(compose) | host(推流进程) | client"),
+        ("down", "停止 <target>: server(容器) | host/client(进程)"),
+        ("restart", "重启 <target>: 清旧再启（保留卷）"),
+        ("logs", "日志 <target>: server(compose) | host(/tmp/audemsp-host.log)"),
+    ):
+        vp = sub.add_parser(verb, help=help_txt)
+        vp.add_argument("target", choices=["server", "host", "client"])
     sub.add_parser(
         "e2e", help="e2e_sfu 回归（前置: server 容器 + host + vite(5173) 运行中）"
     )
@@ -301,9 +344,20 @@ def main() -> None:
     sub.add_parser("status", help="环境诊断（pixi/cargo/docker/node）")
     sub.add_parser("version", help="CLI 版本")
 
-    args = parser.parse_args()
-    if args.command in ("build", "build-host", "build-server", "up", "restart", "run-host", "down", "logs", "e2e", "test", "ci"):
-        globals()[f"_cmd_{args.command.replace('-', '_')}"]()
+    # 兼容别名: build-host → build host, build-server → build server, run-host → up host
+    ALIASES = {
+        "build-host": ["build", "host"],
+        "build-server": ["build", "server"],
+        "run-host": ["up", "host"],
+    }
+    argv = sys.argv[1:]
+    if argv and argv[0] in ALIASES:
+        argv = ALIASES[argv[0]] + argv[1:]
+    args = parser.parse_args(argv)
+    if args.command in ("build", "up", "down", "restart", "logs"):
+        globals()[f"_cmd_{args.command}"](args.target)
+    elif args.command in ("e2e", "test", "ci"):
+        globals()[f"_cmd_{args.command}"]()
     elif args.command == "status":
         _cmd_status()
     elif args.command == "version":
