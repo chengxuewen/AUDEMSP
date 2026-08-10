@@ -239,22 +239,26 @@ def _rm_tree(path: Path) -> None:
 
 
 def _cmd_clean(args: argparse.Namespace) -> None:
-    _check("docker", "安装 docker 并启动 daemon")
-    # 1) 停止容器 — 默认保留命名卷（审核 BLOCKER-1）
-    down = COMPOSE_BASE + ["down"]
-    if args.all:
-        down.append("-v")  # --all 显式删卷（cargo-cache）→ 下次 build-server 15-30 分钟重建
-        print("警告: clean --all 将删除 cargo-cache 命名卷（下次 server 构建全量重编 15-30 分钟）")
-    _run_or_exit(down)
-    # 2) 项目根 target（workspace 默认）
-    _rm_tree(ROOT / "target")
-    # 3) CARGO_TARGET_DIR 分支（审核: 用户设置时项目根清理会漏）
-    cargo_target = os.environ.get("CARGO_TARGET_DIR")
-    if cargo_target:
-        print(f"注意: CARGO_TARGET_DIR={cargo_target}（可能被多项目共享）")
-        _rm_tree(Path(cargo_target))
-    # 4) --all 额外清 docker builder 缓存；不碰 .pixi-cache（包缓存）
-    if args.all:
+    """clean <target> — all|server|host|client（默认 all）。
+    server: 停容器(+--all 删卷+builder prune); host/client: 清宿主 cargo target。"""
+    target = args.target
+    if target in ("all", "server"):
+        _check("docker", "安装 docker 并启动 daemon")
+        down = COMPOSE_BASE + ["down"]
+        if args.all:
+            down.append("-v")  # --all 显式删卷（cargo-cache）→ 下次 build-server 15-30 分钟重建
+            print("警告: clean --all 将删除 cargo-cache 命名卷（下次 server 构建全量重编 15-30 分钟）")
+        _run_or_exit(down)
+    if target in ("all", "host", "client"):
+        # 项目根 target（workspace 默认，host/client 共享）
+        _rm_tree(ROOT / "target")
+        # CARGO_TARGET_DIR 分支（审核: 用户设置时项目根清理会漏）
+        cargo_target = os.environ.get("CARGO_TARGET_DIR")
+        if cargo_target:
+            print(f"注意: CARGO_TARGET_DIR={cargo_target}（可能被多项目共享）")
+            _rm_tree(Path(cargo_target))
+    # --all 额外清 docker builder 缓存；不碰 .pixi-cache（包缓存）
+    if args.all and target in ("all", "server"):
         _run_or_exit(["docker", "builder", "prune", "-f"])
 
 
@@ -335,7 +339,8 @@ def main() -> None:
     )
     sub.add_parser("test", help="workspace 测试（排除 audemsp-server）")
     sub.add_parser("ci", help="CI 全链: fmt → clippy → test → e2e")
-    clean_p = sub.add_parser("clean", help="清构建产物（默认保留卷）")
+    clean_p = sub.add_parser("clean", help="清理 <target>: all|server|host|client（默认 all）")
+    clean_p.add_argument("target", nargs="?", choices=["all", "server", "host", "client"], default="all")
     clean_p.add_argument("--all", action="store_true", help="显式删卷 + docker builder prune（15-30 分钟重建代价）")
     clean_p.set_defaults(func=_cmd_clean)
     config_p = sub.add_parser("config", help="配置 show/validate")
