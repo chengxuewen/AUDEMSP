@@ -1195,6 +1195,7 @@ mod tests {
                 has_scale_resolution_down_by: false, scale_resolution_down_by: 1.0,
                 has_scalability_mode: false, scalability_mode: String::new(),
                 active: true, rid: String::new(), adaptive_ptime: false,
+                request_key_frame: false,
             }],
             rtcp: RtcpParameters { has_ssrc: false, ssrc: 0, cname: String::new(), reduced_size: true, mux: true },
             has_degradation_preference: false,
