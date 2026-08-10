@@ -88,13 +88,18 @@ def _compose_env() -> dict[str, str]:
     return env
 
 
-def _cmd_start(target: str) -> None:
-    """start <target> — server: compose 幂等启动; host: 启动推流进程（杀旧）。"""
+def _cmd_start(target: str, foreground: bool = False) -> None:
+    """start <target> [--foreground] — server: compose 幂等启动; host: 启动推流进程。
+    --foreground/-f: 阻塞前台运行，输出实时透传（开发调试）。"""
     if target == "server":
         _check("docker", "安装 docker 并启动 daemon")
-        _run_or_exit(COMPOSE_BASE + ["up", "-d", "server"], env=_compose_env())
+        cmd = COMPOSE_BASE + (["up"] if foreground else ["up", "-d", "server"])
+        _run_or_exit(cmd, env=_compose_env())
     elif target == "host":
-        _cmd_run_host()
+        if foreground:
+            _run_host_foreground(_find_host_binary())
+        else:
+            _cmd_run_host()
     else:  # client
         print("start client: 待实现（client 骨架阶段）", file=sys.stderr)
         sys.exit(1)
@@ -115,12 +120,8 @@ def _cmd_restart(target: str) -> None:
         sys.exit(1)
 
 
-def _cmd_run_host() -> None:
-    """启动 host 推流 — 先杀旧进程再启动（单实例端口 9801 独占，清旧是必要前置）。"""
-    if sys.platform == "win32":
-        print("run-host: Windows 暂不支持", file=sys.stderr)
-        sys.exit(1)
-    # 1) 找二进制（优先 CARGO_TARGET_DIR，回退项目 target）
+def _find_host_binary() -> Path:
+    """找 host 二进制（优先 CARGO_TARGET_DIR，回退项目 target）。"""
     cargo_target = os.environ.get("CARGO_TARGET_DIR")
     candidates = []
     if cargo_target:
@@ -130,6 +131,37 @@ def _cmd_run_host() -> None:
         ROOT / "target/release/audemsp-host",
     ]
     bin_path = next((p for p in candidates if p.exists()), None)
+    if bin_path is None:
+        print("错误: 未找到 audemsp-host 二进制 — 先运行: audemsp build host", file=sys.stderr)
+        sys.exit(1)
+    return bin_path
+
+
+def _run_host_foreground(bin_path: Path) -> None:
+    """前台阻塞运行 host — 输出实时透传终端，Ctrl+C 同步退出（开发调试用）。
+    host 单实例端口 9801 独占：启动前必须清旧（与后台路径一致）。"""
+    subprocess.run(["pkill", "-x", "audemsp-host"], check=False)
+    time.sleep(1)
+    env = {**os.environ, "RUST_LOG": "info"}
+    proc = subprocess.Popen([str(bin_path)], cwd=ROOT, env=env)
+    try:
+        proc.wait()
+    except KeyboardInterrupt:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        sys.exit(130)
+    sys.exit(proc.returncode)
+
+
+def _cmd_run_host() -> None:
+    """启动 host 推流 — 先杀旧进程再启动（单实例端口 9801 独占，清旧是必要前置）。"""
+    if sys.platform == "win32":
+        print("run-host: Windows 暂不支持", file=sys.stderr)
+        sys.exit(1)
+    bin_path = _find_host_binary()
     if bin_path is None:
         print("错误: 未找到 audemsp-host 二进制 — 先运行: audemsp build-host", file=sys.stderr)
         sys.exit(1)
@@ -326,13 +358,15 @@ def main() -> None:
     build_p = sub.add_parser("build", help="构建 <target>: all|host|server|client（默认 all）")
     build_p.add_argument("target", nargs="?", choices=["all", "host", "server", "client"], default="all")
     for verb, help_txt in (
-        ("start", "启动 <target>: server(compose) | host(推流进程) | client"),
         ("stop", "停止 <target>: server(compose stop 保留容器) | host/client(进程)"),
         ("restart", "重启 <target>: 清旧再启（保留卷）"),
         ("logs", "日志 <target>: server(compose) | host(/tmp/audemsp-host.log)"),
     ):
         vp = sub.add_parser(verb, help=help_txt)
         vp.add_argument("target", choices=["server", "host", "client"])
+    start_p = sub.add_parser("start", help="启动 <target> [--foreground]: server(compose) | host(推流进程) | client")
+    start_p.add_argument("target", choices=["server", "host", "client"])
+    start_p.add_argument("--foreground", "-f", action="store_true", help="阻塞前台运行，输出实时透传（开发调试）")
     sub.add_parser(
         "e2e", help="e2e_sfu 回归（前置: server 容器 + host + vite(5173) 运行中）"
     )
@@ -360,7 +394,9 @@ def main() -> None:
     if argv and argv[0] in ALIASES:
         argv = ALIASES[argv[0]] + argv[1:]
     args = parser.parse_args(argv)
-    if args.command in ("build", "start", "stop", "restart", "logs"):
+    if args.command == "start":
+        _cmd_start(args.target, args.foreground)
+    elif args.command in ("build", "stop", "restart", "logs"):
         globals()[f"_cmd_{args.command}"](args.target)
     elif args.command in ("e2e", "test", "ci"):
         globals()[f"_cmd_{args.command}"]()
