@@ -291,10 +291,9 @@ let app = axum::Router::new()
             96,
             "VP8",
             90000,
-            // PIT-76: remote SDP (offer) 也注入 fmtp — libwebrtc 发送编码器配置
-            // 从 remote description 读取（x-google-max-keyframe-interval 是发送方参数）
-            // local answer 注入实测无效（livekit fork 裁剪 local 读取路径）
-            Some("x-google-max-keyframe-interval=500"),
+            // PIT-76 v2: x-google-max-keyframe-interval 注入已移除（实测无效，
+            // 且与 request_key_frame 周期触发冲突）— GOP 由周期触发控制
+            None,
         );
         let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
         pc.set_remote_description(&remote_desc).await
@@ -312,11 +311,9 @@ let app = axum::Router::new()
         };
         tracing::info!("SFU: video track added (id={})", track_id);
 
-        // ③ answer + set local — PIT-65: local answer 注入 x-google-max-keyframe-interval
-        // (libwebrtc 从 local answer 读 GOP 配置; remote 注入无效, 稳态 GOP 99s)
-        let mut answer = pc.create_answer(&RTCAnswerOptions::default()).await
+        // ③ answer + set local — PIT-76 v2: x-google 注入已移除（见 build_remote_sdp）
+        let answer = pc.create_answer(&RTCAnswerOptions::default()).await
             .map_err(|e| anyhow::anyhow!("create answer: {}", e))?;
-        answer.sdp = sfu_media::inject_keyframe_interval(&answer.sdp, 96, 2000);
         tracing::debug!("SFU local answer SDP:\n{}", answer.sdp);
         pc.set_local_description(&answer).await
             .map_err(|e| anyhow::anyhow!("set local: {}", e))?;
@@ -403,7 +400,24 @@ let app = axum::Router::new()
                 }
             }
         });
-        tracing::info!("SFU produce transport {} ready — Squares b=AS fix", transport_id);
+
+        // PIT-76: 周期关键帧触发 — GOP ≤ keyframe_interval 秒（默认 2s）。
+        // interval 首 tick 立即 = 协商完成即触发一次（快速首帧）; libwebrtc 每次
+        // 消费后清标志, 每次调用恰好一次 GenerateKeyFrame, 无需复位。
+        // 独立 task 与帧循环解耦; 同步 cxx 调用（worker Invoke, 毫秒级）不影响帧节奏。
+        let pc_kf = pc.clone();
+        let track_kf = track_id.clone();
+        let kf_interval_secs = config.encoder.keyframe_interval.max(1) as u64;
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(kf_interval_secs));
+            loop {
+                interval.tick().await;
+                if let Err(e) = pc_kf.request_key_frame(&track_kf) {
+                    tracing::warn!("SFU: request_key_frame: {}", e);
+                }
+            }
+        });
+tracing::info!("SFU produce transport {} ready — Squares b=AS fix", transport_id);
     } else {
 
     // P2P transport path — gated behind webrtc-p2p feature
@@ -596,7 +610,7 @@ capture:
 encoder:
   backend: "auto"
   bitrate_kbps: 2000
-  keyframe_interval: 60
+  keyframe_interval: 2
 room:
   id: "default-room"
 psk: "audemsp-dev"

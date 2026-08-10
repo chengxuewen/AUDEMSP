@@ -161,7 +161,8 @@ pub struct EncoderConfig {
     #[serde(default = "default_bitrate")]
     pub bitrate_kbps: u32,
 
-    /// Keyframe interval (GOP size in frames).
+    /// Keyframe interval in **seconds**（PIT-76: 周期 request_key_frame 触发，
+    /// 语义从 GOP 帧数改为秒；0 视为 1 防御）。
     #[serde(default = "default_gop")]
     pub keyframe_interval: u32,
 }
@@ -214,7 +215,8 @@ fn default_bitrate() -> u32 {
     2000
 }
 fn default_gop() -> u32 {
-    60
+// PIT-76: 语义从帧改为秒（周期关键帧触发间隔）
+2
 }
 fn default_room_capacity() -> usize {
     10
@@ -257,7 +259,7 @@ capture:
 encoder:
   backend: "nvenc"
   bitrate_kbps: 4000
-  keyframe_interval: 120
+  keyframe_interval: 2
 psk: "secret123"
 webrtc:
   ice_timeout_secs: 45
@@ -272,7 +274,7 @@ webrtc:
         assert_eq!(parsed.capture.device.as_deref(), Some("/dev/video0"));
         assert_eq!(parsed.encoder.backend, "nvenc");
         assert_eq!(parsed.encoder.bitrate_kbps, 4000);
-        assert_eq!(parsed.encoder.keyframe_interval, 120);
+        assert_eq!(parsed.encoder.keyframe_interval, 2);  // PIT-76: 秒
         assert_eq!(parsed.psk.as_deref(), Some("secret123"));
         assert_eq!(parsed.webrtc.as_ref().unwrap().ice_timeout_secs, 45);
 
@@ -389,7 +391,7 @@ backend: "software"
         let parsed: EncoderConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(parsed.backend, "software");
         assert_eq!(parsed.bitrate_kbps, 2000);
-        assert_eq!(parsed.keyframe_interval, 60);
+        assert_eq!(parsed.keyframe_interval, 2);  // PIT-76: 秒
     }
 
     #[test]

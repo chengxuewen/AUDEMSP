@@ -37,7 +37,7 @@ capture:
 encoder:
   backend: "auto"
   bitrate_kbps: 2000
-  keyframe_interval: 60
+  keyframe_interval: 2
 psk: "audemsp-dev"
 "#;
         let config: HostConfig = serde_yaml::from_str(yaml).unwrap();

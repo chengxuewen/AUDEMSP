@@ -81,40 +81,12 @@ pub fn build_remote_sdp(
     }
     lines.push("a=end-of-candidates".to_string());
 
-    lines.push(String::new());
+lines.push(String::new());
     lines.join("\r\n")
 }
 
-/// PIT-65: 在 local answer 的 video m= 段注入 `x-google-max-keyframe-interval` fmtp。
-/// libwebrtc 从 **local** answer 读该参数配置编码器 GOP（加在 remote SDP 无效——
-/// 2026-08-05 实证稳态 GOP 仍 ~99s）。
-/// 只处理 payload_type 匹配的 m=video 段；无匹配则原样返回。
-pub fn inject_keyframe_interval(sdp: &str, payload_type: u16, interval_ms: u32) -> String {
-    let mut out = Vec::new();
-    let mut in_video_mline = false;
-    let mut injected = false;
-    // split('\n') 保留原行（含行尾 \r），join('\n') 保持 SDP 结构不变 —
-    // 用 lines()+join("\r\n") 会把 \r\n 变成 \r\r\n 破坏 SDP (实测)
-    for line in sdp.split('\n') {
-        let trimmed = line.strip_suffix('\r').unwrap_or(line);
-        if trimmed.starts_with("m=video") {
-            in_video_mline = true;
-        } else if trimmed.starts_with("m=") && !trimmed.starts_with("m=video") {
-            in_video_mline = false;
-        }
-        out.push(line.to_string());
-        if in_video_mline && !injected
-            && trimmed == format!("a=rtpmap:{} VP8/90000", payload_type)
-        {
-            out.push(format!(
-                "a=fmtp:{} x-google-max-keyframe-interval={}",
-                payload_type, interval_ms
-            ));
-            injected = true;
-        }
-    }
-    out.join("\n")
-}
+/// P3 (v2): 从协商结果 (RTCRtpParameters) 构造 mediasoup produce 的 rtp_parameters。
+/// 对齐官方客户端 — 数据来自 transceiver.sender.get_parameters()，非手工硬编码。
 /// P3 (v2): 从协商结果 (RTCRtpParameters) 构造 mediasoup produce 的 rtp_parameters。
 /// 对齐官方客户端 — 数据来自 transceiver.sender.get_parameters()，非手工硬编码。
 pub fn build_produce_rtp_parameters_from_rtp(params: &RTCRtpParameters) -> Value {
