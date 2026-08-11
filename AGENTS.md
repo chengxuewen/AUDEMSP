@@ -101,7 +101,7 @@ _项目已进入代码实施阶段。以下为当前状态：_
 │ audemsp-media | ✅ 已实现 | 媒体管线: pipeline, broadcast, engine, transform (54 tests)
 │ audemsp-webrtc | ✅ triple-backend | WebRTC 抽象层 (stub/webrtc-rs/webrtc-sys), 118+ tests, webrtc-rs 视频管线完整对齐
 │ audemsp-codec | ✅ 三后端 | 编解码: stub + FFmpeg (static) + GStreamer (dynamic, pixi)
-| Phase 2+ crates | 🔲 计划中 | 详见 `.sisyphus/plans/phase3-production/` 和 `docs/architecture.md`
+| Phase 2+ crates | 🔲 计划中 | 详见 `docs/architecture.md`
 
 ## CONVENTIONS
 

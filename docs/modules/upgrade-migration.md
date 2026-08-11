@@ -195,4 +195,4 @@ Phase 切换策略：flag 默认关闭 2 个 release → beta 默认开启 → s
 ### 自动回滚 (Phase 2)
 - 新二进制启动后 60s 内健康检查失败 → systemd 回滚到旧版本。
 
-> 详见 `.sisyphus/plans/phase3-production/plan.md` Phase 3
+> 已实施完成（Phase 3）

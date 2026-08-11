@@ -117,4 +117,4 @@ ConfigInvalid(_) → 400
 
 ### 背压传播
 - Sink → Processor → Source，通过 bounded channel capacity 实现。
-> 详见 `.sisyphus/plans/component-framework-phase1/design.md`
+> 背压传播设计已实施完成（D127-D134 Component 架构，consolidated-mvp 计划）

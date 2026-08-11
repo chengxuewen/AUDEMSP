@@ -22,7 +22,7 @@ AUDEMSP 是 AUDE 生态的多媒体基础设施，提供远程桌面、视频会
 
 > 注：WebRTC 遥操作、车端推流、舱内拉流三个子能力均属遥操作域（teleop domain），由 field/remote 双 SDK 承载。
 
-> 🔄 **D126-D155 增量 (2026-07-19)**: 三层逻辑抽象模型 (D126)、Component 架构 (D127-D134)、WebRTC 架构升级为 webrtc-sys RTP track (D137)、mediasoup SFU (D138)、统一 Gateway (D128)、多后端 feature gate (D139-D140, webrtc-sys/webrtc-rs/stub, str0m Phase 2+)、webrtc-kit 设计借鉴 (D144-D151)、Host 单体架构确认 (D155)。实施详见 [整合实施计划](../.sisyphus/plans/phase3-production/plan.md)。
+> 🔄 **D126-D155 增量 (2026-07-19)**: 三层逻辑抽象模型 (D126)、Component 架构 (D127-D134)、WebRTC 架构升级为 webrtc-sys RTP track (D137)、mediasoup SFU (D138)、统一 Gateway (D128)、多后端 feature gate (D139-D140, webrtc-sys/webrtc-rs/stub, str0m Phase 2+)、webrtc-kit 设计借鉴 (D144-D151)、Host 单体架构确认 (D155)。已实施完成（Phase 3）。
 
 > ⚠️ **D15/D118 范围变更**: Phase 1 原为 Host↔Remote P2P 直连模式，现已变更为 Host→Server→Remote relay 三组件模式。详见 [模块文档](modules/03-client-host.md) 和 §2。
 

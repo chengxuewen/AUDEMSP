@@ -188,9 +188,9 @@ fn get_sending_rtp_parameters(&self, track_id: &str) -> Result<RtpParameters>;  
 | `RTCRtpReceiver.getContributingSources/getSynchronizationSources` | webrtc-sys 无 CSRC/SSRC 列表 FFI | 统计/监控场景 |
 | `RTCRtpSender/Receiver.transport` 属性 | webrtc-sys 无 DTLS transport 句柄暴露 | 传输诊断 |
 
-**注意（v2 修正）**: Sender 的 `set_parameters`/`replace_track`/`set_streams`/`get_stats` 与 Receiver 的 `get_parameters` **均可实现**（webrtc-sys FFI 有），属于 `.sisyphus/plans/host-sfu-w3c-alignment/plan.md` P1/P2 实施范围，**不列入**未来实现。
+**注意（v2 修正）**: Sender 的 `set_parameters`/`replace_track`/`set_streams`/`get_stats` 与 Receiver 的 `get_parameters` **均可实现**（webrtc-sys FFI 有），属于 host-sfu-w3c-alignment P1/P2 实施范围（已实施完成，D214），**不列入**未来实现。
 
-**audemsp-webrtc 已覆盖/将覆盖**: 上述以外的 W3C RTCPeerConnection / RTCRtpTransceiver / RTCRtpSender / RTCRtpReceiver / RTCDataChannel / RTCRtpCapabilities 接口全部实现（见 `.sisyphus/plans/host-sfu-w3c-alignment/plan.md` P0-P2）。
+**audemsp-webrtc 已覆盖/将覆盖**: 上述以外的 W3C RTCPeerConnection / RTCRtpTransceiver / RTCRtpSender / RTCRtpReceiver / RTCDataChannel / RTCRtpCapabilities 接口全部实现（host-sfu-w3c-alignment P0-P2，已实施完成，D214）。
 
 ---
 

@@ -108,7 +108,7 @@ trait SdpAdapter {
 5. Remote join → 重建 Transport + Consumer
 ```
 
-> 详见 `.sisyphus/plans/phase3-production/plan.md` Phase 2 (S1-S18)
+> 已实施完成（Phase 3, S1-S18）
 
 ## Transport 故障场景与恢复
 

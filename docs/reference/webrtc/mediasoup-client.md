@@ -112,11 +112,11 @@ this->pc->SetRemoteDescription(webrtc::SdpType::kAnswer, answer);
 | 4 | `getSendingRtpParameters` 从 offer 推导 | 手工 `build_produce_rtp_parameters` (PT=101) | 双硬编码（PIT-54） |
 | 5 | ssrc 从 offer SDP 解析 | 手工 `negotiated_ssrc_from_sdp`(answer) | 绕过标准推导 |
 
-**重构方案**: 见 `.sisyphus/plans/host-sfu-w3c-alignment/plan.md`（P1 webrtc 补 API + P2 Host 标准协商）。
+**重构方案**: 已实施完成（D214 W3C API 补全 + D216 Host 标准协商）。
 
 ## 5. 相关文档
 
 - `mediasoup-refs.md` — 源码导航 + 脚本用法
 - `webrtc-w3c-alignment.md` — 对齐分析（含 §0 团队审核 3 处修正）
 - `.agents/memorys/conventions.md` C18 — 官方用法优先约束
-- `.sisyphus/plans/host-sfu-w3c-alignment/plan.md` — 重构计划
+- host-sfu-w3c-alignment — 重构计划（已实施完成，D214/D216）

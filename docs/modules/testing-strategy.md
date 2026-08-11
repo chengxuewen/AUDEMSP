@@ -61,4 +61,4 @@ Layer 4: E2E          → Host→Server→Remote 全链路
 
 每个 SDD 验收标准 → 对应 `#[test]`。用例命名：`test_{sdd_id}_{scenario}`。AAA 模式 (Arrange/Act/Assert) 强制。
 
-> 详见 `.sisyphus/plans/phase3-production/plan.md` Phase 5
+> 已实施完成（Phase 3）
