@@ -147,7 +147,7 @@ export default function VideoPlayer({ roomId, serverUrl, token, onClose }: Props
               <div><label>编码</label><span>{metrics.encoderImplementation ? (metrics.encoderImplementation.toLowerCase().includes('libvpx') || metrics.encoderImplementation.toLowerCase().includes('openh264') ? '软编' : '硬编') : (metrics.encoderBackend === 'software' ? '软编' : metrics.encoderBackend && metrics.encoderBackend !== 'auto' ? '硬编' : '未知')}</span></div>
               <div><label>实际编码器</label><span>{metrics.encoderImplementation || metrics.encoderBackend || '—'}</span></div>
               <div><label>编码模式</label><span>{metrics.codec ? metrics.codec.replace('video/', '') : '—'}</span></div>
-              <div><label>解码器</label><span>{metrics.decoderImplementation || '—'}</span></div>
+              <div><label>解码器</label><span>{metrics.decoderImplementation || metrics.decoderCodec || '—'}</span></div>
               <div><label>色度采样</label><span>4:2:0</span></div>
               <div><label>HDR</label><span>已关闭</span></div>
             </div>

@@ -72,7 +72,8 @@ export interface StreamMetrics {
   jitter: number;       // ms
   resolution: string;
   // v2 (web-stream-stats T4): 编解码诊断 — 浏览器侧 + Host EncoderStatus 上报合并
-  decoderImplementation?: string;   // 浏览器解码器（inbound-rtp）
+  decoderImplementation?: string;   // 浏览器解码器（inbound-rtp, 真实 Chrome 有; headless 缺失）
+  decoderCodec?: string;            // 降级: getStats codec 报告 mimeType（浏览器实际解码格式）
   codec?: string;                   // 编码模式（Host EncoderStatus, e.g. video/H264）
   encoderBackend?: string;          // Host backend 请求值（auto/software/hardware...）
   encoderImplementation?: string;   // Host 实际编码器（get_stats, e.g. OpenH264/libvpx）
@@ -389,11 +390,16 @@ export class SfuConsumerClient {
       try {
         const stats = await this.pc.getStats();
         let rtt = 0, packetsLost = 0, packetsReceived = 0, fps = 0, bitrate = 0, jitter = 0;
-        let width = 0, height = 0, decoderImpl: string | undefined;
+        let width = 0, height = 0, decoderImpl: string | undefined, decoderCodec: string | undefined;
 
         stats.forEach((report) => {
           if (report.type === 'candidate-pair' && report.state === 'succeeded') {
             rtt = Math.round((report as any).currentRoundTripTime * 1000) || 0;
+          }
+          // v2 (解码器修复): headless shell inbound-rtp 无 decoderImplementation 字段 →
+          // 降级用 codec 报告 mimeType（浏览器实际解码格式）
+          if (report.type === 'codec' && (report as any).mimeType?.startsWith('video/')) {
+            decoderCodec = (report as any).mimeType;
           }
           if (report.type === 'inbound-rtp' && report.kind === 'video') {
             packetsLost = (report as any).packetsLost || 0;
@@ -423,6 +429,7 @@ export class SfuConsumerClient {
           jitter,
           resolution: width && height ? `${width}x${height}` : 'unknown',
           decoderImplementation: decoderImpl,
+          decoderCodec,
         });
       } catch (err) {
         console.warn('SfuClient: getStats failed', err);
