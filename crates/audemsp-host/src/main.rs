@@ -86,6 +86,9 @@ async fn main() -> anyhow::Result<()> {
     // Collect background task handles for clean shutdown
     let mut background_tasks: Vec<tokio::task::JoinHandle<()>> = Vec::new();
 
+    // PIT-81: SFU 帧生成器必须存活到 main 结束（if 分支作用域内绑定 → 分支结束即 Drop → 线程被 stop）。
+    let mut frame_generator: Option<audemsp_media::pipeline::generator::VideoFrameGenerator> = None;
+
     // Phase 2: Start GStreamer pipeline
     let pipeline = std::sync::Arc::new(pipeline::Pipeline::new(
         &config.capture,
@@ -376,6 +379,7 @@ let app = axum::Router::new()
         // 旧手写循环已删除（原 main.rs:373-406; 历史参考 d24f6e5 SquaresPattern 引入 /
         // 9cf94b8 b=AS 码率预算 / 90ea937 关键帧触发）。C17 语义由 generator 内部保证:
         // 绝对时间轴 + 锚定单调时间戳 + 时间戳水印 (TopLeft, DateTime+FrameCount)。
+        // PIT-81: generator 绑定 main 级 frame_generator（if 分支内绑定 → 分支结束 Drop 停线程）。
         {
             use audemsp_media::pipeline::generator::{
                 Anchor, BitmapFont, ColorStrategy, PatternMode, SquaresConfig, TextBurner,
@@ -404,8 +408,8 @@ let app = axum::Router::new()
                 .map_err(|e| anyhow::anyhow!("WebRtcTrackSink: {}", e))?;
             generator.add_or_update_sink(Box::new(sink), VideoSinkWants::default());
             generator.start(fps, PatternMode::Squares(squares), Some(overlay), width, height);
-            // Drop guard: 作用域结束（main 退出/错误路径）→ generator.stop() 停线程 (BLOCKER-4)。
-            let _generator = generator;
+            // Drop guard: main 退出/错误路径 → generator.stop() 停线程 (BLOCKER-4)。
+            frame_generator = Some(generator);
         }
 
         // PIT-76: 周期关键帧触发 — GOP ≤ keyframe_interval 秒（默认 2s）。
