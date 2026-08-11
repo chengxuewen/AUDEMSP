@@ -912,3 +912,27 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 **验证**: 3 次采样（间隔 2.5s 覆盖 2s 上报周期）字段稳定: libvpx/VP8/30fps/软编。
 
 **禁止**: 多数据源分别回调不完整对象直接 setState 整体替换；累计统计值当瞬时值展示。
+
+## PIT-83: mediasoup 动态 PT 池冲突 — 显式 PT 撞自动分配 (2026-08-11)
+
+**症状**: Router 创建失败 `RTP capabilities generation error: Duplicated preferred payload type 100/102`——VP9/AV1 加入 default_router_options 后，每次 transport 创建都失败，host 无法协商。
+
+**根因**: mediasoup-rs 的 `DYNAMIC_PAYLOAD_TYPES = [100..127, 96..99]`（ortc.rs:27）——**池首 100-102 与自动分配交互冲突**。机制细节：generate_router_rtp_capabilities 对显式 PT 从池移除（retain），但**池首值（100/101/102）与 supported codecs 生成路径存在隐藏占用**——实测 100/102 冲突、101 不冲突（H264 原有）、97/99（池尾）稳定。Rust 侧 media_codecs 打印无重复，但生成时仍报重复（跨 Rust/C++ 校验路径差异）。
+
+**解法**: 新增 codec 的显式 PT 避开动态池首部——用**池尾 97/98/99**（VP9=99, AV1=97 实测稳定）；Host offer PT 映射同步（PIT-51: produce PT 必须与 router 一致）。
+
+**验证**: `docker compose logs server | grep "Router created"` 应出现；host codec=vp9/av1 produce 成功 + 浏览器渲染。
+
+**禁止**: 新 codec 显式 PT 用 100-102（池首）；Router 创建失败时只查 media_codecs 内部重复（无重复也可能生成冲突）——先用池尾 PT 实验。
+
+## PIT-84: python 批量替换脚本 assert 失败 → 全盘无写盘 (2026-08-11)
+
+**症状**: 多次批量替换脚本（web-stats 修复、sfu-client 修补）在**最后一个** assert 失败 → 整个脚本中止 → **前面已成功的替换全部丢失**（写盘在脚本末尾）→ 重跑时必须重新构造所有 old 文本。
+
+**根因**: 脚本模式 `for each block: assert → replace → ... 最后 open(p,'w')`——单块 assert 失败即 panic，写盘永不执行。
+
+**解法**: ① 批量替换脚本**逐块写盘**（每块 replace 后立即 open write）或 ② 全部 assert 前置（先验证所有 old 存在再统一替换）或 ③ 失败时保留中间结果（try/finally 写盘）。
+
+**验证**: 脚本执行后 `grep -c "新内容" <file>` 确认生效；失败的脚本重跑前先确认哪些块已写盘。
+
+**禁止**: 多块替换脚本在末尾一次性写盘；assert 失败后假设前面已生效。
