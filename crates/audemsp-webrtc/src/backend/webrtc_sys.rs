@@ -127,13 +127,72 @@ fn map_rtp_capabilities(c: webrtc_sys::rtp_parameters::ffi::RtpCapabilities) -> 
         mime_type: cc.mime_type.clone(),
         clock_rate: if cc.has_clock_rate { Some(cc.clock_rate.max(0) as u32) } else { None },
         channels: if cc.has_num_channels { Some(cc.num_channels as u16) } else { None },
-        sdp_fmtp_line: None,
+        // v2 (set-codec-preferences T2): fmtp 还原 — 复用 map_rtp_parameters:84-91 序列化模式,
+        // libwebrtc 匹配是精确 map 相等 (MatchesCapability), 往返必须字节精确。
+        sdp_fmtp_line: if cc.parameters.is_empty() {
+            None
+        } else {
+            Some(cc.parameters.iter()
+                .map(|kv| format!("{}={}", kv.key, kv.value))
+                .collect::<Vec<_>>()
+                .join(";"))
+        },
     }).collect();
     let header_extensions = c.header_extensions.iter().map(|h| RTCRtpHeaderExtensionCapability {
         uri: h.uri.clone(),
         id: if h.has_preferred_id { Some(h.preferred_id as u16) } else { None },
     }).collect();
     crate::rtp::RTCRtpCapabilities { codecs, header_extensions }
+}
+
+/// 解析 "k=v;k=v" fmtp 行 → webrtc-sys StringKeyValue 列表（setCodecPreferences 输入）。
+fn parse_fmtp_line(line: &str) -> Vec<webrtc_sys::rtp_parameters::ffi::StringKeyValue> {
+    line.split(';')
+        .filter(|s| !s.trim().is_empty())
+        .map(|kv| {
+            let (k, v) = kv.split_once('=').unwrap_or((kv.trim(), ""));
+            webrtc_sys::rtp_parameters::ffi::StringKeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            }
+        })
+        .collect()
+}
+
+// ── v2 (set-codec-preferences T1): crate RTCRtpCodecCapability → webrtc-sys RtpCodecCapability 映射 ──
+// 注意: webrtc-sys to_native 忽略 mime_type（rtp_parameters.cpp:47 实证）→ 必须显式填 name + kind。
+fn map_codec_capability_to_sys(c: &crate::rtp::RTCRtpCodecCapability) -> webrtc_sys::rtp_parameters::ffi::RtpCodecCapability {
+    use webrtc_sys::webrtc::ffi::MediaType;
+    let (name, kind) = match c.mime_type.split_once('/') {
+        Some((_, name)) => {
+            let kind = if c.mime_type.starts_with("video/") {
+                MediaType::Video
+            } else {
+                MediaType::Audio
+            };
+            (name.to_string(), kind)
+        }
+        // ponytail: 无斜杠的 mime 按 video 处理（调用方应传完整 mime）
+        None => (c.mime_type.clone(), MediaType::Video),
+    };
+    let parameters = c
+        .sdp_fmtp_line
+        .as_deref()
+        .map(parse_fmtp_line)
+        .unwrap_or_default();
+    webrtc_sys::rtp_parameters::ffi::RtpCodecCapability {
+        mime_type: c.mime_type.clone(),
+        name,
+        kind,
+        has_clock_rate: c.clock_rate.is_some(),
+        clock_rate: c.clock_rate.unwrap_or(0) as i32,
+        has_preferred_payload_type: false,
+        preferred_payload_type: 0,
+        has_num_channels: c.channels.is_some(),
+        num_channels: c.channels.unwrap_or(0) as i32,
+        rtcp_feedback: vec![],
+        parameters,
+    }
 }
 
 impl PcBackend for WebrtcSysPc {
@@ -609,6 +668,22 @@ Err(RTCError::Track(format!("sender not found: {track_id}")))
         for tc in self.pc.get_transceivers() {
             if tc.ptr.mid().ok().as_deref() == Some(mid) {
                 tc.ptr.stop_standard().map_err(|e| RTCError::RTCPeerConnection(e.what().to_owned()))?;
+                return Ok(());
+            }
+        }
+        Err(RTCError::Track(format!("transceiver not found: {mid}")))
+    }
+
+    /// v2 (set-codec-preferences T3): W3C setCodecPreferences — 设置协商 codec 偏好。
+    /// Oracle F8 实证: pinned libwebrtc（≥2023-02 重构）无 mid()/state 检查,
+    /// set_remote_description 后调用可行（answerer 序列）。
+    fn transceiver_set_codec_preferences(&self, mid: &str, codecs: Vec<crate::rtp::RTCRtpCodecCapability>) -> Result<(), RTCError> {
+        let sys_codecs = codecs.iter().map(map_codec_capability_to_sys).collect::<Vec<_>>();
+        for tc in self.pc.get_transceivers() {
+            if tc.ptr.mid().ok().as_deref() == Some(mid) {
+                tc.ptr
+                    .set_codec_preferences(sys_codecs)
+                    .map_err(|e| RTCError::RTCPeerConnection(e.what().to_owned()))?;
                 return Ok(());
             }
         }
@@ -1266,6 +1341,78 @@ mod tests {
         };
         let mapped = map_rtp_parameters(params);
         assert_eq!(mapped.encodings[0].request_key_frame, false);
+    }
+
+    #[test]
+    fn map_codec_capability_to_sys_h264() {
+        // v2 (set-codec-preferences T4): W3C → sys — name/kind 必须显式填（mime_type 被 to_native 忽略）
+        use crate::rtp::RTCRtpCodecCapability;
+        let cap = RTCRtpCodecCapability {
+            mime_type: "video/H264".into(),
+            clock_rate: Some(90000),
+            channels: None,
+            sdp_fmtp_line: Some("profile-level-id=42e01f;packetization-mode=1".into()),
+        };
+        let sys = map_codec_capability_to_sys(&cap);
+        assert_eq!(sys.name, "H264");
+        assert_eq!(sys.kind, webrtc_sys::webrtc::ffi::MediaType::Video);
+        assert!(sys.has_clock_rate);
+        assert_eq!(sys.clock_rate, 90000);
+        assert!(!sys.has_num_channels, "channels=None → has_num_channels=false");
+        // fmtp 解析: 顺序保留（libwebrtc 精确 map 匹配）
+        assert_eq!(sys.parameters.len(), 2);
+        assert_eq!(sys.parameters[0].key, "profile-level-id");
+        assert_eq!(sys.parameters[0].value, "42e01f");
+        assert_eq!(sys.parameters[1].key, "packetization-mode");
+        assert_eq!(sys.parameters[1].value, "1");
+    }
+
+    #[test]
+    fn map_codec_capability_to_sys_audio_and_empty_fmtp() {
+        use crate::rtp::RTCRtpCodecCapability;
+        // 音频: kind 正确；无 fmtp → parameters 空
+        let cap = RTCRtpCodecCapability {
+            mime_type: "audio/opus".into(),
+            clock_rate: Some(48000),
+            channels: Some(2),
+            sdp_fmtp_line: None,
+        };
+        let sys = map_codec_capability_to_sys(&cap);
+        assert_eq!(sys.name, "opus");
+        assert_eq!(sys.kind, webrtc_sys::webrtc::ffi::MediaType::Audio);
+        assert_eq!(sys.num_channels, 2);
+        assert!(sys.has_num_channels);
+        assert!(sys.parameters.is_empty());
+    }
+
+    #[test]
+    fn map_rtp_capabilities_restores_fmtp() {
+        // v2 (set-codec-preferences T2): sys → W3C fmtp 还原（字节精确）
+        use webrtc_sys::rtp_parameters::ffi::{RtpCapabilities, RtpCodecCapability, RtpHeaderExtensionCapability, StringKeyValue};
+        let caps = RtpCapabilities {
+            codecs: vec![RtpCodecCapability {
+                mime_type: "video/H264".into(),
+                name: "H264".into(),
+                kind: webrtc_sys::webrtc::ffi::MediaType::Video,
+                has_clock_rate: true, clock_rate: 90000,
+                has_preferred_payload_type: true, preferred_payload_type: 101,
+                has_num_channels: false, num_channels: 0,
+                rtcp_feedback: vec![],
+                parameters: vec![
+                    StringKeyValue { key: "profile-level-id".into(), value: "42e01f".into() },
+                    StringKeyValue { key: "packetization-mode".into(), value: "1".into() },
+                ],
+            }],
+            header_extensions: vec![],
+            fec: vec![],
+        };
+        let mapped = map_rtp_capabilities(caps);
+        assert_eq!(mapped.codecs.len(), 1);
+        assert_eq!(mapped.codecs[0].mime_type, "video/H264");
+        assert_eq!(mapped.codecs[0].clock_rate, Some(90000));
+        let fmtp = mapped.codecs[0].sdp_fmtp_line.as_deref().unwrap_or("");
+        assert!(fmtp.contains("profile-level-id=42e01f"), "fmtp: {fmtp}");
+        assert!(fmtp.contains("packetization-mode=1"), "fmtp: {fmtp}");
     }
 }
 

@@ -148,7 +148,9 @@ impl VideoSink<BoxVideoFrame> for WebRtcTrackSink {
     }
 }
 
-#[cfg(test)]
+// stub 后端专属测试（TrackSender.backend 记录方法仅 StubTrack 有）—
+// backend-webrtc-sys/rs 下这些测试无意义（真实 FFI 由集成测试覆盖）。
+#[cfg(all(test, not(any(feature = "backend-webrtc-rs", feature = "backend-webrtc-sys"))))]
 mod tests {
     use super::*;
     use audemsp_media::base::buffer::I420Buffer;
