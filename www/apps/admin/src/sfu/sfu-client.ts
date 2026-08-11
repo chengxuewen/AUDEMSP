@@ -84,6 +84,12 @@ export class SfuConsumerClient {
   private ws: WebSocket | null = null;
   private closed = false;  // PIT-50: close() 后禁止重连（StrictMode 双挂载竞争）
   private pc: RTCPeerConnection | null = null;
+  // v2 (web-stream-stats 修复): 双数据源合并累加器 — getStats 与 encoder_status 交替
+  // 覆盖导致面板闪烁（一会数值一会 "-"）; 统一合并后回调
+  private mergedMetrics: StreamMetrics | null = null;
+  // 码率增量计算: 累计 bytesReceived 当瞬时值是单位错误根因
+  private lastBytes = 0;
+  private lastTs = 0;
   private onTrack: StreamCallback;
   private onStatus: StatusCallback;
   private onMetrics: MetricsCallback;
@@ -241,6 +247,12 @@ export class SfuConsumerClient {
     }
   }
   // WS message handler — routed from connect() onmessage
+  /** v2: 合并式 metrics 上报 — 部分字段只覆盖, 不重置其他字段（闪烁修复） */
+  private emitMetrics(partial: Partial<StreamMetrics>): void {
+    this.mergedMetrics = { ...(this.mergedMetrics ?? { rtt: 0, packetLoss: 0, fps: 0, bitrate: 0, jitter: 0, resolution: '' }), ...partial };
+    this.onMetrics(this.mergedMetrics);
+  }
+
   handleMessage(data: string): void {
     try {
       const msg = JSON.parse(data);
@@ -269,9 +281,8 @@ export class SfuConsumerClient {
           this.pendingProducer = msg;
         }
       } else if (msg.type === 'encoder_status') {
-        // v2 (web-stream-stats T4): Host 编码状态（room 广播）→ 合并进 metrics
-        this.onMetrics({
-          rtt: 0, packetLoss: 0, fps: 0, bitrate: 0, jitter: 0, resolution: '',
+        // v2 (web-stream-stats T4): Host 编码状态（room 广播）→ 合并进 metrics（不覆盖浏览器字段）
+        this.emitMetrics({
           codec: msg.codec,
           encoderBackend: msg.encoder_backend,
           encoderImplementation: msg.encoder_implementation ?? undefined,
@@ -388,7 +399,15 @@ export class SfuConsumerClient {
             packetsLost = (report as any).packetsLost || 0;
             packetsReceived = (report as any).packetsReceived || 0;
             fps = (report as any).framesPerSecond || 0;
-            bitrate = Math.round(((report as any).bytesReceived || 0) * 8 / 1000);
+            // v2 (单位修复): 码率 = 字节增量/时间窗（累计 bytesReceived 当瞬时值 → 数字虚增）
+            const bytes = (report as any).bytesReceived || 0;
+            const now = performance.now();
+            if (this.lastTs > 0 && bytes >= this.lastBytes) {
+              const elapsed = (now - this.lastTs) / 1000;
+              if (elapsed > 0) bitrate = Math.round(((bytes - this.lastBytes) * 8) / elapsed / 1000); // kbps
+            }
+            this.lastBytes = bytes;
+            this.lastTs = now;
             jitter = Math.round(((report as any).jitter || 0) * 1000);
             width = (report as any).frameWidth || 0;
             height = (report as any).frameHeight || 0;
@@ -396,7 +415,7 @@ export class SfuConsumerClient {
           }
         });
 
-        this.onMetrics({
+        this.emitMetrics({
           rtt,
           packetLoss: packetsReceived > 0 ? Math.round((packetsLost / (packetsLost + packetsReceived)) * 10000) / 100 : 0,
           fps,
