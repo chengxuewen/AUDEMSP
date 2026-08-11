@@ -603,6 +603,30 @@ Err(RTCError::Track(format!("sender not found: {track_id}")))
         }
         Err(RTCError::Track(format!("sender not found: {track_id}")))
     }
+    /// v2 (encoder-backend-codec-config T1): 编码器后端选择 — SetEncoderSelector 机制。
+    /// 遍历 transceivers 匹配 sender.track().id()（request_key_frame 同模式）。
+    fn sender_set_video_encoder_backend(&self, track_id: &str, backend: crate::rtp::RTCVideoEncoderBackend) -> Result<(), RTCError> {
+        let sys_backend = match backend {
+            crate::rtp::RTCVideoEncoderBackend::Auto => webrtc_sys::webrtc::ffi::VideoEncoderBackend::Auto,
+            crate::rtp::RTCVideoEncoderBackend::Software => webrtc_sys::webrtc::ffi::VideoEncoderBackend::Software,
+            crate::rtp::RTCVideoEncoderBackend::Hardware => webrtc_sys::webrtc::ffi::VideoEncoderBackend::Hardware,
+            crate::rtp::RTCVideoEncoderBackend::Nvenc => webrtc_sys::webrtc::ffi::VideoEncoderBackend::Nvenc,
+            crate::rtp::RTCVideoEncoderBackend::Vaapi => webrtc_sys::webrtc::ffi::VideoEncoderBackend::Vaapi,
+            crate::rtp::RTCVideoEncoderBackend::VideoToolbox => webrtc_sys::webrtc::ffi::VideoEncoderBackend::VideoToolbox,
+            crate::rtp::RTCVideoEncoderBackend::PreEncoded => webrtc_sys::webrtc::ffi::VideoEncoderBackend::PreEncoded,
+        };
+        for tc in self.pc.get_transceivers() {
+            let t = &tc.ptr;
+            let sender = t.sender();
+            let track = sender.track();
+            if track.id() == track_id {
+                sender.set_video_encoder_backend(sys_backend);
+                tracing::info!("sender_set_video_encoder_backend({track_id}, {backend:?}) — SetEncoderSelector");
+                return Ok(());
+            }
+        }
+        Err(RTCError::Track(format!("sender not found: {track_id}")))
+    }
 
     fn get_sender_capabilities(&self, kind: TrackKind) -> Result<Option<crate::rtp::RTCRtpCapabilities>, RTCError> {
         let media_type = match kind {

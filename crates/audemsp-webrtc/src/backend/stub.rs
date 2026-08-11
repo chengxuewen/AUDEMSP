@@ -132,6 +132,10 @@ impl PcBackend for StubPc {
         Ok(())
     }
 
+    fn sender_set_video_encoder_backend(&self, _track_id: &str, _backend: crate::rtp::RTCVideoEncoderBackend) -> Result<(), crate::RTCError> {
+        Ok(())
+    }
+
     fn sender_replace_track(&self, _track_id: &str, _new_track_id: &str) -> Result<(), crate::RTCError> {
         Ok(())
     }

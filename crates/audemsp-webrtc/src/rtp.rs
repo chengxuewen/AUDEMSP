@@ -2,6 +2,36 @@
 use crate::track::{TrackKind, TrackRef};
 use crate::RTCError;
 
+/// 编码器后端选择（对齐 webrtc-sys VideoEncoderBackend）。
+/// 语义: 偏好非强制 — 不可用时 libwebrtc 自动 fallback（video_encoder_factory.cpp:511-566 实证）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RTCVideoEncoderBackend {
+    /// libwebrtc 默认策略（清空选择器）
+    Auto,
+    Software,
+    Hardware,
+    Nvenc,
+    Vaapi,
+    VideoToolbox,
+    PreEncoded,
+}
+
+impl RTCVideoEncoderBackend {
+    /// host.conf string ↔ enum（auto/software/hardware/nvenc/vaapi/videotoolbox）。
+    pub fn from_config(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "auto" => Some(Self::Auto),
+            "software" => Some(Self::Software),
+            "hardware" => Some(Self::Hardware),
+            "nvenc" => Some(Self::Nvenc),
+            "vaapi" => Some(Self::Vaapi),
+            "videotoolbox" => Some(Self::VideoToolbox),
+            "preencoded" => Some(Self::PreEncoded),
+            _ => None,
+        }
+    }
+}
+
 /// W3C RTCRtpSender — wraps a TrackRef::Sender with sender metadata (D146).
 #[derive(Debug, Clone)]
 pub struct RTCRtpSender {
@@ -42,6 +72,16 @@ impl RTCRtpSender {
     /// W3C RTCRtpSender.setParameters — v2 补
     pub fn set_parameters(&self, _params: crate::rtp::RTCRtpParameters) -> Result<(), RTCError> {
         Err(RTCError::NotSupported("set_parameters: backend 未实现".into()))
+    }
+
+    /// v2 (encoder-backend-codec-config T1): 设置编码器后端（软/硬, PcBackend track_id 分派）。
+    /// SetEncoderSelector 语义: 偏好非强制（不可用自动 fallback）。
+    pub fn set_video_encoder_backend(&self, backend: RTCVideoEncoderBackend) -> Result<(), RTCError> {
+        use crate::backend::PcBackend as _;
+        match &self.backend {
+            Some(b) => b.sender_set_video_encoder_backend(&self.track_id, backend),
+            None => Err(RTCError::Internal("sender not bound to a peer connection".into())),
+        }
     }
 
     /// W3C RTCRtpSender.replaceTrack — v2 补
@@ -247,4 +287,24 @@ pub struct RTCRtpCodecCapability {
 pub struct RTCRtpHeaderExtensionCapability {
     pub uri: String,
     pub id: Option<u16>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backend_from_config_mapping() {
+        // v2 (encoder-backend-codec-config T2): host.conf string ↔ enum
+        assert_eq!(RTCVideoEncoderBackend::from_config("auto"), Some(RTCVideoEncoderBackend::Auto));
+        assert_eq!(RTCVideoEncoderBackend::from_config("software"), Some(RTCVideoEncoderBackend::Software));
+        assert_eq!(RTCVideoEncoderBackend::from_config("hardware"), Some(RTCVideoEncoderBackend::Hardware));
+        assert_eq!(RTCVideoEncoderBackend::from_config("nvenc"), Some(RTCVideoEncoderBackend::Nvenc));
+        assert_eq!(RTCVideoEncoderBackend::from_config("vaapi"), Some(RTCVideoEncoderBackend::Vaapi));
+        assert_eq!(RTCVideoEncoderBackend::from_config("videotoolbox"), Some(RTCVideoEncoderBackend::VideoToolbox));
+        // 大小写不敏感 + 未知值 None
+        assert_eq!(RTCVideoEncoderBackend::from_config("HARDWARE"), Some(RTCVideoEncoderBackend::Hardware));
+        assert_eq!(RTCVideoEncoderBackend::from_config("cuda"), None);
+        assert_eq!(RTCVideoEncoderBackend::from_config(""), None);
+    }
 }
