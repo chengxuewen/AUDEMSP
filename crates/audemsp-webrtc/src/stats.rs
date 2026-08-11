@@ -65,6 +65,9 @@ pub struct RTCInboundRtpStreamStats {
 pub struct RTCOutboundRtpStreamStats {
     pub id: String,
     pub timestamp: f64,
+    /// v2 (web-stream-stats T1.5): libwebrtc outbound-rtp 实际编码器实现名
+    /// （如 "libvpx"/"OpenH264"/"VideoToolbox"）— 软编/硬编识别。
+    pub encoder_implementation: Option<String>,
     pub ssrc: u32,
     pub kind: String,
     pub packets_sent: u64,

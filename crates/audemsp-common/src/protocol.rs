@@ -124,6 +124,20 @@ pub enum SignalingMessage {
         kind: MediaKind,
     },
 
+    /// v2 (web-stream-stats T1): Host 周期上报编码状态（room 广播 relay 到浏览器）。
+    /// encoder_implementation: libwebrtc outbound-rtp 实际编码器名（软编/硬编识别）; None = 不可用。
+    EncoderStatus {
+        room_id: String,
+        peer_id: String,
+        codec: String,
+        encoder_backend: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        encoder_implementation: Option<String>,
+        frames_per_second: f64,
+        frame_width: u32,
+        frame_height: u32,
+    },
+
     /// Peer asks to consume a producer on its recv transport.
     /// rtp_capabilities is opaque JSON — server passes it through to mediasoup.
     Consume {

@@ -60,6 +60,39 @@ fn extract_tx<T: Send + 'static>(
 }
 
 
+/// 解析 libwebrtc getStats ToJson（数组）→ outbound-rtp RTCStats。
+/// 字段: framesEncoded/framesPerSecond/frameWidth/frameHeight/encoderImplementation（Oracle F2 实证）。
+fn parse_outbound_stats_json(json: &str) -> Vec<crate::stats::RTCStats> {
+    use crate::stats::{RTCStats, RTCOutboundRtpStreamStats};
+    let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(json) else {
+        return vec![];
+    };
+    arr.iter()
+        .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("outbound-rtp"))
+        .filter_map(|v| {
+            Some(RTCStats::OutboundRtp(RTCOutboundRtpStreamStats {
+                id: v.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                timestamp: v.get("timestamp").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                encoder_implementation: v
+                    .get("encoderImplementation")
+                    .and_then(|x| x.as_str())
+                    .map(String::from),
+                ssrc: v.get("ssrc").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
+                kind: v.get("kind").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                packets_sent: v.get("packetsSent").and_then(|x| x.as_u64()).unwrap_or(0),
+                bytes_sent: v.get("bytesSent").and_then(|x| x.as_u64()).unwrap_or(0),
+                frames_encoded: v.get("framesEncoded").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
+                frame_width: v.get("frameWidth").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
+                frame_height: v.get("frameHeight").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
+                frames_per_second: v
+                    .get("framesPerSecond")
+                    .and_then(|x| x.as_f64())
+                    .unwrap_or(0.0),
+            }))
+        })
+        .collect()
+}
+
 // ponytail: map webrtc-sys RTCSdpType → crate RTCSdpType inline
 fn map_sdp_type(st: webrtc_sys::jsep::ffi::SdpType) -> RTCSdpType {
     match st {
@@ -626,6 +659,33 @@ Err(RTCError::Track(format!("sender not found: {track_id}")))
             }
         }
         Err(RTCError::Track(format!("sender not found: {track_id}")))
+    }
+
+    /// v2 (web-stream-stats T1.5): W3C RTCRtpSender.getStats（出站统计）。
+    /// 调 webrtc-sys FFI（RtpSender::get_stats → ToJson, 同步回调）→ 解析 outbound-rtp 字段。
+    /// 纯 Rust 零 C++ 改动（Oracle F2: libwebrtc ToJson 已含 framesEncoded/encoderImplementation 等）。
+    fn sender_get_stats(&self, track_id: &str) -> Vec<crate::stats::RTCStats> {
+        use crate::stats::{RTCStats, RTCOutboundRtpStreamStats};
+        for tc in self.pc.get_transceivers() {
+            let t = &tc.ptr;
+            let sender = t.sender();
+            let track = sender.track();
+            if track.id() == track_id {
+                let (tx, rx) = std::sync::mpsc::sync_channel::<String>(1);
+                let ctx = Box::new(webrtc_sys::rtp_sender::SenderContext(Box::new(tx)));
+                sender.get_stats(ctx, |ctx, json| {
+                    // 同步回调（C++ OnStatsDelivered 同线程）— mpsc 立即投递
+                    if let Some(tx) = ctx.0.downcast_ref::<std::sync::mpsc::SyncSender<String>>() {
+                        let _ = tx.send(json);
+                    }
+                });
+                return match rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                    Ok(json) => parse_outbound_stats_json(&json),
+                    Err(_) => vec![],
+                };
+            }
+        }
+        vec![]
     }
 
     fn get_sender_capabilities(&self, kind: TrackKind) -> Result<Option<crate::rtp::RTCRtpCapabilities>, RTCError> {
@@ -1443,3 +1503,56 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod stats_tests {
+    use super::parse_outbound_stats_json;
+    use crate::stats::RTCStats;
+
+    #[test]
+    fn parses_outbound_rtp_with_encoder_implementation() {
+        // v2 (web-stream-stats T1.5): libwebrtc ToJson outbound-rtp 字段解析
+        let json = r#"[{
+            "type": "outbound-rtp",
+            "id": "RTC_rtp_video_1",
+            "timestamp": 1786000000000.0,
+            "ssrc": 12345,
+            "kind": "video",
+            "framesEncoded": 120,
+            "frameWidth": 1280,
+            "frameHeight": 720,
+            "framesPerSecond": 30.0,
+            "packetsSent": 999,
+            "bytesSent": 123456,
+            "encoderImplementation": "OpenH264"
+        }, {
+            "type": "inbound-rtp",
+            "id": "RTC_rtp_video_2"
+        }]"#;
+        let stats = parse_outbound_stats_json(json);
+        assert_eq!(stats.len(), 1);
+        match &stats[0] {
+            RTCStats::OutboundRtp(o) => {
+                assert_eq!(o.encoder_implementation.as_deref(), Some("OpenH264"));
+                assert_eq!(o.frames_encoded, 120);
+                assert_eq!(o.frame_width, 1280);
+                assert_eq!(o.frame_height, 720);
+                assert_eq!(o.frames_per_second, 30.0);
+                assert_eq!(o.ssrc, 12345);
+            }
+            other => panic!("expected OutboundRtp, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_empty_and_missing_encoder() {
+        assert!(parse_outbound_stats_json("not-json").is_empty());
+        assert!(parse_outbound_stats_json("[]").is_empty());
+        let json = r#"[{"type": "outbound-rtp", "id": "x", "timestamp": 0.0, "ssrc": 1, "kind": "video"}]"#;
+        let stats = parse_outbound_stats_json(json);
+        match &stats[0] {
+            RTCStats::OutboundRtp(o) => assert_eq!(o.encoder_implementation, None),
+            _ => panic!(),
+        }
+    }
+}
