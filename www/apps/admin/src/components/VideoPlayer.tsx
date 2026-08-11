@@ -92,7 +92,7 @@ export default function VideoPlayer({ roomId, serverUrl, token, onClose }: Props
           <span className="vp-status-dot" style={{ background: statusColor }} />
           <span className="vp-title">{roomId}</span>
           {metrics && !isDisconnected && (
-            <span className="vp-bitrate">{metrics.resolution} · {Math.round(metrics.bitrate / 1000)}Mbps</span>
+            <span className="vp-bitrate">{metrics.resolution} · {Math.round(metrics.bitrate)}Kbps</span>
           )}
           <button className="vp-close" onClick={onClose}>✕</button>
         </div>
@@ -137,7 +137,7 @@ export default function VideoPlayer({ roomId, serverUrl, token, onClose }: Props
               <div><label>帧率</label><span>{metrics.fps}fps</span></div>
               <div><label>延时</label><span>{metrics.rtt}ms</span></div>
               <div><label>丢包</label><span>{metrics.packetLoss}%</span></div>
-              <div><label>码率</label><span>{Math.round(metrics.bitrate / 1000)}Mbps</span></div>
+              <div><label>码率</label><span>{Math.round(metrics.bitrate)}Kbps</span></div>
               <div><label>抖动</label><span>{metrics.jitter}ms</span></div>
               <div><label>分辨率</label><span>{metrics.resolution}</span></div>
             </div>
