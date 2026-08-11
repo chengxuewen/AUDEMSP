@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 const TOKEN = process.argv[2];
 if (!TOKEN) { console.error('usage: node e2e-sfu-consume.cjs <token>'); process.exit(1); }
 
-const CHROME = '/home/maxsense/.cache/ms-playwright/chromium-1232/chrome-linux64/chrome';
+const CHROME = '/home/maxsense/.cache/ms-playwright/chromium_headless_shell-1232/chrome-headless-shell-linux64/chrome-headless-shell';
 const APP = 'http://127.0.0.1:5173';
 
 (async () => {
