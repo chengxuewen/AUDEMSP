@@ -57,7 +57,8 @@
 /* Stats panel */
 .vp-stats-panel {
   position: absolute; right: 8px; top: 40px; width: 280px;
-  background: rgba(0,0,0,.9); border-radius: 8px; padding: 1rem;
+  background: rgba(0,0,0,.55); border-radius: 8px; padding: 1rem;
+  backdrop-filter: blur(2px); /* v2: 更透明 + 微模糊, 视频帧可见但文字仍可读 */
   color: #ccc; font-size: .8rem; z-index: 10;
 }
 .vp-stats-panel h4 { color: #fff; margin: 0 0 .75rem; }
