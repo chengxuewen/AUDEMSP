@@ -472,11 +472,19 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                         sig_msg,
                         SignalingMessage::Sdp { .. } | SignalingMessage::RTCIceCandidate { .. }
                             | SignalingMessage::Frame { .. }
+                            | SignalingMessage::EncoderStatus { .. } // v2: web-stream-stats T3
                     ),
-                    Err(_) => {
+                    Err(e) => {
+                        // v2 (web-stream-stats 双审 HIGH): 解析失败消息（如旧版未知变体）静默丢弃 —
+                        // C15 要求错误路径打日志; 限频防刷屏
                         if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&text_str) {
-                            raw.get("type").and_then(|v| v.as_str()) == Some("frame")
+                            let is_frame = raw.get("type").and_then(|v| v.as_str()) == Some("frame");
+                            if !is_frame {
+                                tracing::warn!("signaling: unparsable message dropped (len={}): {e}", text_str.len());
+                            }
+                            is_frame
                         } else {
+                            tracing::warn!("signaling: non-JSON message dropped (len={})", text_str.len());
                             false
                         }
                     }
@@ -490,7 +498,12 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                         let is_frame = if let Ok(sig_msg) =
                             serde_json::from_str::<SignalingMessage>(&text_str)
                         {
-                            matches!(sig_msg, SignalingMessage::Frame { .. })
+                            // v2: encoder_status 放行（编码诊断, web-stream-stats T3 Oracle F3）
+                            matches!(
+                                sig_msg,
+                                SignalingMessage::Frame { .. }
+                                    | SignalingMessage::EncoderStatus { .. }
+                            )
                         } else if let Ok(raw) =
                             serde_json::from_str::<serde_json::Value>(&text_str)
                         {

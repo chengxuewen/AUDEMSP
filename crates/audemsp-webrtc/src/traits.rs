@@ -115,6 +115,9 @@ pub trait PeerConnectionApi: Send + Sync + 'static {
     fn get_receiver_capabilities(&self, kind: TrackKind) -> Result<Option<crate::rtp::RTCRtpCapabilities>, RTCError>;
     /// W3C restartIce — 同步
     fn restart_ice(&self) -> Result<(), RTCError>;
+    /// W3C RTCRtpSender.getStats — 出站统计（outbound-rtp, v2 web-stream-stats T2）。
+    fn sender_get_stats(&self, track_id: &str) -> Vec<crate::stats::RTCStats>;
+
     /// W3C RTCRtpTransceiver.setCodecPreferences — 协商 codec 偏好（降序）。
     /// v2 实证修正: 按 track_id 定位 transceiver（mid 在协商前不存在 — offerer 场景核心）,
     /// 同 sender_get_parameters/request_key_frame 的 sender.track().id() 匹配模式。

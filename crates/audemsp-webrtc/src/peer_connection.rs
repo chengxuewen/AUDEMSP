@@ -158,6 +158,10 @@ self.backend.sender_get_parameters(track_id)
         self.backend.transceiver_set_codec_preferences(track_id, codecs)
     }
 
+    fn sender_get_stats(&self, track_id: &str) -> Vec<crate::stats::RTCStats> {
+        self.backend.sender_get_stats(track_id)
+    }
+
     fn get_configuration(&self) -> RTCConfiguration {
         self.backend.pc_configuration()
     }

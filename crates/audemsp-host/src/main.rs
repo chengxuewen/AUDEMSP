@@ -384,7 +384,7 @@ let app = axum::Router::new()
             rtp_params.mid, rtp_params.codecs.len(), rtp_params.encodings.len());
 
         let produce = SignalingMessage::Produce {
-            room_id: sfu_room,
+            room_id: sfu_room.clone(), // v2: 保留原值给 stats 任务 (web-stream-stats T2)
             peer_id: peer_id.to_string(), // PIT-65: 与 create/connect 一致 (host)
             transport_direction: TransportDirection::Send,
             kind: MediaKind::Video,
@@ -451,6 +451,47 @@ let app = axum::Router::new()
                 }
             }
         });
+
+        // v2 (web-stream-stats T2): 编码状态周期上报（2s）— EncoderStatus → room 广播 → 浏览器面板。
+        // codec 来自协商结果; encoder_implementation 来自 get_stats（实际编码器, 软编/硬编识别）;
+        // 回退 backend 请求值。停流（WS 断）时任务随 SFU 分支结束。
+        let pc_stats = pc.clone();
+        let track_stats = track_id.clone();
+        let codec_stats = rtp_params.codecs.first().map(|c| c.mime_type.clone()).unwrap_or_default();
+        let backend_req = config.encoder.backend.clone();
+        let mut ws_stats = ws_sender; // move 进 stats 任务（if/else 分支互斥, else 分支独立 move）
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(2));
+            loop {
+                interval.tick().await;
+                let stats = pc_stats.sender_get_stats(&track_stats);
+                let outbound = stats.iter().find_map(|s| match s {
+                    audemsp_webrtc::stats::RTCStats::OutboundRtp(o) => Some(o),
+                    _ => None,
+                });
+                let enc_impl = outbound
+                    .and_then(|o| o.encoder_implementation.clone())
+                    .unwrap_or_else(|| backend_req.clone());
+                let msg = audemsp_common::protocol::SignalingMessage::EncoderStatus {
+                    room_id: sfu_room.clone(),
+                    peer_id: peer_id.to_string(),
+                    codec: codec_stats.clone(),
+                    encoder_backend: backend_req.clone(),
+                    encoder_implementation: outbound
+                        .and_then(|o| o.encoder_implementation.clone()),
+                    frames_per_second: outbound.map(|o| o.frames_per_second).unwrap_or(0.0),
+                    frame_width: outbound.map(|o| o.frame_width).unwrap_or(0),
+                    frame_height: outbound.map(|o| o.frame_height).unwrap_or(0),
+                };
+                if let Ok(json) = serde_json::to_string(&msg) {
+                    if let Err(e) = ws_stats.send(Message::Text(json.into())).await {
+                        tracing::warn!("SFU: EncoderStatus send error: {}", e);
+                        break;
+                    }
+                }
+            }
+        });
+
 tracing::info!("SFU produce transport {} ready — Squares b=AS fix", transport_id);
     } else {
 
