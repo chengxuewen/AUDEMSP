@@ -12,7 +12,8 @@ use crate::peer_connection::{
 use crate::sdp::{RTCSdpType, RTCSessionDescription};
 use crate::track::{RTCAudioTrackConfig, TrackKind};
 use crate::RTCError;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 // ── StubPc ──
 
@@ -224,8 +225,25 @@ impl DcBackend for StubDc {
 
 // ── StubTrack ──
 
-#[derive(Debug, Default, Clone)]
-pub(crate) struct StubTrack;
+/// Stub 轨道后端 — 写帧 no-op，但记录 I420 写入供测试观测（T2 透传断言）。
+#[derive(Debug, Clone, Default)]
+pub(crate) struct StubTrack {
+    /// 已写 I420 帧数（write_raw_i420_with_ts 计数）。
+    frames_written: Arc<AtomicU64>,
+    /// 已写帧时间戳序列（C17 透传断言）。
+    ts_history: Arc<Mutex<Vec<i64>>>,
+}
+
+#[cfg(test)]
+impl StubTrack {
+    pub(crate) fn frames_written(&self) -> u64 {
+        self.frames_written.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn ts_history(&self) -> Vec<i64> {
+        self.ts_history.lock().unwrap().clone()
+    }
+}
 
 impl TrackWriteBackend for StubTrack {
     async fn write_frame(
@@ -235,6 +253,21 @@ impl TrackWriteBackend for StubTrack {
         _audio_config: Option<&RTCAudioTrackConfig>,
     ) -> Result<(), RTCError> {
         tracing::debug!("TrackSender::write_frame (stub): {} bytes", data.len());
+        Ok(())
+    }
+
+    /// 记录 I420 写入（帧数 + 时间戳），测试断言透传/单调性。
+    async fn write_raw_i420_with_ts(
+        &self, data: &[u8], width: u32, height: u32, ts_us: Option<i64>,
+    ) -> Result<(), RTCError> {
+        self.frames_written.fetch_add(1, Ordering::Relaxed);
+        if let Some(ts) = ts_us {
+            self.ts_history.lock().unwrap().push(ts);
+        }
+        tracing::debug!(
+            "TrackSender::write_raw_i420_with_ts (stub): {width}x{height} {} bytes ts={ts_us:?}",
+            data.len(),
+        );
         Ok(())
     }
 }
@@ -257,7 +290,7 @@ impl StubFactory {
     pub(crate) fn create_video_track(
         &self,
     ) -> (StubTrack, ()) {
-        (StubTrack, ())
+        (StubTrack::default(), ())
     }
 }
 
