@@ -116,3 +116,10 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - 实证结论: ① offerer 偏好生效（offer codec 序重排, H264>VP8）② answerer(SFU) 偏好对
   answer 无效（libwebrtc 按 offer 序取交集）→ SFU 固定 codec 走 reduceCodecs
   ③ VP9/AV1 负向: InvalidAccessError 语义（set 拒绝/空列表）
+
+## 编码器软/硬后端 + codec 配置 (2026-08-11, 计划 encoder-backend-codec-config T1-T7)
+
+- set_video_encoder_backend: PcBackend track_id 分派 → SetEncoderSelector (d4e641e)
+- offer codec 参数化 (config.encoder.codec) + backend 接线 + EncoderConfig.codec (78d95c4)
+- H264 42e01f 全链路: router profile 统一 + produce parameters + 浏览器 consume 双 codec (75a849a)
+- 验证: auto→VP8 / h264→浏览器 1280x720 渲染 / vp8 / vp9→Error 5000 / backend=software

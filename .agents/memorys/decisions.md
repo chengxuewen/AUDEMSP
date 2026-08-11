@@ -263,3 +263,25 @@
 
 **参考**: W3C WebRTC REC、libmediasoupclient Handler.cpp（reduceCodecs 模式）、
 e2e_sfu_codec_prefs.rs / offerer_prefs_test.rs 实证
+
+## D218: 编码器软/硬后端 + codec 双轨配置 (2026-08-11)
+
+**决策**: 方案 C 双轨 — ① codec 固定: SFU answerer 用 **offer codec 控制**（build_remote_sdp
+参数化, config.encoder.codec 驱动）② 硬编码器: **set_video_encoder_backend**（PcBackend track_id
+分派 → SetEncoderSelector）。
+
+**关键实证**:
+1. **produce 参数裁剪不可行**（Oracle 审核）: 不影响 libwebrtc 实际编码（按协商交集 offer 序）→ 正解是
+   **控制自造远程 offer 的 codec 列表**（D198 server-offer 架构下完全可控）
+2. **H264 profile 统一 42e01f**: router 原 4d0032（constrained baseline）浏览器解码不渲染 →
+   统一 42e01f（OpenH264 能力 + 浏览器通用）; offer fmtp = router profile → 协商结果保留 offer profile
+3. **produce 必须带 codec parameters**（PIT-54 实证）: VP8 空参数侥幸匹配; H264 缺
+   profile-level-id/packetization-mode → Unsupported codec (Error 5000)
+4. **浏览器 consume 必须请求匹配 codec**: sfu-client.ts offer 硬编码 VP8 → producer H264 时无视频;
+   改为 VP8+H264 双请求
+5. SetEncoderSelector 语义: 偏好非强制（不可用自动 fallback + warning）
+
+**影响**: host.conf encoder.codec/backend 全链路可控; 车端 H.264 硬编路径就绪（codec=h264 + backend=hardware 组合）;
+P2P offerer 路径 setCodecPreferences 留后续接线。
+
+**验证**: 5 场景矩阵（auto/h264+浏览器渲染/vp8/vp9 负向/backend=software）+ 全量回归
