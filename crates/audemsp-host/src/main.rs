@@ -36,6 +36,7 @@ mod transport;
 #[cfg(feature = "webrtc-p2p")]
 mod webrtc_transport;
 
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
@@ -370,40 +371,42 @@ let app = axum::Router::new()
             Err(_) => return Err(anyhow::anyhow!("SFU Produce send timeout after 10s")),
         }
 
-        // B5: SquaresPattern + 绝对时间轴 + SDP b=AS 码率预算 (PIT-65 修复验证)
-        let video_track_send = video_track.clone();
-        tokio::spawn(async move {
-            use audemsp_media::pipeline::generator::{ColorStrategy, SquaresConfig, SquaresPattern};
-            use audemsp_media::pipeline::generator::FramePattern;
-            let width: u32 = 640;
-            let height: u32 = 480;
-            let y_size = (width * height) as usize;
-            let uv_size = (width * height / 4) as usize;
-            let mut y = vec![0u8; y_size];
-            let mut u = vec![128u8; uv_size];
-            let mut v = vec![128u8; uv_size];
-            let mut pattern = SquaresPattern::with_config(width, height, SquaresConfig {
-                count: 40, min_size: 20, max_size: 300, motion_speed: 10,
+        // B5 (v2): VideoFrameGenerator + WebRtcTrackSink — 统一帧源接口
+        // 计划: .sisyphus/plans/video-source-unification T3 (WebRtcTrackSink: c56bd87)。
+        // 旧手写循环已删除（原 main.rs:373-406; 历史参考 d24f6e5 SquaresPattern 引入 /
+        // 9cf94b8 b=AS 码率预算 / 90ea937 关键帧触发）。C17 语义由 generator 内部保证:
+        // 绝对时间轴 + 锚定单调时间戳 + 时间戳水印 (TopLeft, DateTime+FrameCount)。
+        {
+            use audemsp_media::pipeline::generator::{
+                Anchor, BitmapFont, ColorStrategy, PatternMode, SquaresConfig, TextBurner,
+                TimestampFormat, TimestampOverlay, VideoFrameGenerator,
+            };
+            use audemsp_media::pipeline::sink::VideoSinkWants;
+            use audemsp_media::pipeline::source::VideoSource;
+            use audemsp_webrtc::WebRtcTrackSink;
+
+            // v2: fps/resolution 接 config.capture（修复旧循环硬编码 33ms/640×480）。
+            let fps = config.capture.framerate.max(1);
+            let (width, height) = parse_resolution(&config.capture.resolution);
+
+            let burner = TextBurner::new(BitmapFont::new(), false, Anchor::TopLeft);
+            let overlay = TimestampOverlay::new(burner, TimestampFormat::Combined);
+            let squares = SquaresConfig {
+                count: 40,
+                min_size: 20,
+                max_size: 300,
+                motion_speed: 10, // 沿用 B5 常量（v2 审核确认）
                 color_strategy: ColorStrategy::default(),
-            });
-            let mut frame = vec![0u8; y_size + 2 * uv_size];
-            let mut next = tokio::time::Instant::now() + Duration::from_millis(33);
-            loop {
-                tokio::time::sleep_until(next).await;
-                pattern.draw(&mut y, &mut u, &mut v, width as usize, (width / 2) as usize, (width / 2) as usize, width, height);
-                frame[..y_size].copy_from_slice(&y);
-                frame[y_size..y_size + uv_size].copy_from_slice(&u);
-                frame[y_size + uv_size..].copy_from_slice(&v);
-                if let Err(e) = video_track_send.write_raw_i420(&frame, width, height).await {
-                    tracing::warn!("SFU write_raw_i420 error: {}", e);
-                    break;
-                }
-                next += Duration::from_millis(33);
-                if next < tokio::time::Instant::now() {
-                    next = tokio::time::Instant::now();
-                }
-            }
-        });
+            };
+
+            let generator = VideoFrameGenerator::new();
+            let sink = WebRtcTrackSink::new(video_track.clone())
+                .map_err(|e| anyhow::anyhow!("WebRtcTrackSink: {}", e))?;
+            generator.add_or_update_sink(Box::new(sink), VideoSinkWants::default());
+            generator.start(fps, PatternMode::Squares(squares), Some(overlay), width, height);
+            // Drop guard: 作用域结束（main 退出/错误路径）→ generator.stop() 停线程 (BLOCKER-4)。
+            let _generator = generator;
+        }
 
         // PIT-76: 周期关键帧触发 — GOP ≤ keyframe_interval 秒（默认 2s）。
         // interval 首 tick 立即 = 协商完成即触发一次（快速首帧）; libwebrtc 每次

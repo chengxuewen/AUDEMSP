@@ -227,6 +227,14 @@ impl VideoFrameGenerator {
     }
 }
 
+/// v2 (计划 video-source-unification BLOCKER-4): Drop 时停止生成线程，
+/// 防止帧源生命周期结束后 30fps 空转烧 CPU。stop() 幂等，join 在锁外（无死锁）。
+impl Drop for VideoFrameGenerator {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 impl VideoSource<BoxVideoFrame> for VideoFrameGenerator {
     fn add_or_update_sink(
         &self,
