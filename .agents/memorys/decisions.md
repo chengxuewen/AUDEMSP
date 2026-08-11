@@ -285,3 +285,19 @@ e2e_sfu_codec_prefs.rs / offerer_prefs_test.rs 实证
 P2P offerer 路径 setCodecPreferences 留后续接线。
 
 **验证**: 5 场景矩阵（auto/h264+浏览器渲染/vp8/vp9 负向/backend=software）+ 全量回归
+
+## D219: Web 端视频流编码状态展示（ToDesk 式诊断） (2026-08-11)
+
+**决策**: VideoPlayer 内嵌 ToDesk 风格 stats 面板 — Host 编码状态经 **room 广播 relay**
+（非 admin WS）→ 浏览器现有 /ws 直接收到; Host get_stats FFI 接线（纯 Rust）提供实际编码器。
+
+**关键实证**:
+1. **转发路径**: admin WS 推送通道（event_tx）signaling.rs 无访问权, 且浏览器播放只连 /ws →
+   EncoderStatus 走 should_relay 白名单 + DeviceStream 过滤放行（NewProducer 同模式, 零新通道）
+2. **get_stats**: webrtc-sys FFI 已就绪（ToJson 含全部字段含 encoderImplementation）→
+   纯 Rust 解析, 零 C++ 改动; RTCOutboundRtpStreamStats 加 encoder_implementation
+3. **实际编码器优于请求值**: backend=hardware（无 GPU）→ 实际 fallback OpenH264 软编 →
+   面板显示"软编"+OpenH264（请求值会误报"硬编"）
+4. **浏览器侧 inbound-rtp 数据**: headless shell 环境 getStats 为空（环境限制, 真实浏览器有数据）
+
+**影响**: host.conf codec/backend 全链路可见; 车端硬编状态可诊断; P3（CPU/GPU 系统性能）留后续。

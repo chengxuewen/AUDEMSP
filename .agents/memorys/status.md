@@ -123,3 +123,10 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - offer codec 参数化 (config.encoder.codec) + backend 接线 + EncoderConfig.codec (78d95c4)
 - H264 42e01f 全链路: router profile 统一 + produce parameters + 浏览器 consume 双 codec (75a849a)
 - 验证: auto→VP8 / h264→浏览器 1280x720 渲染 / vp8 / vp9→Error 5000 / backend=software
+
+## Web 端编码状态展示 (2026-08-11, 计划 web-stream-stats T1-T6)
+
+- EncoderStatus 信令 + webrtc-sys get_stats 接线（ToJson 解析, encoder_implementation）(1a46296)
+- Host 2s 周期上报 + server room 广播 relay（should_relay + DeviceStream 放行）(1678e8c)
+- sfu-client StreamMetrics 扩展 + VideoPlayer ToDesk 风格分组面板（连接质量/编解码器/系统性能）(da16c33)
+- 验证: 面板显示"软编/OpenH264/H264/30fps/1280x720" + encoder_status 4 次接收 + 全量回归
