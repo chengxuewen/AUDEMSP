@@ -885,3 +885,15 @@ close() { this.closed = true; ... }
 **验证**: chown 后 up server + cargo build 12m 全量成功，target 属主 maxsense，0 root 文件。
 
 **禁止**: 在 clean（rmtree 大目录）未完成时启动容器；Permission denied 时不查属主直接重试。
+
+## PIT-81: 同步帧生成器绑定 if 分支作用域 — Drop 提前停线程 (2026-08-11)
+
+**症状**: B5 帧循环替换为 VideoFrameGenerator 后，`omsp-video-gen` 线程启动即消失，无帧推流（浏览器黑屏，videoWidth 恒 0）。诊断日志显示 `thread entered (running=false)` ——线程首次调度前 running 已被置 false。
+
+**根因**: 生成器是**同步对象**（std::thread + Drop impl stop()）。`let _generator = {...}` 绑定在 `if config.sfu_produce { ... }` **分支块内**——分支执行完（ready 日志后 `} else {`）即离开作用域 → Drop → stop() → running=false → 线程首轮循环即退出。原 B5 代码是 `tokio::spawn` detached task（不受作用域影响），替换时未意识到同步对象的作用域语义差异。
+
+**解法**: 帧生成器提升到 main 级作用域：`let mut frame_generator: Option<VideoFrameGenerator> = None;`（main 开头声明），分支内 `frame_generator = Some(generator);`，main 结束才 Drop。
+
+**验证**: `ps -L -p <pid> -o comm | grep omsp` 线程持续存在；server 日志 key frame 间隔 2.0s（PIT-76 不回归）；浏览器首帧渲染 + 左上角时间戳水印。
+
+**禁止**: 生命周期需超出分支的对象绑定在分支块内（if/loop/块表达式）——检查对象是否有 Drop 副作用（线程/连接/文件）；异步 spawn 对象（JoinHandle）可脱离作用域，同步对象不行。
