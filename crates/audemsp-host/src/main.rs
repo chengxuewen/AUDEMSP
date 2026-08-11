@@ -295,7 +295,7 @@ let app = axum::Router::new()
         // 固定 offer codec = 固定协商交集 = 固定实际编码（Oracle 审核: produce 参数裁剪不可行）
         // PT 对齐 router 默认（sfu.rs default_router_options: VP8 96 / H264 101）; VP9/AV1 router 无 → 协商失败负向
         let (sdp_pt, sdp_codec, sdp_clock, sdp_fmtp) = match config.encoder.codec.as_str() {
-            "h264" => (101u16, "H264", 90000u32, Some("profile-level-id=4d0032;packetization-mode=1")),
+            "h264" => (101u16, "H264", 90000u32, Some("profile-level-id=42e01f;packetization-mode=1")), // v2 T7: 与 router 42e01f 对齐
             "vp8" => (96u16, "VP8", 90000u32, None),
             "vp9" => (98u16, "VP9", 90000u32, None),
             "av1" => (100u16, "AV1", 90000u32, None),

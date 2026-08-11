@@ -65,7 +65,7 @@ mod imp {
                 parameters: RtpCodecParametersParameters::from([
                     ("level-asymmetry-allowed", 1_u32.into()),
                     ("packetization-mode", 1_u32.into()),
-                    ("profile-level-id", "4d0032".into()),
+                    ("profile-level-id", "42e01f".into()), // v2: 4d0032→42e01f（浏览器解码兼容性, encoder-backend-codec-config T7 实证）
                 ]),
                 rtcp_feedback: vec![],
             },

@@ -87,14 +87,33 @@ lines.push(String::new());
 
 /// P3 (v2): 从协商结果 (RTCRtpParameters) 构造 mediasoup produce 的 rtp_parameters。
 /// 对齐官方客户端 — 数据来自 transceiver.sender.get_parameters()，非手工硬编码。
-/// P3 (v2): 从协商结果 (RTCRtpParameters) 构造 mediasoup produce 的 rtp_parameters。
-/// 对齐官方客户端 — 数据来自 transceiver.sender.get_parameters()，非手工硬编码。
 pub fn build_produce_rtp_parameters_from_rtp(params: &RTCRtpParameters) -> Value {
     let codecs: Vec<Value> = params.codecs.iter().map(|c| {
+        // v2 (encoder-backend-codec-config T4 实证): H264 必须带 parameters（PIT-54 严格匹配）—
+        // VP8 router parameters 为空侥幸匹配; H264 router 有 profile/packetization 参数, 缺失必败
+        // (Unsupported codec). sdp_fmtp_line "k=v;k=v" → mediasoup parameters JSON。
+        let parameters: Value = c
+            .sdp_fmtp_line
+            .as_deref()
+            .map(|line| {
+                let mut map = serde_json::Map::new();
+                for kv in line.split(';') {
+                    if let Some((k, v)) = kv.split_once('=') {
+                        // 数字参数转 number（mediasoup 参数类型敏感）
+                        let val: Value = v.parse::<i64>()
+                            .map(|n| json!(n))
+                            .unwrap_or_else(|_| json!(v));
+                        map.insert(k.trim().to_string(), val);
+                    }
+                }
+                Value::Object(map)
+            })
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
         json!({
             "mimeType": c.mime_type,
             "payloadType": c.payload_type,
             "clockRate": c.clock_rate,
+            "parameters": parameters,
         })
     }).collect();
     let encodings: Vec<Value> = params.encodings.iter().map(|e| {

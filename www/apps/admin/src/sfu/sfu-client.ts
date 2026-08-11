@@ -26,7 +26,7 @@ function videoRtpCapabilities() {
       parameters: {
         'level-asymmetry-allowed': 1,
         'packetization-mode': 1,
-        'profile-level-id': '4d0032',
+        'profile-level-id': '42e01f', // v2: 与 router/Host 对齐 (encoder-backend-codec-config T7)
       },
       rtcpFeedback: [],
     }],
@@ -328,14 +328,16 @@ export class SfuConsumerClient {
       `a=ice-pwd:${ice.password}`,
       `a=fingerprint:${fp.algorithm.toLowerCase()} ${fp.value}`,
       'a=setup:passive', // PIT-56: offer setup 决定 answerer 角色 — passive → 浏览器 active (ClientHello 发起方)；mediasoup 是 DTLS server 等 ClientHello (Host 侧 actpass 同理)
-      // Video: VP8 (P3: router/producer 默认 VP8 96 — 与 videoRtpCapabilities 一致;
-      // offer codec 必须匹配 consume codec, 否则浏览器不接收 RTP → 无视频)
-      'm=video 7 UDP/TLS/RTP/SAVPF 96',
+      // Video: VP8 96 + H264 101 同时请求（producer codec 由 Host 配置决定, v2:
+      // offer codec 必须匹配 consume codec, 否则浏览器不接收 RTP → 无视频）
+      'm=video 7 UDP/TLS/RTP/SAVPF 96 101',
       'c=IN IP4 127.0.0.1',
       'a=rtcp-mux',
       'a=mid:video',
       'a=sendonly', // PIT-56: offer 描述 mediasoup (发送方) — recvonly+浏览器recvonly → 协商 inactive → 无媒体轨
       'a=rtpmap:96 VP8/90000',
+      'a=rtpmap:101 H264/90000',
+      'a=fmtp:101 profile-level-id=42e01f;packetization-mode=1',
       ...(videoCandidates ? [videoCandidates] : []),
       'a=end-of-candidates',
       // Audio: Opus
