@@ -108,3 +108,11 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - Host B5 手写循环 → VideoFrameGenerator + TimestampOverlay (Combined/TopLeft) — 时间戳水印修复 (acd28d9)
 - PIT-81: generator 绑定 main 级作用域修复 (7642960); e2e 脚本 headless shell (6268cf4)
 - 验证: 关键帧 2.0s 不回归 + 浏览器首帧渲染 + 水印像素确认 + e2e_sfu 4/4
+
+## setCodecPreferences 实现与验证 (2026-08-11, 计划 set-codec-preferences T1-T5)
+
+- transceiver_set_codec_preferences: track_id 定位（mid 协商前不存在）+ fmtp 双向映射 (fc49f07)
+- 6 场景矩阵 e2e_sfu_codec_prefs + offerer 机制验证 (732845e)
+- 实证结论: ① offerer 偏好生效（offer codec 序重排, H264>VP8）② answerer(SFU) 偏好对
+  answer 无效（libwebrtc 按 offer 序取交集）→ SFU 固定 codec 走 reduceCodecs
+  ③ VP9/AV1 负向: InvalidAccessError 语义（set 拒绝/空列表）

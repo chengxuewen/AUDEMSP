@@ -243,3 +243,23 @@
 **影响**: 全链路验证通过——Host produce → mediasoup → 浏览器 consume → 视频渲染（640×480, 153 帧, jitter 0.001）；关键帧间隔 99s→0.3s；e2e_sfu 4/4 通过（首次 Linux 真跑）。
 
 **验证**: `docker exec audemsp-server-1 sh -c 'cd /workspace && SFU_E2E_WS_URL="ws://127.0.0.1:9800/ws" SFU_E2E_PSK="audemsp-dev" cargo test -p audemsp-host --test e2e_sfu'` 4/4 + `node scripts/e2e-sfu-consume.cjs $TOKEN` videoWidth>0。
+
+## D217: setCodecPreferences 实现与 answerer 无效性实证 (2026-08-11)
+
+**决策**: 实现 RTCRtpTransceiver.setCodecPreferences W3C API（track_id 定位 transceiver），
+并实证 6 场景协商矩阵（H.264/VP8/VP9/AV1）。
+
+**实证结论**:
+1. **offerer 模式偏好生效** — create_offer 的 codec 序按偏好重排（H264 全在 VP8 前）
+2. **answerer 模式（SFU server-offer）偏好对 answer 无效** — libwebrtc 按 offer 序取交集；
+   SFU 固定 codec 必须走 **reduceCodecs**（mediasoup 官方模式: produce rtpParameters 裁剪）
+3. **VP9/AV1 负向** — 偏好不在 getCapabilities 支持列表 → set 失败（InvalidAccessError 语义）
+4. **mid 参数化不可行** — 协商前 transceiver 无 mid（offerer 核心场景）→ track_id 定位
+   （与 request_key_frame 同模式）
+
+**影响**: ① API 以 track_id 定位 ② SFU 固定 codec 需求（车端 H264）实现为 reduceCodecs
+等价物（build_produce_rtp_parameters_from_rtp 后裁剪, ~5 行）③ setCodecPreferences 的
+实际用途限定 offerer/P2P 场景。
+
+**参考**: W3C WebRTC REC、libmediasoupclient Handler.cpp（reduceCodecs 模式）、
+e2e_sfu_codec_prefs.rs / offerer_prefs_test.rs 实证
