@@ -71,6 +71,13 @@ export interface StreamMetrics {
   bitrate: number;      // kbps
   jitter: number;       // ms
   resolution: string;
+  // v2 (web-stream-stats T4): 编解码诊断 — 浏览器侧 + Host EncoderStatus 上报合并
+  decoderImplementation?: string;   // 浏览器解码器（inbound-rtp）
+  codec?: string;                   // 编码模式（Host EncoderStatus, e.g. video/H264）
+  encoderBackend?: string;          // Host backend 请求值（auto/software/hardware...）
+  encoderImplementation?: string;   // Host 实际编码器（get_stats, e.g. OpenH264/libvpx）
+  hostFps?: number;                 // Host outbound fps
+  hostResolution?: string;          // Host 编码分辨率
 }
 
 export class SfuConsumerClient {
@@ -261,6 +268,16 @@ export class SfuConsumerClient {
           console.log('SfuClient: new_producer before transport, queuing');
           this.pendingProducer = msg;
         }
+      } else if (msg.type === 'encoder_status') {
+        // v2 (web-stream-stats T4): Host 编码状态（room 广播）→ 合并进 metrics
+        this.onMetrics({
+          rtt: 0, packetLoss: 0, fps: 0, bitrate: 0, jitter: 0, resolution: '',
+          codec: msg.codec,
+          encoderBackend: msg.encoder_backend,
+          encoderImplementation: msg.encoder_implementation ?? undefined,
+          hostFps: msg.frames_per_second,
+          hostResolution: msg.frame_width && msg.frame_height ? `${msg.frame_width}x${msg.frame_height}` : undefined,
+        });
       } else if (msg.type === 'consumed') {
         this.logT('consumed (consumer 创建成功, 等待 RTP)');
         // ponytail: producer consumed, stream arrives via ontrack
@@ -361,7 +378,7 @@ export class SfuConsumerClient {
       try {
         const stats = await this.pc.getStats();
         let rtt = 0, packetsLost = 0, packetsReceived = 0, fps = 0, bitrate = 0, jitter = 0;
-        let width = 0, height = 0;
+        let width = 0, height = 0, decoderImpl: string | undefined;
 
         stats.forEach((report) => {
           if (report.type === 'candidate-pair' && report.state === 'succeeded') {
@@ -375,6 +392,7 @@ export class SfuConsumerClient {
             jitter = Math.round(((report as any).jitter || 0) * 1000);
             width = (report as any).frameWidth || 0;
             height = (report as any).frameHeight || 0;
+            decoderImpl = (report as any).decoderImplementation || undefined; // v2 T4
           }
         });
 
@@ -385,6 +403,7 @@ export class SfuConsumerClient {
           bitrate,
           jitter,
           resolution: width && height ? `${width}x${height}` : 'unknown',
+          decoderImplementation: decoderImpl,
         });
       } catch (err) {
         console.warn('SfuClient: getStats failed', err);

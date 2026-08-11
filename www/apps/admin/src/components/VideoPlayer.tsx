@@ -127,17 +127,36 @@ export default function VideoPlayer({ roomId, serverUrl, token, onClose }: Props
           </div>
         )}
 
-        {/* Detail stats panel */}
+        {/* Detail stats panel — v2 (web-stream-stats T5): ToDesk 风格分组 */}
         {showStats && metrics && (
           <div className="vp-stats-panel" onClick={(e) => e.stopPropagation()}>
             <h4>Stream Stats</h4>
+            {/* 连接质量 */}
+            <h5>连接质量</h5>
             <div className="stats-grid">
-              <div><label>RTT</label><span>{metrics.rtt}ms</span></div>
-              <div><label>Jitter</label><span>{metrics.jitter}ms</span></div>
-              <div><label>Packet Loss</label><span>{metrics.packetLoss}%</span></div>
-              <div><label>Bitrate</label><span>{Math.round(metrics.bitrate / 1000)}Mbps</span></div>
-              <div><label>FPS</label><span>{metrics.fps}</span></div>
-              <div><label>Resolution</label><span>{metrics.resolution}</span></div>
+              <div><label>帧率</label><span>{metrics.fps}fps</span></div>
+              <div><label>延时</label><span>{metrics.rtt}ms</span></div>
+              <div><label>丢包</label><span>{metrics.packetLoss}%</span></div>
+              <div><label>码率</label><span>{Math.round(metrics.bitrate / 1000)}Mbps</span></div>
+              <div><label>抖动</label><span>{metrics.jitter}ms</span></div>
+              <div><label>分辨率</label><span>{metrics.resolution}</span></div>
+            </div>
+            {/* 编解码器（Host EncoderStatus + 浏览器解码器） */}
+            <h5>编解码器</h5>
+            <div className="stats-grid">
+              <div><label>编码</label><span>{metrics.encoderImplementation ? (metrics.encoderImplementation.toLowerCase().includes('libvpx') || metrics.encoderImplementation.toLowerCase().includes('openh264') ? '软编' : '硬编') : (metrics.encoderBackend === 'software' ? '软编' : metrics.encoderBackend && metrics.encoderBackend !== 'auto' ? '硬编' : '未知')}</span></div>
+              <div><label>实际编码器</label><span>{metrics.encoderImplementation || metrics.encoderBackend || '—'}</span></div>
+              <div><label>编码模式</label><span>{metrics.codec ? metrics.codec.replace('video/', '') : '—'}</span></div>
+              <div><label>解码器</label><span>{metrics.decoderImplementation || '—'}</span></div>
+              <div><label>色度采样</label><span>4:2:0</span></div>
+              <div><label>HDR</label><span>已关闭</span></div>
+            </div>
+            {/* 系统性能（P3 占位） */}
+            <h5>系统性能</h5>
+            <div className="stats-grid">
+              <div><label>Host 帧率</label><span>{metrics.hostFps ? `${metrics.hostFps}fps` : '—'}</span></div>
+              <div><label>Host 分辨率</label><span>{metrics.hostResolution || '—'}</span></div>
+              <div><label>CPU/GPU</label><span>待 P3</span></div>
             </div>
             <button className="vp-stats-close" onClick={() => setShowStats(false)}>✕</button>
           </div>

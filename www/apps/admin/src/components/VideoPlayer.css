@@ -61,6 +61,7 @@
   color: #ccc; font-size: .8rem; z-index: 10;
 }
 .vp-stats-panel h4 { color: #fff; margin: 0 0 .75rem; }
+.vp-stats-panel h5 { color: #4da3ff; margin: .75rem 0 .4rem; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid #333; padding-bottom: .25rem; }
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
 .stats-grid label { color: #888; display: block; font-size: .7rem; }
 .stats-grid span { color: #fff; }
