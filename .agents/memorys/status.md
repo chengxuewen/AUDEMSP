@@ -1,9 +1,15 @@
 # AUDEMSP Status
 
-**生成**: 2026-08-11| 决策: 190+ (D1-D216, 含跳号)| Phase: 3 完成 || 228 commits | 22 skills | mediasoup 0.24.1 | PIT-77 | 分支: main (VideoSource 统一接口已合入) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-11| 决策: 220 (D1-D219, 含跳号)| Phase: 3 完成 || 317 commits | 22 skills | mediasoup 0.24.1 | PIT-84 | 分支: main (编码双轨 + 5 codec + Web stats 已合入) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
-| audemsp-common | 68 | — | +backup +logging +auth tests |
+| audemsp-common | 71 | — | EncoderStatus 信令 + codec 字段 |
 | audemsp-media | 54 | — | |
+| audemsp-webrtc (stub) | 48 | 67+ | track_sink + set_video_encoder_backend |
+| audemsp-webrtc (webrtc-sys) | 20 | 49 (4 ICE 预存) | get_stats 接线 + setCodecPreferences |
+| audemsp-webrtc (webrtc-rs) | 11 | 29 (9 SDP/ICE 预存) | |
+| audemsp-codec (stub) | 0 | 32 | |
+| audemsp-codec (FFmpeg) | 0 | 35 | |
+| audemsp-codec (GStreamer) | 0 | 27 | pixi 环境 |
 | audemsp-webrtc (stub) | 11 | 67+ | |
 | audemsp-webrtc (webrtc-sys) | 11 | 49 (4 ICE 预存) | |
 | audemsp-webrtc (webrtc-rs) | 11 | 29 (9 SDP/ICE 预存) | |
@@ -136,3 +142,14 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - 闪烁: 双数据源交替覆盖 → mergedMetrics 合并累加器（6df4630）
 - 码率: 累计 bytesReceived 当瞬时 → 增量计算
 - 验证: 3 采样稳定（libvpx/VP8/30fps/软编）
+
+## 2026-08-11 长会话总览（7 计划 + 3 修复）
+
+- OMO 配置迁移: .opencode/oh-my-openagent.jsonc → .omo/omo.jsonc（c2e9dd2）
+- VideoSource 统一帧源: WebRtcTrackSink 桥接 + B5 替换 + PIT-81（c56bd87→9349a2c）
+- setCodecPreferences: track_id 定位 + 6 场景矩阵 + D217（fc49f07/732845e）
+- 编码双轨: set_video_encoder_backend + offer codec 控制 + D218（d4e641e→75a849a）
+- Web stats 面板: EncoderStatus + get_stats + ToDesk 分组 + D219（1a46296→5ef7ff5）
+- 修复: 面板闪烁(PIT-82) + 码率增量 + 解码器降级链 + 透明度（6df4630→4302f93）
+- Router 5 codec: VP9(99)/AV1(97) 启用, H265 待 mediasoup 绑定（fdcd708）
+- 记忆: PIT-81/82/83/84 + D217/218/219 + edit-safety 规则 9/10
