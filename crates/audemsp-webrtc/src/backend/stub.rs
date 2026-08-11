@@ -168,7 +168,7 @@ impl PcBackend for StubPc {
         Ok(())
     }
 
-    fn transceiver_set_codec_preferences(&self, _mid: &str, _codecs: Vec<crate::rtp::RTCRtpCodecCapability>) -> Result<(), crate::RTCError> {
+    fn transceiver_set_codec_preferences(&self, _track_id: &str, _codecs: Vec<crate::rtp::RTCRtpCodecCapability>) -> Result<(), crate::RTCError> {
         Ok(())
     }
 }

@@ -154,6 +154,10 @@ self.backend.sender_get_parameters(track_id)
         self.backend.restart_ice()
     }
 
+    fn transceiver_set_codec_preferences(&self, track_id: &str, codecs: Vec<crate::rtp::RTCRtpCodecCapability>) -> Result<(), RTCError> {
+        self.backend.transceiver_set_codec_preferences(track_id, codecs)
+    }
+
     fn get_configuration(&self) -> RTCConfiguration {
         self.backend.pc_configuration()
     }

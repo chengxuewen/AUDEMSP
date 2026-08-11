@@ -674,20 +674,23 @@ Err(RTCError::Track(format!("sender not found: {track_id}")))
         Err(RTCError::Track(format!("transceiver not found: {mid}")))
     }
 
-    /// v2 (set-codec-preferences T3): W3C setCodecPreferences — 设置协商 codec 偏好。
-    /// Oracle F8 实证: pinned libwebrtc（≥2023-02 重构）无 mid()/state 检查,
-    /// set_remote_description 后调用可行（answerer 序列）。
-    fn transceiver_set_codec_preferences(&self, mid: &str, codecs: Vec<crate::rtp::RTCRtpCodecCapability>) -> Result<(), RTCError> {
+    /// v2 (set-codec-preferences T3+T5 实证修正): W3C setCodecPreferences。
+    /// 按 sender.track().id() 匹配 transceiver（协商前 mid 不存在 — offerer 核心场景；
+    /// request_key_frame 同模式）。answerer 场景协商后设置对 answer 无效（libwebrtc
+    /// 按 offer 序取交集）— T5 实测结论，固定 codec 走 reduceCodecs。
+    fn transceiver_set_codec_preferences(&self, track_id: &str, codecs: Vec<crate::rtp::RTCRtpCodecCapability>) -> Result<(), RTCError> {
         let sys_codecs = codecs.iter().map(map_codec_capability_to_sys).collect::<Vec<_>>();
         for tc in self.pc.get_transceivers() {
-            if tc.ptr.mid().ok().as_deref() == Some(mid) {
-                tc.ptr
-                    .set_codec_preferences(sys_codecs)
+            let t = &tc.ptr;
+            let sender = t.sender();
+            let track = sender.track();
+            if track.id() == track_id {
+                t.set_codec_preferences(sys_codecs)
                     .map_err(|e| RTCError::RTCPeerConnection(e.what().to_owned()))?;
                 return Ok(());
             }
         }
-        Err(RTCError::Track(format!("transceiver not found: {mid}")))
+        Err(RTCError::Track(format!("sender not found: {track_id}")))
     }
 }
 

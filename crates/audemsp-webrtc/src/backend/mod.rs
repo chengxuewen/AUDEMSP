@@ -170,7 +170,7 @@ Err(RTCError::NotSupported("sender_set_parameters".into()))
     }
 
     /// W3C RTCRtpTransceiver.setCodecPreferences — v2 补
-    fn transceiver_set_codec_preferences(&self, _mid: &str, _codecs: Vec<RTCRtpCodecCapability>) -> Result<(), RTCError> {
+    fn transceiver_set_codec_preferences(&self, _track_id: &str, _codecs: Vec<RTCRtpCodecCapability>) -> Result<(), RTCError> {
         tracing::warn!("transceiver_set_codec_preferences: not supported by backend");
         Err(RTCError::NotSupported("transceiver_set_codec_preferences".into()))
     }
