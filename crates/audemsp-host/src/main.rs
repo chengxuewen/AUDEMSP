@@ -297,8 +297,8 @@ let app = axum::Router::new()
         let (sdp_pt, sdp_codec, sdp_clock, sdp_fmtp) = match config.encoder.codec.as_str() {
             "h264" => (101u16, "H264", 90000u32, Some("profile-level-id=42e01f;packetization-mode=1")), // v2 T7: 与 router 42e01f 对齐
             "vp8" => (96u16, "VP8", 90000u32, None),
-            "vp9" => (98u16, "VP9", 90000u32, None),
-            "av1" => (100u16, "AV1", 90000u32, None),
+            "vp9" => (99u16, "VP9", 90000u32, None),  // PT 与 router 对齐 (sfu.rs default_router_options)
+            "av1" => (97u16, "AV1", 90000u32, None),
             _ => (96u16, "VP8", 90000u32, None), // auto 默认: 现状行为（router 序 VP8 优先）
         };
         let remote_sdp = sfu_media::build_remote_sdp(

@@ -69,6 +69,22 @@ mod imp {
                 ]),
                 rtcp_feedback: vec![],
             },
+            // v2 (2026-08-11): 用户要求 264/265/vp8/vp9/av1 — VP9/AV1 启用;
+            // H265 不可用: mediasoup-rs 0.24 MimeTypeVideo 无 H265 绑定（worker 不支持, 需新版/自定义）
+            RtpCodecCapability::Video {
+                mime_type: MimeTypeVideo::Vp9,
+                preferred_payload_type: Some(99),  // 防冲突: 96/101 已用, 100 被 mediasoup 自动分配占用
+                clock_rate: NonZeroU32::new(90000).unwrap(),
+                parameters: RtpCodecParametersParameters::default(),
+                rtcp_feedback: vec![],
+            },
+            RtpCodecCapability::Video {
+                mime_type: MimeTypeVideo::AV1,
+                preferred_payload_type: Some(97),  // 池尾动态 PT（96/99/101 已用; 100-102 池首与 mediasoup 分配冲突, 实测）
+                clock_rate: NonZeroU32::new(90000).unwrap(),
+                parameters: RtpCodecParametersParameters::default(),
+                rtcp_feedback: vec![],
+            },
         ])
     }
     /// Result of a transport creation request.
@@ -220,7 +236,11 @@ mod imp {
                         .worker
                         .create_router(default_router_options())
                         .await
-                        .map_err(|e| format!("Failed to create router: {e}"))?;
+                        .map_err(|e| {
+                            // v2 诊断: 打印 codec 列表定位 PT 冲突
+                            tracing::error!("Router create failed; media_codecs={:?}", default_router_options());
+                            format!("Failed to create router: {e}")
+                        })?;
                     let router = Arc::new(router);
                     tracing::info!("Router created for room {}", room_id);
 

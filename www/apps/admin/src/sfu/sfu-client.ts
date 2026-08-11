@@ -29,6 +29,20 @@ function videoRtpCapabilities() {
         'profile-level-id': '42e01f', // v2: 与 router/Host 对齐 (encoder-backend-codec-config T7)
       },
       rtcpFeedback: [],
+    }, {
+      kind: 'video',
+      mimeType: 'video/VP9',
+      clockRate: 90000,
+      preferredPayloadType: 99,
+      parameters: {},
+      rtcpFeedback: [],
+    }, {
+      kind: 'video',
+      mimeType: 'video/AV1',
+      clockRate: 90000,
+      preferredPayloadType: 97,
+      parameters: {},
+      rtcpFeedback: [],
     }],
     headerExtensions: [],
   };
@@ -359,7 +373,7 @@ export class SfuConsumerClient {
       'a=setup:passive', // PIT-56: offer setup 决定 answerer 角色 — passive → 浏览器 active (ClientHello 发起方)；mediasoup 是 DTLS server 等 ClientHello (Host 侧 actpass 同理)
       // Video: VP8 96 + H264 101 同时请求（producer codec 由 Host 配置决定, v2:
       // offer codec 必须匹配 consume codec, 否则浏览器不接收 RTP → 无视频）
-      'm=video 7 UDP/TLS/RTP/SAVPF 96 101',
+      'm=video 7 UDP/TLS/RTP/SAVPF 96 101 99 97',
       'c=IN IP4 127.0.0.1',
       'a=rtcp-mux',
       'a=mid:video',
@@ -367,6 +381,8 @@ export class SfuConsumerClient {
       'a=rtpmap:96 VP8/90000',
       'a=rtpmap:101 H264/90000',
       'a=fmtp:101 profile-level-id=42e01f;packetization-mode=1',
+      'a=rtpmap:99 VP9/90000',
+      'a=rtpmap:97 AV1/90000',
       ...(videoCandidates ? [videoCandidates] : []),
       'a=end-of-candidates',
       // Audio: Opus
