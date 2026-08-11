@@ -291,18 +291,26 @@ let app = axum::Router::new()
         // PIT-48: a=candidate 行必须位于 m= 行之后（media section 内）——
         // 会话级 candidate 被 libwebrtc 忽略 → remote candidate 丢失 → ICE 不发起 STUN
 
-        // ① remote SDP from real server ICE candidates (VP8 PT 96 = router 默认)
+        // ① remote SDP from real server ICE candidates — codec 由 config.encoder.codec 控制 (v2, T3/T4)
+        // 固定 offer codec = 固定协商交集 = 固定实际编码（Oracle 审核: produce 参数裁剪不可行）
+        // PT 对齐 router 默认（sfu.rs default_router_options: VP8 96 / H264 101）; VP9/AV1 router 无 → 协商失败负向
+        let (sdp_pt, sdp_codec, sdp_clock, sdp_fmtp) = match config.encoder.codec.as_str() {
+            "h264" => (101u16, "H264", 90000u32, Some("profile-level-id=4d0032;packetization-mode=1")),
+            "vp8" => (96u16, "VP8", 90000u32, None),
+            "vp9" => (98u16, "VP9", 90000u32, None),
+            "av1" => (100u16, "AV1", 90000u32, None),
+            _ => (96u16, "VP8", 90000u32, None), // auto 默认: 现状行为（router 序 VP8 优先）
+        };
         let remote_sdp = sfu_media::build_remote_sdp(
             &ice_parameters,
             &dtls_parameters,
             ice_candidates.as_ref(),
-            96,
-            "VP8",
-            90000,
-            // PIT-76 v2: x-google-max-keyframe-interval 注入已移除（实测无效，
-            // 且与 request_key_frame 周期触发冲突）— GOP 由周期触发控制
-            None,
+            sdp_pt,
+            sdp_codec,
+            sdp_clock,
+            sdp_fmtp,
         );
+        tracing::info!("SFU: offer codec={sdp_codec} PT={sdp_pt} (encoder.codec={})", config.encoder.codec);
         let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
         pc.set_remote_description(&remote_desc).await
             .map_err(|e| anyhow::anyhow!("set remote: {}", e))?;
@@ -317,6 +325,21 @@ let app = axum::Router::new()
             TrackRef::Sender(s) => s,
             _ => return Err(anyhow::anyhow!("expected sender track")),
         };
+
+        // v2 (T5): 编码器软/硬后端选择 — 协商前设置（首个编码器创建于首帧, SetEncoderSelector 生效）
+        // 语义: 偏好非强制（不可用时 libwebrtc 自动 fallback + warning）
+        if let Some(backend) = audemsp_webrtc::rtp::RTCVideoEncoderBackend::from_config(&config.encoder.backend) {
+            if backend != audemsp_webrtc::rtp::RTCVideoEncoderBackend::Auto {
+                match pc.get_senders().iter().find(|s| s.track_id == track_id) {
+                    Some(sender) => {
+                        if let Err(e) = sender.set_video_encoder_backend(backend) {
+                            tracing::warn!("SFU: set_video_encoder_backend({backend:?}): {e}");
+                        }
+                    }
+                    None => tracing::warn!("SFU: sender not found for backend config: {track_id}"),
+                }
+            }
+        }
         tracing::info!("SFU: video track added (id={})", track_id);
 
         // ③ answer + set local — PIT-76 v2: x-google 注入已移除（见 build_remote_sdp）

@@ -27,7 +27,8 @@ pub struct HostConfig {
     pub psk: Option<String>,
 
     /// Room configuration.
-    pub room: RoomConfig,
+    #[serde(default)]
+pub room: RoomConfig,
 
     /// SFU produce mode (mediasoup). When true, host pushes via SFU instead of P2P.
     #[serde(default)]
@@ -165,6 +166,12 @@ pub struct EncoderConfig {
     /// 语义从 GOP 帧数改为秒；0 视为 1 防御）。
     #[serde(default = "default_gop")]
     pub keyframe_interval: u32,
+
+    /// 编码 codec 偏好（v2, encoder-backend-codec-config）: "auto"/"vp8"/"h264"/"vp9"/"av1"。
+    /// auto = router 决定（现状）; 指定值 = 构造远程 offer 时只声明目标 codec
+    /// （libwebrtc 实际编码 = 协商交集 = offer codec, 三者一致）。
+    #[serde(default = "default_codec")]
+    pub codec: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,6 +220,9 @@ fn default_encoder() -> String {
 }
 fn default_bitrate() -> u32 {
     2000
+}
+fn default_codec() -> String {
+    "auto".to_string()
 }
 fn default_gop() -> u32 {
 // PIT-76: 语义从帧改为秒（周期关键帧触发间隔）
