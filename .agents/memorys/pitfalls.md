@@ -897,3 +897,18 @@ close() { this.closed = true; ... }
 **验证**: `ps -L -p <pid> -o comm | grep omsp` 线程持续存在；server 日志 key frame 间隔 2.0s（PIT-76 不回归）；浏览器首帧渲染 + 左上角时间戳水印。
 
 **禁止**: 生命周期需超出分支的对象绑定在分支块内（if/loop/块表达式）——检查对象是否有 Drop 副作用（线程/连接/文件）；异步 spawn 对象（JoinHandle）可脱离作用域，同步对象不行。
+
+## PIT-82: 双数据源交替 setState 覆盖 — stats 面板闪烁 (2026-08-11)
+
+**症状**: Web stats 面板不断闪烁，编码器字段一会显示"OpenH264"一会"-"，浏览器字段一会数值一会 0。
+
+**根因**: 两个数据源（浏览器 getStats 2s 轮询 + Host encoder_status 2s 上报）各自回调**不完整 metrics 对象**，
+前端 setMetrics 直接整体替换 → 交替覆盖（getStats 回调缺 encoder 字段 → 面板编码器显示 fallback；
+encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染问题，是状态管理问题。
+
+**解法**: 单一合并累加器 — `emitMetrics(partial)` 内部 `mergedMetrics = {...merged, ...partial}` 后整体回调，
+部分字段只覆盖不重置。码率同轮修复: 累计 bytesReceived 当瞬时值 → 增量计算（字节差/时间窗）。
+
+**验证**: 3 次采样（间隔 2.5s 覆盖 2s 上报周期）字段稳定: libvpx/VP8/30fps/软编。
+
+**禁止**: 多数据源分别回调不完整对象直接 setState 整体替换；累计统计值当瞬时值展示。

@@ -130,3 +130,9 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - Host 2s 周期上报 + server room 广播 relay（should_relay + DeviceStream 放行）(1678e8c)
 - sfu-client StreamMetrics 扩展 + VideoPlayer ToDesk 风格分组面板（连接质量/编解码器/系统性能）(da16c33)
 - 验证: 面板显示"软编/OpenH264/H264/30fps/1280x720" + encoder_status 4 次接收 + 全量回归
+
+## stats 面板修复 (2026-08-11)
+
+- 闪烁: 双数据源交替覆盖 → mergedMetrics 合并累加器（6df4630）
+- 码率: 累计 bytesReceived 当瞬时 → 增量计算
+- 验证: 3 采样稳定（libvpx/VP8/30fps/软编）
