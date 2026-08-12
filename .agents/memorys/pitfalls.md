@@ -936,3 +936,19 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 **验证**: 脚本执行后 `grep -c "新内容" <file>` 确认生效；失败的脚本重跑前先确认哪些块已写盘。
 
 **禁止**: 多块替换脚本在末尾一次性写盘；assert 失败后假设前面已生效。
+
+## PIT-85: Jetson(linux-aarch64) host/client 构建 — conda 工具链无法链接 JetPack 系统库，统一改系统工具链 (2026-08-12)
+
+**症状**: Jetson 上 `cargo build -p audemsp-host -p audemsp-client` 链接失败，错误随阶段演进：`cannot find -lv4l2` → 传递依赖 `libv4lconvert/libEGL/libnvrm_mem/libnvos not found` → `libpthread.so.0: undefined reference to __twalk_r@GLIBC_PRIVATE`。此前 `pixi.toml` 缺 `linux-aarch64` 平台 → bootstrap 报 `unsupported-platform`。
+
+**根因**: 该机器是 Jetson（`/usr/src/jetson_multimedia_api` 存在），webrtc-sys 检测到 Jetson MMAPI 即启用 JetPack 硬编，链接 `nvv4l2/nvbufsurface/nvbuf_utils/v4l2`（预编译 libwebrtc.a + 系统库）。conda 交叉工具链（GCC 14.4/glibc 新）与 JetPack 系统库（glibc 2.35）**根本性不兼容**：① 可执行链接（-pie）的传递依赖搜索不用 -L，只用 -rpath-link/-rpath；② `cargo:rustc-link-arg` 不从 rlib 传播到最终二进制（最初两处修复「v4l2 精确路径 + rpath-link」均无效，链接命令实证无此参数）；③ 把系统 multiarch 目录加入搜索 → 拉入系统 glibc → 与 conda glibc 符号冲突；④ 加系统目录还遮蔽 libstdc++（GCC14→GCC10）。
+
+**解法（正确方案）**: 在 Jetson 平台**统一改用 JetPack 系统工具链**（与 livekit 官方 Jetson 流程一致，C18）：
+1. pixi.toml 加 `linux-aarch64` 平台 + `[target.linux-aarch64.activation.env]`：`CC=/usr/bin/gcc CXX=/usr/bin/g++ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/gcc CFLAGS=CXXFLAGS=LDFLAGS=""`（pixi env 在 conda activate.d 之后应用 → 压过 conda 的 CC/CXX 及 rust.sh 的 LINKER env）。
+2. .cargo/config.toml `[target.aarch64-unknown-linux-gnu]`：`linker="/usr/bin/gcc"` + `rustflags=["-C","link-arg=-B/usr/bin/"]`。
+   - **`-B/usr/bin/` 是必要项（团队审核发现 + 实证）**：pixi PATH 把 conda bin 放首位 → 系统 gcc 的 collect2 经 PATH 找到 conda bin/ld（GCC14 ld，搜 conda sysroot）→ 传递依赖仍失败。`-B/usr/bin/` 强制用系统 binutils（as/ld）→ 原生找到 /usr/lib/aarch64-linux-gnu + tegra。
+3. vendor/webrtc-sys/build.rs **回滚**到上游 `cargo:rustc-link-lib=dylib=v4l2`（系统 gcc 原生能找 libv4l2）。
+
+**验证**: `bash audemsp.sh build host` → `Finished`；`ldd target/debug/audemsp-host | grep -c "not found"` = 0；`strings <rlib> | grep GCC:` 含 `(Ubuntu 10.5.0...)` 系统 gcc；二进制可运行（无 WS server 时报连接拒绝属正常）。
+
+**禁止**: ① 依赖 `cargo:rustc-link-arg` 从 rlib 传播——它不传播；② 把系统 multiarch 目录整体加入 link-search/-L（遮蔽 libstdc++ + 拉系统 glibc 冲突）；③ 用符号链接伪造库路径（C20）；④ 用 `source .pixi/envs/default/activate` 验证环境——该脚本在 pixi 0.66 静默不生效（CONDA_PREFIX 空），会误用系统工具链造成**假成功**（曾致误判方案成功）。

@@ -301,3 +301,21 @@ P2P offerer 路径 setCodecPreferences 留后续接线。
 4. **浏览器侧 inbound-rtp 数据**: headless shell 环境 getStats 为空（环境限制, 真实浏览器有数据）
 
 **影响**: host.conf codec/backend 全链路可见; 车端硬编状态可诊断; P3（CPU/GPU 系统性能）留后续。
+
+## D220: Jetson(linux-aarch64) 构建统一用 JetPack 系统工具链 (2026-08-12)
+
+**决策**: 在 linux-aarch64 平台，host/client 构建**统一改用 JetPack 系统工具链**（gcc 10.5 + 系统 binutils），
+弃用 pixi conda 交叉编译器（GCC 14.4）。实现：pixi.toml `[target.linux-aarch64.activation.env]` 覆盖
+CC/CXX/CARGO_TARGET_..._LINKER 为 /usr/bin/gcc + 清空 CFLAGS/CXXFLAGS/LDFLAGS；.cargo/config.toml
+`[target.aarch64-unknown-linux-gnu]` linker=/usr/bin/gcc + `-B/usr/bin/` rustflags（裸 cargo 兜底 +
+强制系统 binutils，防 pixi PATH 首位 conda bin/ld 劫持 collect2）。
+
+**原因**: ① conda 交叉工具链与 JetPack 系统库**根本性不兼容**——可执行链接（-pie）传递依赖搜索
+不用 -L（只用 -rpath-link/-rpath），`cargo:rustc-link-arg` 不从 rlib 传播，把系统 multiarch 目录加入
+搜索会拉入系统 glibc 2.35 与 conda glibc 冲突、并遮蔽 libstdc++（GCC14→GCC10）；② 上游 livekit 官方
+Jetson 流程即系统工具链（C18 官方用法优先）；③ 系统 gcc 原生找到 libv4l2/tegra/系统 glib——零 hack。
+
+**影响**: ① Jetson 上 host/client 构建全绿（`audemsp.sh build host`），ldd 0 not-found，
+C++ 全链路 gcc 10.5；② **Jetson H264/AV1 硬编码器可用**（人工验证：backend=hardware + codec=h264/av1
+实际走 Jetson MMAPI 编码器）；macOS/x86_64 CI 零影响（全部 linux-aarch64 门控）；
+③ 后续若启 GStreamer codec 后端需单独评估 conda gstreamer 与系统工具链混用。

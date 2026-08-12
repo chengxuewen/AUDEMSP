@@ -1,6 +1,6 @@
 # AUDEMSP Status
 
-**生成**: 2026-08-11| 决策: 220 (D1-D219, 含跳号)| Phase: 3 完成 || 317 commits | 22 skills | mediasoup 0.24.1 | PIT-84 | 分支: main (编码双轨 + 5 codec + Web stats 已合入) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-12| 决策: 221 (D1-D220, 含跳号)| Phase: 3 完成 || 317 commits | 22 skills | mediasoup 0.24.1 | PIT-85 | 分支: main (Jetson 系统工具链 + H264/AV1 硬编可用) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | audemsp-common | 71 | — | EncoderStatus 信令 + codec 字段 |
 | audemsp-media | 54 | — | |
@@ -153,3 +153,12 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - 修复: 面板闪烁(PIT-82) + 码率增量 + 解码器降级链 + 透明度（6df4630→4302f93）
 - Router 5 codec: VP9(99)/AV1(97) 启用, H265 待 mediasoup 绑定（fdcd708）
 - 记忆: PIT-81/82/83/84 + D217/218/219 + edit-safety 规则 9/10
+
+## Jetson 构建 + H264/AV1 硬编可用 (2026-08-12)
+
+- pixi.toml 补 `linux-aarch64` 平台 + `[target.linux-aarch64.activation.env]` 统一系统工具链（gcc 10.5）
+- .cargo/config.toml `[target.aarch64-unknown-linux-gnu]` linker=/usr/bin/gcc + `-B/usr/bin/` rustflags
+- vendor/webrtc-sys/build.rs 回滚至上游（conda workaround 移除）
+- **验证**: `audemsp.sh build host` Finished; ldd 0 not-found; C++ 全链路 gcc 10.5
+- **人工验证: Jetson H264 + AV1 硬编码器可用**（backend=hardware + codec=h264/av1 走 Jetson MMAPI 编码器）
+- 记忆: PIT-85 + D220 + C23

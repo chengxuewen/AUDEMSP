@@ -375,3 +375,22 @@ docs/reference/
 **检查**: `grep -rn "docker exec.*audemsp-host\|docker.*cargo.*audemsp-host\|audemsp-host" scripts/*.sh .github/workflows/ci.yml` — host 相关命令应宿主原生；`AUDEMSP_SFU_ANNOUNCED_IP` 应为宿主可达 IP（非 172.18.x）。
 
 **来源**: 用户显式要求 (2026-08-10)
+
+
+## C23: Jetson(linux-aarch64) 构建统一用系统工具链 — 弃 conda 交叉编译器 (2026-08-12)
+
+**约束**: 在 linux-aarch64（Jetson）平台，host/client 构建**统一用 JetPack 系统工具链**（gcc 10.5 + 系统 binutils），
+**禁止用 pixi conda 交叉编译器链 webrtc-sys/tegra 系统库**。实现与门控：pixi.toml `[target.linux-aarch64.activation.env]`
+（CC/CXX/LINKER=/usr/bin/gcc + CFLAGS/CXXFLAGS/LDFLAGS 清空）+ .cargo/config.toml
+`[target.aarch64-unknown-linux-gnu]`（linker=/usr/bin/gcc + `-B/usr/bin/` rustflags）。
+
+**原因**: conda 交叉工具链（GCC14/glibc 新）无法干净链接 JetPack 系统库（glibc 2.35 冲突 + tegra 传递依赖
+libEGL/libv4lconvert 仅系统目录）；`cargo:rustc-link-arg` 不从 rlib 传播；系统 gcc 原生找到全部系统库
+= 上游 livekit 官方 Jetson 流程（PIT-85/D220）。
+
+**检查**: `pixi run bash -c 'echo $CC'` 应输出 `/usr/bin/gcc`；`audemsp.sh build host` 应 Finished；
+`ldd target/debug/audemsp-host | grep -c "not found"` = 0。**禁止**：`source .pixi/envs/default/activate` 验证环境
+（pixi 0.66 静默不生效 → CONDA_PREFIX 空 → 误用系统工具链造成假成功）；把 conda gcc 的 CC/CXX 覆盖回
+conda 交叉编译器（会 PIT-85 复发）。
+
+**来源**: PIT-85 / D220 (2026-08-12)
