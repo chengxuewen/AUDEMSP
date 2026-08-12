@@ -7,3 +7,13 @@ rustflags = ["-C", "link-args=-ObjC"]
 
 [target.aarch64-apple-darwin]
 rustflags = ["-C", "link-args=-ObjC"]
+
+# Jetson (linux-aarch64): 统一系统工具链 (gcc 10.5) 作最终链接器。
+# pixi 激活下由 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER env 覆盖 (见 pixi.toml);
+# 此段为裸 cargo (非 pixi) 时的兜底 (PIT-85)。
+[target.aarch64-unknown-linux-gnu]
+linker = "/usr/bin/gcc"
+# -B/usr/bin/: pixi PATH 把 conda bin 放首位 → 系统 gcc 的 collect2 经 PATH 找到
+# conda bin/ld (GCC14 ld, 搜 conda sysroot) → 可执行链接的 tegra 传递依赖解析失败。
+# -B/usr/bin/ 强制用系统 binutils (as/ld) → 原生找到 /usr/lib/aarch64-linux-gnu + tegra (PIT-85)。
+rustflags = ["-C", "link-arg=-B/usr/bin/"]

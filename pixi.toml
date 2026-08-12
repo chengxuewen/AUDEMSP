@@ -1,7 +1,7 @@
 [workspace]
 name = "AUDEMSP"
 channels = ["conda-forge"]
-platforms = ["osx-64", "osx-arm64", "linux-64"]
+platforms = ["osx-64", "osx-arm64", "linux-64", "linux-aarch64"]
 version = "0.1.0"
 
 # Phase 1 base dependencies — always installed (Rust + GStreamer)
@@ -74,6 +74,20 @@ ci-test = "cargo test --workspace"
 # Activation — set MESON for mediasoup-sys (avoids pip-installed meson)
 [activation]
 env = { MESON = "$CONDA_PREFIX/bin/meson", NINJA = "$CONDA_PREFIX/bin/ninja", LIBCLANG_PATH = "$CONDA_PREFIX/lib", PKG_CONFIG_PATH = "$CONDA_PREFIX/lib/pkgconfig", PATH = "$CONDA_PREFIX/bin:$PATH" }
+
+# Jetson (linux-aarch64): 统一使用 JetPack 系统工具链 (gcc 10.5) 构建 host/client。
+# conda 交叉编译器 (GCC 14.4) 无法干净链接 JetPack 系统库 (glibc 2.35 冲突 +
+# tegra 传递依赖 libEGL/libv4lconvert 仅在系统 multiarch 目录) — 上游 livekit
+# 官方 Jetson 流程即为系统工具链。CARGO_TARGET_*_LINKER 必须显式覆盖:
+# conda rust.sh 会设置它指向 conda cc, 优先级高于 .cargo/config.toml (PIT-85)。
+# CFLAGS/CXXFLAGS/LDFLAGS 清空: 移除 conda 注入的 -isystem/-L, 保证全链路一致。
+[target.linux-aarch64.activation.env]
+CC = "/usr/bin/gcc"
+CXX = "/usr/bin/g++"
+CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "/usr/bin/gcc"
+CFLAGS = ""
+CXXFLAGS = ""
+LDFLAGS = ""
 
 # Environments — composable feature groups
 [environments]
