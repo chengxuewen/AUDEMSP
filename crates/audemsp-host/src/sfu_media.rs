@@ -137,9 +137,18 @@ pub fn build_produce_rtp_parameters_from_rtp(params: &RTCRtpParameters) -> Value
         }
         enc
     }).collect();
+    // v3 (sfu-negotiation-completion T2): headerExtensions 从协商结果推导（非硬编码 []）—
+    // T1 自构 offer 声明 transport-cc 后, answer 协商成功 → sender.get_parameters()
+    // header_extensions 含 transport-cc → mediasoup 端获得 transport-cc 上下文,
+    // 生成/转发 feedback 给 host（BWE 自适应链路）。
+    let header_extensions: Vec<Value> = params.header_extensions.iter().map(|h| json!({
+        "uri": h.uri,
+        "id": h.id,
+        "encrypt": h.encrypted,
+    })).collect();
     json!({
         "codecs": codecs,
-        "headerExtensions": [],
+        "headerExtensions": header_extensions,
         "encodings": encodings,
         "rtcp": {"reducedSize": params.rtcp.reduced_size},
     })
@@ -188,6 +197,38 @@ mod tests {
         let v = build_produce_rtp_parameters_from_rtp(&params);
         assert!(v["codecs"].as_array().unwrap().is_empty());
         assert!(v["encodings"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn produce_from_rtp_reflects_header_extensions() {
+        // v3 (sfu-negotiation-completion T2): transport-cc extmap 协商后 → produce
+        // headerExtensions 反射（不再硬编码 []）, mediasoup 获得 transport-cc 上下文。
+        let params = RTCRtpParameters {
+            transaction_id: "tx1".into(),
+            mid: "0".into(),
+            codecs: vec![RTCRtpCodecParameters {
+                mime_type: "video/VP8".into(),
+                payload_type: 96,
+                clock_rate: 90000,
+                channels: None,
+                sdp_fmtp_line: None,
+            }],
+            encodings: vec![],
+            header_extensions: vec![
+                audemsp_webrtc::rtp::RTCRtpHeaderExtensionParameters {
+                    uri: "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01".into(),
+                    id: 3,
+                    encrypted: false,
+                },
+            ],
+            rtcp: RTCRtcpParameters { cname: None, reduced_size: true },
+        };
+        let v = build_produce_rtp_parameters_from_rtp(&params);
+        let he = v["headerExtensions"].as_array().unwrap();
+        assert_eq!(he.len(), 1);
+        assert_eq!(he[0]["uri"], "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01");
+        assert_eq!(he[0]["id"], 3);
+        assert_eq!(he[0]["encrypt"], false);
     }
 
     #[test]
