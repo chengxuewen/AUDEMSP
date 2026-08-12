@@ -494,6 +494,9 @@ let app = axum::Router::new()
         let mut ws_stats = ws_sender; // move 进 stats 任务（if/else 分支互斥, else 分支独立 move）
         let last_bytes_sent = std::sync::atomic::AtomicU64::new(0);
         let counter = std::sync::atomic::AtomicU32::new(0);
+        // v3 (encode-time-stats T3): 编码耗时增量 — ΔtotalEncodeTime / ΔframesEncoded
+        let last_encode_ms = std::sync::atomic::AtomicU64::new(0);
+        let last_frames_encoded = std::sync::atomic::AtomicU64::new(0);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(2));
             loop {
@@ -523,6 +526,21 @@ let app = axum::Router::new()
                     }
                     last_bytes_sent.store(now, std::sync::atomic::Ordering::Relaxed);
                 }
+                // v3 (encode-time-stats T3): 平均每帧编码耗时（ms/帧, 2s 窗口增量）—
+                // ΔtotalEncodeTime(ms) / ΔframesEncoded; 首周期/卡帧 → None。
+                let avg_encode_ms = outbound.and_then(|o| {
+                    let now_ms = (o.total_encode_time? * 1000.0) as u64;
+                    let prev_ms = last_encode_ms.load(std::sync::atomic::Ordering::Relaxed);
+                    let prev_frames = last_frames_encoded.load(std::sync::atomic::Ordering::Relaxed);
+                    let frames = u64::from(o.frames_encoded);
+                    last_encode_ms.store(now_ms, std::sync::atomic::Ordering::Relaxed);
+                    last_frames_encoded.store(frames, std::sync::atomic::Ordering::Relaxed);
+                    if prev_ms == 0 || frames <= prev_frames {
+                        None
+                    } else {
+                        Some((now_ms - prev_ms) as f64 / (frames - prev_frames) as f64)
+                    }
+                });
                 let msg = audemsp_common::protocol::SignalingMessage::EncoderStatus {
                     room_id: sfu_room.clone(),
                     peer_id: peer_id.to_string(),
@@ -533,6 +551,7 @@ let app = axum::Router::new()
                     frames_per_second: outbound.map(|o| o.frames_per_second).unwrap_or(0.0),
                     frame_width: outbound.map(|o| o.frame_width).unwrap_or(0),
                     frame_height: outbound.map(|o| o.frame_height).unwrap_or(0),
+                    avg_encode_ms,
                 };
                 if let Ok(json) = serde_json::to_string(&msg) {
                     if let Err(e) = ws_stats.send(Message::Text(json.into())).await {

@@ -108,6 +108,7 @@ export interface StreamMetrics {
   encoderImplementation?: string;   // Host 实际编码器（get_stats, e.g. OpenH264/libvpx）
   hostFps?: number;                 // Host outbound fps
   hostResolution?: string;          // Host 编码分辨率
+  avgEncodeMs?: number;             // v3 (encode-time-stats T4): Host 平均每帧编码耗时（ms/帧）
 }
 
 export class SfuConsumerClient {
@@ -318,6 +319,7 @@ export class SfuConsumerClient {
           encoderImplementation: msg.encoder_implementation ?? undefined,
           hostFps: msg.frames_per_second,
           hostResolution: msg.frame_width && msg.frame_height ? `${msg.frame_width}x${msg.frame_height}` : undefined,
+          avgEncodeMs: msg.avg_encode_ms ?? undefined,
         });
       } else if (msg.type === 'consumed') {
         this.logT('consumed (consumer 创建成功, 等待 RTP)');
