@@ -20,9 +20,11 @@ pub fn add_admin_routes(router: Router) -> Router {
             .find(|(name, _)| *name == "index.html")
             .map(|(_, data)| String::from_utf8_lossy(data).to_string())
             .unwrap_or_else(|| "<html><h1>SPA not built</h1></html>".to_string());
-        let html = index_html
-            .replace("src=\"/assets/", "src=\"/admin/assets/")
-            .replace("href=\"/assets/", "href=\"/admin/assets/");
+        let html = std::sync::Arc::new(
+            index_html
+                .replace("src=\"/assets/", "src=\"/admin/assets/")
+                .replace("href=\"/assets/", "href=\"/admin/assets/"),
+        );
 
         async fn serve_file(path: &str) -> Response<Body> {
             // matchit catch-all (/*path) 捕获值 = assets 后的剩余路径（实测: "index.js"）
@@ -70,19 +72,22 @@ pub fn add_admin_routes(router: Router) -> Router {
             }
         }
 
+        let index = html.clone();
+        let index_trailing = html.clone();
+        let index_spa = html.clone();
         router
             .route(
                 "/admin",
                 get(move || {
-                    let h = html.clone();
-                    async move { Html(h) }
+                    let h = index.clone();
+                    async move { Html((*h).clone()) }
                 }),
             )
             .route(
                 "/admin/",
                 get(move || {
-                    let h = html.clone();
-                    async move { Html(h) }
+                    let h = index_trailing.clone();
+                    async move { Html((*h).clone()) }
                 }),
             )
             .route(
@@ -92,10 +97,10 @@ pub fn add_admin_routes(router: Router) -> Router {
             // v3 (encode-time-stats T0): SPA fallback — React Router 路径刷新 (如 /admin/rooms)
             // 返回 index.html; 必须在 /admin/assets/*path 之后注册 (matchit 前缀匹配顺序)
             .route(
-                "/admin/{*path}",
+                "/admin/*path",
                 get(move || {
-                    let h = html.clone();
-                    async move { Html(h) }
+                    let h = index_spa.clone();
+                    async move { Html((*h).clone()) }
                 }),
             )
     }
