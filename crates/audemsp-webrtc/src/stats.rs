@@ -76,4 +76,7 @@ pub struct RTCOutboundRtpStreamStats {
     pub frame_width: u32,
     pub frame_height: u32,
     pub frames_per_second: f64,
+    /// v3 (encode-time-stats T2): 累计编码耗时（秒, W3C outbound-rtp 标准字段）—
+    /// 平均每帧编码耗时 = ΔtotalEncodeTime / ΔframesEncoded（host 侧增量计算）。
+    pub total_encode_time: Option<f64>,
 }

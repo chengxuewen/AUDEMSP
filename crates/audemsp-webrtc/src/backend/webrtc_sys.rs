@@ -88,6 +88,8 @@ fn parse_outbound_stats_json(json: &str) -> Vec<crate::stats::RTCStats> {
                     .get("framesPerSecond")
                     .and_then(|x| x.as_f64())
                     .unwrap_or(0.0),
+                // v3 (encode-time-stats T2): W3C outbound-rtp 标准字段 totalEncodeTime（秒）
+                total_encode_time: v.get("totalEncodeTime").and_then(|x| x.as_f64()),
             }))
         })
         .collect()
@@ -1551,7 +1553,8 @@ mod stats_tests {
             "framesPerSecond": 30.0,
             "packetsSent": 999,
             "bytesSent": 123456,
-            "encoderImplementation": "OpenH264"
+            "encoderImplementation": "OpenH264",
+            "totalEncodeTime": 3.6
         }, {
             "type": "inbound-rtp",
             "id": "RTC_rtp_video_2"
@@ -1566,6 +1569,8 @@ mod stats_tests {
                 assert_eq!(o.frame_height, 720);
                 assert_eq!(o.frames_per_second, 30.0);
                 assert_eq!(o.ssrc, 12345);
+                // v3 (encode-time-stats T2): totalEncodeTime 解析 — 120 帧 × 30ms = 3.6s
+                assert_eq!(o.total_encode_time, Some(3.6));
             }
             other => panic!("expected OutboundRtp, got {other:?}"),
         }
@@ -1576,6 +1581,12 @@ mod stats_tests {
         assert!(parse_outbound_stats_json("not-json").is_empty());
         assert!(parse_outbound_stats_json("[]").is_empty());
         let json = r#"[{"type": "outbound-rtp", "id": "x", "timestamp": 0.0, "ssrc": 1, "kind": "video"}]"#;
+        // v3: totalEncodeTime 缺失 → None（旧版 libwebrtc / 字段不可用）
+        let stats = parse_outbound_stats_json(json);
+        match &stats[0] {
+            RTCStats::OutboundRtp(o) => assert_eq!(o.total_encode_time, None),
+            other => panic!("expected OutboundRtp, got {other:?}"),
+        }
         let stats = parse_outbound_stats_json(json);
         match &stats[0] {
             RTCStats::OutboundRtp(o) => assert_eq!(o.encoder_implementation, None),

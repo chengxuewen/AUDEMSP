@@ -136,6 +136,10 @@ pub enum SignalingMessage {
         frames_per_second: f64,
         frame_width: u32,
         frame_height: u32,
+        /// v3 (encode-time-stats T1): 平均每帧编码耗时（ms/帧, Host 增量计算）—
+        /// ΔtotalEncodeTime / ΔframesEncoded × 1000; None = 不可用（旧 host / 首周期）。
+        #[serde(skip_serializing_if = "Option::is_none")]
+        avg_encode_ms: Option<f64>,
     },
 
     /// Peer asks to consume a producer on its recv transport.
