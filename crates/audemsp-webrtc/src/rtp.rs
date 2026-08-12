@@ -74,6 +74,18 @@ impl RTCRtpSender {
         Err(RTCError::NotSupported("set_parameters: backend 未实现".into()))
     }
 
+    /// v2 (encoder-bitrate): 设置发送编码器 min/max 码率（bps）。
+    /// 聚焦式 API（非 W3C setParameters 全量）— 后端 cxx 保真往返只改 bitrate 字段（PIT-76）。
+    /// min 为受限链路 best-effort 下限（libwebrtc 分配层生效, 编码器无硬下限）;
+    /// max 为可靠硬上限。None = 不限制。
+    pub fn set_encoding_bitrate(&self, min_bps: Option<u64>, max_bps: Option<u64>) -> Result<(), RTCError> {
+        use crate::backend::PcBackend as _;
+        match &self.backend {
+            Some(b) => b.sender_set_encoding_bitrate(&self.track_id, min_bps, max_bps),
+            None => Err(RTCError::Internal("sender not bound to a peer connection".into())),
+        }
+    }
+
     /// v2 (encoder-backend-codec-config T1): 设置编码器后端（软/硬, PcBackend track_id 分派）。
     /// SetEncoderSelector 语义: 偏好非强制（不可用自动 fallback）。
     pub fn set_video_encoder_backend(&self, backend: RTCVideoEncoderBackend) -> Result<(), RTCError> {
@@ -132,6 +144,8 @@ pub struct RTCRtpEncodingParameters {
     pub ssrc: Option<u64>,
     pub active: bool,
     pub max_bitrate: Option<u64>,
+    /// v2 (encoder-bitrate): 最低码率 (bps) — 受限链路 best-effort 下限, None=不限制
+    pub min_bitrate: Option<u64>,
     pub max_framerate: Option<f64>,
     pub scale_resolution_down_by: Option<f64>,
     pub rid: Option<String>,
@@ -150,6 +164,7 @@ impl Default for RTCRtpEncodingParameters {
             ssrc: None,
             active: true,
             max_bitrate: None,
+            min_bitrate: None,
             max_framerate: None,
             scale_resolution_down_by: None,
             rid: None,

@@ -86,6 +86,13 @@ tracing::warn!("sender_set_parameters: not supported by backend");
 Err(RTCError::NotSupported("sender_set_parameters".into()))
     }
 
+    /// v2 (encoder-bitrate): 设置发送编码器 min/max 码率（bps）。
+    /// 默认 NotSupported + warn（C15）; webrtc-sys 后端 override 为 cxx 保真往返。
+    fn sender_set_encoding_bitrate(&self, _track_id: &str, _min_bps: Option<u64>, _max_bps: Option<u64>) -> Result<(), RTCError> {
+        tracing::warn!("sender_set_encoding_bitrate: not supported by backend");
+        Err(RTCError::NotSupported("sender_set_encoding_bitrate".into()))
+    }
+
     /// v2 (encoder-backend-codec-config T1): 设置发送编码器后端（软/硬实现选择）。
     /// 经 track_id 分派（sender.track().id() 匹配, request_key_frame 同模式）。
     /// 默认 NotSupported + warn（C15: 错误分支必须打日志）。
