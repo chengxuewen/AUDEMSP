@@ -13,6 +13,7 @@
 | `webrtc/webrtc-w3c-alignment.md` | Host SFU 对齐 W3C API 重构分析（含团队审核修正） |
 | `webrtc/keyframe-black-screen-analysis.md` | PIT-65 关键帧黑屏根因分析 |
 | `webrtc/gop-control-internal-encoder.md` | **GOP 控制根因与修复路径** — libwebrtc 内部编码器关键帧机制 + 方案对比 + vendor 决策 |
+| `webrtc/sdp-negotiation-bitrate-audit.md` | **SDP 协商审计 + 码率链路** — Host 构建方式分析 + BWE 反馈断裂根因 + A/C 方案决策 (2026-08-12) |
 
 ### 🧰 Codec / 构建策略 — `codec/`
 | 文档 | 内容 |
