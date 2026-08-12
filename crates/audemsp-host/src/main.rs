@@ -404,8 +404,16 @@ let app = axum::Router::new()
         // PIT-56 替代: 不再手工解析 answer ssrc — 走 transceiver.sender.get_parameters() 官方路径
         let rtp_params: RTCRtpParameters = pc.get_sending_rtp_parameters("video")
             .map_err(|e| anyhow::anyhow!("get_sending_rtp_parameters: {}", e))?;
-        tracing::debug!("SFU: negotiated rtp params mid={} codecs={} encodings={}",
-            rtp_params.mid, rtp_params.codecs.len(), rtp_params.encodings.len());
+        tracing::debug!("SFU: negotiated rtp params mid={} codecs={} encodings={} header_extensions={}",
+            rtp_params.mid, rtp_params.codecs.len(), rtp_params.encodings.len(), rtp_params.header_extensions.len());
+        // v3 (sfu-negotiation-completion T4): transport-cc 协商实证 — header_extensions 非空
+        // 即 BWE 反馈链路恢复（mediasoup 将转发 consumer feedback 给 host）。
+        if rtp_params.header_extensions.is_empty() {
+            tracing::warn!("SFU: no negotiated header extensions — transport-cc 未协商, BWE 反馈链路断裂");
+        } else {
+            let uris: Vec<&str> = rtp_params.header_extensions.iter().map(|h| h.uri.as_str()).collect();
+            tracing::info!("SFU: negotiated header extensions: {uris:?}");
+        }
 
         let produce = SignalingMessage::Produce {
             room_id: sfu_room.clone(), // v2: 保留原值给 stats 任务 (web-stream-stats T2)
@@ -484,6 +492,8 @@ let app = axum::Router::new()
         let codec_stats = rtp_params.codecs.first().map(|c| c.mime_type.clone()).unwrap_or_default();
         let backend_req = config.encoder.backend.clone();
         let mut ws_stats = ws_sender; // move 进 stats 任务（if/else 分支互斥, else 分支独立 move）
+        let last_bytes_sent = std::sync::atomic::AtomicU64::new(0);
+        let counter = std::sync::atomic::AtomicU32::new(0);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(2));
             loop {
@@ -496,6 +506,23 @@ let app = axum::Router::new()
                 let enc_impl = outbound
                     .and_then(|o| o.encoder_implementation.clone())
                     .unwrap_or_else(|| backend_req.clone());
+                // v3 (sfu-negotiation-completion T4 诊断): 实际发送码率增量（BWE 实证）—
+                // 每 10s 打一次（5 × 2s tick）, 对比 min/max 配置判断 BWE 是否自适应。
+                if let Some(o) = &outbound {
+                    let now = o.bytes_sent;
+                    let prev = last_bytes_sent.load(std::sync::atomic::Ordering::Relaxed);
+                    if prev > 0 && now > prev {
+                        // interval 固定 2s; 累计窗口 = 自上次打印以来经过的 tick 数 × 2
+                        let ticks = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                        if ticks % 5 == 0 {
+                            let window_s = 10.0;
+                            let kbps = (now - prev) as f64 * 8.0 / 1000.0 / window_s;
+                            tracing::info!("SFU: outbound send bitrate ≈ {kbps:.0} kbps (bytes={now}, fps={:.1}, {x}x{y})",
+                                o.frames_per_second, x = o.frame_width, y = o.frame_height);
+                        }
+                    }
+                    last_bytes_sent.store(now, std::sync::atomic::Ordering::Relaxed);
+                }
                 let msg = audemsp_common::protocol::SignalingMessage::EncoderStatus {
                     room_id: sfu_room.clone(),
                     peer_id: peer_id.to_string(),

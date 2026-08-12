@@ -44,7 +44,22 @@ function videoRtpCapabilities() {
       parameters: {},
       rtcpFeedback: [],
     }],
-    headerExtensions: [],
+    // v3 (sfu-negotiation-completion T4): 声明 transport-cc/abs-capture-time —
+    // mediasoup 端据此在输出 RTP 上附加扩展 → 浏览器生成 transport-cc feedback
+    // → mediasoup 转发 → host BWE 自适应（BWE 闭环第三段, 与 host T2 对称）。
+    headerExtensions: [{
+      kind: 'video',
+      uri: 'http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01',
+      preferredId: 3,
+      preferredEncrypt: false,
+      direction: 'sendrecv',
+    }, {
+      kind: 'video',
+      uri: 'http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time',
+      preferredId: 5,
+      preferredEncrypt: false,
+      direction: 'sendrecv',
+    }],
   };
 }
 interface IceParams {
@@ -377,12 +392,25 @@ export class SfuConsumerClient {
       'c=IN IP4 127.0.0.1',
       'a=rtcp-mux',
       'a=mid:video',
+      // v3 (sfu-negotiation-completion T4): transport-cc + abs-capture-time extmap —
+      // 浏览器收流需声明 transport-cc 才会生成 feedback → mediasoup 转发 → host BWE
+      // 自适应（BWE 闭环另一端, 与 host 侧 T1 对称）。
+      'a=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01',
+      'a=extmap:5 http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time',
       'a=sendonly', // PIT-56: offer 描述 mediasoup (发送方) — recvonly+浏览器recvonly → 协商 inactive → 无媒体轨
       'a=rtpmap:96 VP8/90000',
+      'a=rtcp-fb:96 nack',
+      'a=rtcp-fb:96 nack pli',
       'a=rtpmap:101 H264/90000',
       'a=fmtp:101 profile-level-id=42e01f;packetization-mode=1',
+      'a=rtcp-fb:101 nack',
+      'a=rtcp-fb:101 nack pli',
       'a=rtpmap:99 VP9/90000',
+      'a=rtcp-fb:99 nack',
+      'a=rtcp-fb:99 nack pli',
       'a=rtpmap:97 AV1/90000',
+      'a=rtcp-fb:97 nack',
+      'a=rtcp-fb:97 nack pli',
       ...(videoCandidates ? [videoCandidates] : []),
       'a=end-of-candidates',
       // Audio: Opus

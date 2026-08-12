@@ -120,11 +120,21 @@ pub fn build_produce_rtp_parameters_from_rtp(params: &RTCRtpParameters) -> Value
                 Value::Object(map)
             })
             .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+        // v3 (sfu-negotiation-completion T4): rtcpFeedback 必须声明 transport-cc —
+        // mediasoup Transport.cpp:699-724 TCCS 启用条件 = headerExtension transportWideCc01
+        // + codecs rtcpFeedback 含 "transport-cc"（缺失 → 不生成 transport-cc feedback
+        // → host BWE 无输入）。nack/pli/fir 与 host answer 协商结果一致。
         json!({
             "mimeType": c.mime_type,
             "payloadType": c.payload_type,
             "clockRate": c.clock_rate,
             "parameters": parameters,
+            "rtcpFeedback": [
+                {"type": "nack", "parameter": ""},
+                {"type": "nack", "parameter": "pli"},
+                {"type": "ccm", "parameter": "fir"},
+                {"type": "transport-cc", "parameter": ""},
+            ],
         })
     }).collect();
     let encodings: Vec<Value> = params.encodings.iter().map(|e| {
@@ -187,6 +197,10 @@ mod tests {
         assert_eq!(v["codecs"][0]["payloadType"], 101);
         assert_eq!(v["codecs"][0]["clockRate"], 90000);
         assert_eq!(v["encodings"][0]["ssrc"], 1949911776);
+        // v3 (T4): rtcpFeedback 含 transport-cc（mediasoup TCCS 启用条件）
+        let fb: Vec<&str> = v["codecs"][0]["rtcpFeedback"].as_array().unwrap()
+            .iter().filter_map(|f| f["type"].as_str()).collect();
+        assert!(fb.contains(&"transport-cc"), "rtcpFeedback must declare transport-cc: {fb:?}");
         assert_eq!(v["encodings"][0]["maxBitrate"], 2_000_000);
         assert_eq!(v["rtcp"]["reducedSize"], true);
     }
