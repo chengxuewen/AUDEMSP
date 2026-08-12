@@ -48,8 +48,19 @@ pub fn build_remote_sdp(
         format!("c=IN IP4 {}", conn_ip),
         "a=rtcp-mux".to_string(),
         "a=mid:video".to_string(),
+        // v3 (sfu-negotiation-completion T1): extmap 声明 transport-cc + abs-capture-time —
+        // BWE 反馈链路必需（mediasoup 端按 produce headerExtensions 映射, 生成/转发
+        // transport-cc feedback 给 host）; id 3/5 对齐官方 libmediasoupclient 惯例。
+        // RFC 8285: answer 只能收 offer 集合 → 自构 offer 必须先声明。
+        "a=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01".to_string(),
+        "a=extmap:5 http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time".to_string(),
         "a=recvonly".to_string(),
         format!("a=rtpmap:{} {}/{}", payload_type, codec_name, clock_rate),
+        // rtcp-fb: 完整协商语义（nack/pli/fir）— libwebrtc answerer 回带,
+        // 丢包重传 + 关键帧请求正式声明。
+        format!("a=rtcp-fb:{} nack", payload_type),
+        format!("a=rtcp-fb:{} nack pli", payload_type),
+        format!("a=rtcp-fb:{} ccm fir", payload_type),
     ]);
 
     if let Some(fmtp_val) = fmtp {
@@ -137,6 +148,7 @@ pub fn build_produce_rtp_parameters_from_rtp(params: &RTCRtpParameters) -> Value
 #[cfg(test)]
 mod tests {
     use super::*;
+    use audemsp_common::protocol::Fingerprint;
     use audemsp_webrtc::rtp::{RTCRtpCodecParameters, RTCRtpEncodingParameters, RTCRtcpParameters};
 
     #[test]
@@ -176,5 +188,56 @@ mod tests {
         let v = build_produce_rtp_parameters_from_rtp(&params);
         assert!(v["codecs"].as_array().unwrap().is_empty());
         assert!(v["encodings"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn remote_sdp_has_extmap_and_rtcp_fb() {
+        // v3 (sfu-negotiation-completion T1): transport-cc + abs-capture-time extmap,
+        // nack/pli/fir rtcp-fb — PT 动态跟随 payload_type。
+        let dtls = DtlsParameters {
+            fingerprints: vec![Fingerprint {
+                algorithm: "sha-256".into(),
+                value: "AA:BB:CC:DD".into(),
+            }],
+            role: "client".into(),
+        };
+        let sdp = build_remote_sdp(
+            &IceParameters { username_fragment: "ufrag".into(), password: "pwd".into() },
+            &dtls,
+            None,
+            96,
+            "VP8",
+            90000,
+            None,
+        );
+        assert!(sdp.contains("a=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"));
+        assert!(sdp.contains("a=extmap:5 http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time"));
+        assert!(sdp.contains("a=rtcp-fb:96 nack"));
+        assert!(sdp.contains("a=rtcp-fb:96 nack pli"));
+        assert!(sdp.contains("a=rtcp-fb:96 ccm fir"));
+    }
+
+    #[test]
+    fn remote_sdp_rtcp_fb_pt_follows_payload_type() {
+        // H264 (101): rtcp-fb 行必须跟随协商 PT, 非硬编码 96
+        let dtls = DtlsParameters {
+            fingerprints: vec![Fingerprint {
+                algorithm: "sha-256".into(),
+                value: "AA:BB:CC:DD".into(),
+            }],
+            role: "client".into(),
+        };
+        let sdp = build_remote_sdp(
+            &IceParameters { username_fragment: "ufrag".into(), password: "pwd".into() },
+            &dtls,
+            None,
+            101,
+            "H264",
+            90000,
+            Some("profile-level-id=42e01f;packetization-mode=1"),
+        );
+        assert!(sdp.contains("a=rtcp-fb:101 nack pli"));
+        assert!(sdp.contains("a=rtcp-fb:101 ccm fir"));
+        assert!(!sdp.contains("a=rtcp-fb:96"));
     }
 }
