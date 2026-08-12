@@ -158,7 +158,9 @@ pub struct EncoderConfig {
     #[serde(default = "default_encoder")]
     pub backend: String,
 
-    /// Target bitrate in kbps.
+    /// Target bitrate in kbps — ⚠️ 仅作用于 GStreamer 捕获/编码管线（pipeline.rs）;
+    /// SFU 主路径（test_pattern→WebRtcTrackSink→libwebrtc 编码器）不经过 GStreamer 编码,
+    /// 对 WebRTC 编码器零影响 — 用 min/max_bitrate_kbps 控制 WebRTC 编码码率。
     #[serde(default = "default_bitrate")]
     pub bitrate_kbps: u32,
 
