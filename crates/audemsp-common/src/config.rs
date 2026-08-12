@@ -172,6 +172,28 @@ pub struct EncoderConfig {
     /// （libwebrtc 实际编码 = 协商交集 = offer codec, 三者一致）。
     #[serde(default = "default_codec")]
     pub codec: String,
+    /// 最高码率 (kbps) — v2 (encoder-bitrate): libwebrtc 可靠硬上限, None=不限制
+    pub max_bitrate_kbps: Option<u32>,
+    /// 最低码率 (kbps) — v2 (encoder-bitrate): 受限链路 best-effort 下限, None=不限制
+    pub min_bitrate_kbps: Option<u32>,
+}
+
+impl EncoderConfig {
+    /// 码率区间校验（encoder-bitrate）: 若同时设置, 必须 0 < min < max,
+    /// 否则 libwebrtc 双失效（video_stream_encoder.cc:444 min>=max → 两者都不应用）。
+    pub fn validate_bitrate(&self) -> Result<(), String> {
+        if let (Some(min), Some(max)) = (self.min_bitrate_kbps, self.max_bitrate_kbps) {
+            if min == 0 {
+                return Err("encoder.min_bitrate_kbps 必须 > 0".into());
+            }
+            if min >= max {
+                return Err(format!(
+                    "encoder.min_bitrate_kbps({min}) 必须 < max_bitrate_kbps({max}), 否则 libwebrtc 双失效"
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -461,5 +483,50 @@ consumer_limit_per_stream: 100
 "#;
         let parsed: ServerConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(parsed.consumer_limit_per_stream, 100);
+    }
+
+    #[test]
+    fn encoder_bitrate_validate() {
+        // 默认（无 min/max）→ OK
+        let cfg = EncoderConfig {
+            backend: "auto".into(),
+            bitrate_kbps: 2000,
+            keyframe_interval: 2,
+            codec: "h264".into(),
+            max_bitrate_kbps: None,
+            min_bitrate_kbps: None,
+        };
+        assert!(cfg.validate_bitrate().is_ok());
+
+        // 只设 max → OK
+        let cfg = EncoderConfig {
+            max_bitrate_kbps: Some(4000),
+            ..cfg.clone()
+        };
+        assert!(cfg.validate_bitrate().is_ok());
+
+        // min < max → OK
+        let cfg = EncoderConfig {
+            min_bitrate_kbps: Some(500),
+            max_bitrate_kbps: Some(4000),
+            ..cfg.clone()
+        };
+        assert!(cfg.validate_bitrate().is_ok());
+
+        // min >= max → Err（防双失效）
+        let cfg = EncoderConfig {
+            min_bitrate_kbps: Some(4000),
+            max_bitrate_kbps: Some(4000),
+            ..cfg.clone()
+        };
+        assert!(cfg.validate_bitrate().is_err());
+
+        // min == 0 → Err
+        let cfg = EncoderConfig {
+            min_bitrate_kbps: Some(0),
+            max_bitrate_kbps: Some(4000),
+            ..cfg.clone()
+        };
+        assert!(cfg.validate_bitrate().is_err());
     }
 }
