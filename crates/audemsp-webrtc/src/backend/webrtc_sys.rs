@@ -127,6 +127,7 @@ fn map_rtp_parameters(p: webrtc_sys::rtp_parameters::ffi::RtpParameters) -> crat
         ssrc: if e.has_ssrc { Some(e.ssrc as u64) } else { None },
         active: e.active,
         max_bitrate: if e.has_max_bitrate_bps { Some(e.max_bitrate_bps.max(0) as u64) } else { None },
+        min_bitrate: if e.has_min_bitrate_bps { Some(e.min_bitrate_bps.max(0) as u64) } else { None },
         max_framerate: if e.has_max_framerate { Some(e.max_framerate) } else { None },
         scale_resolution_down_by: if e.has_scale_resolution_down_by { Some(e.scale_resolution_down_by) } else { None },
         rid: if e.rid.is_empty() { None } else { Some(e.rid.clone()) },

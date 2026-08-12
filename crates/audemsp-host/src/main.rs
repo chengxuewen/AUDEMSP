@@ -73,6 +73,12 @@ async fn main() -> anyhow::Result<()> {
         }
     };// ponytail: fallback to defaults when config file missing, add config wizard when needed
 
+    // v2 (encoder-bitrate): 码率区间校验 — min>=max 会 libwebrtc 双失效（视频静默降级）
+    if let Err(e) = config.encoder.validate_bitrate() {
+        tracing::error!("配置校验失败: {e}");
+        std::process::exit(1);
+    }
+
     // Parse resolution "WIDTHxHEIGHT"
     let (width, height) = parse_resolution(&config.capture.resolution);
     let framerate = config.capture.framerate;
@@ -348,6 +354,24 @@ let app = axum::Router::new()
         tracing::debug!("SFU local answer SDP:\n{}", answer.sdp);
         pc.set_local_description(&answer).await
             .map_err(|e| anyhow::anyhow!("set local: {}", e))?;
+
+        // v2 (encoder-bitrate): 设置发送编码器 min/max 码率（协商后、get_sending_rtp_parameters 前）—
+        // produce 路径自动反射 max_bitrate（build_produce 读 e.max_bitrate）。
+        // 错误降级: log 继续不 abort（rate-control-reviewer）; 只调一次（ReconfigureEncoder 重配开销）。
+        if config.encoder.min_bitrate_kbps.is_some() || config.encoder.max_bitrate_kbps.is_some() {
+            let min_bps = config.encoder.min_bitrate_kbps.map(|v| u64::from(v) * 1000);
+            let max_bps = config.encoder.max_bitrate_kbps.map(|v| u64::from(v) * 1000);
+            match pc.get_senders().iter().find(|s| s.track_id == track_id) {
+                Some(sender) => {
+                    if let Err(e) = sender.set_encoding_bitrate(min_bps, max_bps) {
+                        tracing::warn!("SFU: set_encoding_bitrate({min_bps:?}, {max_bps:?}): {e} — 继续 produce");
+                    } else {
+                        tracing::info!("SFU: set_encoding_bitrate(min={min_bps:?}, max={max_bps:?})");
+                    }
+                }
+                None => tracing::warn!("SFU: sender not found for bitrate config: {track_id}"),
+            }
+        }
         // B3: Extract DTLS fingerprint via audemsp-webrtc API (not SDP parsing)
         let fp_hex = pc.local_dtls_fingerprint()
             .ok_or_else(|| anyhow::anyhow!("no DTLS fingerprint"))?;
