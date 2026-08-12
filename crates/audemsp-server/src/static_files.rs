@@ -79,8 +79,24 @@ pub fn add_admin_routes(router: Router) -> Router {
                 }),
             )
             .route(
+                "/admin/",
+                get(move || {
+                    let h = html.clone();
+                    async move { Html(h) }
+                }),
+            )
+            .route(
                 "/admin/assets/*path",
                 get(|Path(path): Path<String>| async move { serve_file(&path).await }),
+            )
+            // v3 (encode-time-stats T0): SPA fallback — React Router 路径刷新 (如 /admin/rooms)
+            // 返回 index.html; 必须在 /admin/assets/*path 之后注册 (matchit 前缀匹配顺序)
+            .route(
+                "/admin/{*path}",
+                get(move || {
+                    let h = html.clone();
+                    async move { Html(h) }
+                }),
             )
     }
     #[cfg(not(feature = "admin-dashboard"))]
