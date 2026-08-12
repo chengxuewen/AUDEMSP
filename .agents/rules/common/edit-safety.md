@@ -156,3 +156,14 @@ grep -c "重复模式" <file>    # 期望 1；>1 = edit 重复插入
 **验证**: 脚本执行后 `grep -c "<关键替换内容>" <file>` 确认每块生效；失败重跑前检查哪些块已写。
 
 **阻塞条件**: 多块脚本末尾一次性写盘；assert 失败后未确认中间状态直接重跑。
+**阻塞条件**: 多块脚本末尾一次性写盘；assert 失败后未确认中间状态直接重跑。
+
+### 11. 大块 markdown 追加用 heredoc，不用 edit 工具 JSON (PIT-85 轮)
+
+**规则**: 对 `.agents/memorys/*.md` 等大块 markdown（含引号/反引号/长中文）**追加**新条目时，优先用 `cat >> file <<'EOF'` heredoc；
+**禁止用 edit 工具做长内容 append**——edit 的 JSON 载荷会因复杂引号/反引号/超长内容反复解析失败
+（本次踩 3 次："unsupported op undefined"×2 + JSON parse error×1，each 浪费一轮）。
+
+**验证**: 追加后 `grep -c "<关键标题>" <file>` 确认生效 + `wc -l` 行数增长。
+
+**阻塞条件**: 长 markdown/memory 内容用 edit 工具 append 且失败后未改用 heredoc。
