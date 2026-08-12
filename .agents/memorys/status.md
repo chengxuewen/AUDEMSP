@@ -162,3 +162,10 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **验证**: `audemsp.sh build host` Finished; ldd 0 not-found; C++ 全链路 gcc 10.5
 - **人工验证: Jetson H264 + AV1 硬编码器可用**（backend=hardware + codec=h264/av1 走 Jetson MMAPI 编码器）
 - 记忆: PIT-85 + D220 + C23
+
+## BWE 反馈链路恢复 (2026-08-12, sfu-negotiation-completion T1-T4)
+
+- **三段缺口修复**: ① host 自构 offer 补 transport-cc/abs-capture-time extmap + nack/pli/fir rtcp-fb（3809273）② produce 参数补 headerExtensions（d807b2c）+ codecs rtcpFeedback transport-cc（6e67fc1, mediasoup TCCS 启用条件）③ 浏览器 consume 侧 buildRemoteSdp extmap/rtcp-fb + rtpCaps headerExtensions（6e67fc1）
+- bitrate_kbps 语义修正: 仅 GStreamer 管线, WebRTC 编码码率用 min/max_bitrate_kbps（885f784）
+- **验证**: 浏览器 1987-2003 kbps（max=2000 命中）+ 1280x720（修复前 502k@640x360）+ 30fps + 关键帧 2s; e2e_sfu 4/4
+- 记忆: PIT-86 + 审计文档 docs/reference/webrtc/sdp-negotiation-bitrate-audit.md

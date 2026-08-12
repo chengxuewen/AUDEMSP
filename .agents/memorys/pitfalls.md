@@ -952,3 +952,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 **验证**: `bash audemsp.sh build host` → `Finished`；`ldd target/debug/audemsp-host | grep -c "not found"` = 0；`strings <rlib> | grep GCC:` 含 `(Ubuntu 10.5.0...)` 系统 gcc；二进制可运行（无 WS server 时报连接拒绝属正常）。
 
 **禁止**: ① 依赖 `cargo:rustc-link-arg` 从 rlib 传播——它不传播；② 把系统 multiarch 目录整体加入 link-search/-L（遮蔽 libstdc++ + 拉系统 glibc 冲突）；③ 用符号链接伪造库路径（C20）；④ 用 `source .pixi/envs/default/activate` 验证环境——该脚本在 pixi 0.66 静默不生效（CONDA_PREFIX 空），会误用系统工具链造成**假成功**（曾致误判方案成功）。
+
+## PIT-86: BWE 反馈闭环三段缺口 — produce rtcpFeedback 缺 transport-cc 导致 mediasoup TCCS 不启用 (2026-08-12)
+- **症状**: host 已协商 transport-cc（answer SDP extmap 3 实证）+ produce headerExtensions 带 transport-cc，但实测发送码率停在 min 值（502k@640x360），mediasoup 端口 22s 无任何 RTCP 包；libwebrtc quality adaptation 把分辨率降到 640x360
+- **根因**: mediasoup 启用 TransportCongestionControlServer 的**双重条件**（Transport.cpp:699-724）：① produce rtpParameters.headerExtensions 有 transportWideCc01 ② **codecs[].rtcpFeedback 必须含 {"type":"transport-cc"}**。produce 参数只补了 ① 缺 ② → TCCS 不创建 → 无 transport-cc feedback → host BWE 无输入。另两个缺口：浏览器 consume 侧 buildRemoteSdp 无 extmap（feedback 源头断）+ videoRtpCapabilities 无 headerExtensions（mediasoup 输出 RTP 不加扩展）
+- **解法**: 三段同步修复 — ① host 自构 offer 补 extmap/rtcp-fb（T1）② produce 参数补 headerExtensions（T2）+ rtcpFeedback transport-cc/nack/pli/fir（T4）③ 浏览器 consume 侧 buildRemoteSdp 补 extmap + rtpCaps 补 headerExtensions（preferredId/preferredEncrypt/direction 三字段，mediasoup-rs RtpHeaderExtension 结构）
+- **验证**: 浏览器接收 1987-2003 kbps（max=2000 命中）+ 1280x720 恢复 + 30fps + 关键帧 2s；e2e_sfu 4/4
+- **教训**: produce 参数必须完整镜像协商能力（headerExtensions + rtcpFeedback 缺一不可）；BWE 是端到端闭环（host offer → produce → mediasoup TCCS → consume rtpCaps → 浏览器 feedback → 转发回 host），任何一段断都表现为"码率停在 min"
