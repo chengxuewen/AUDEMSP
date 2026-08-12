@@ -169,3 +169,10 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - bitrate_kbps 语义修正: 仅 GStreamer 管线, WebRTC 编码码率用 min/max_bitrate_kbps（885f784）
 - **验证**: 浏览器 1987-2003 kbps（max=2000 命中）+ 1280x720（修复前 502k@640x360）+ 30fps + 关键帧 2s; e2e_sfu 4/4
 - 记忆: PIT-86 + 审计文档 docs/reference/webrtc/sdp-negotiation-bitrate-audit.md
+
+## 平均编码耗时上报 (2026-08-12, encode-time-stats T0-T4)
+
+- EncoderStatus.avg_encode_ms（ΔtotalEncodeTime/ΔframesEncoded 增量, 2s 窗口）+ 面板"系统性能"组显示
+- 实证: 9.0ms/帧 (AV1 软编 1920x1080); libaom 软编白名单修复
+- T0 顺手修: admin 路由 /admin/ 尾斜杠 + SPA fallback（axum 路由语法必须统一 *path, Arc 共享 html）
+- commits 2fde281/a814ae5/059abc0
