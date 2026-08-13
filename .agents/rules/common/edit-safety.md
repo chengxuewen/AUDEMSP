@@ -167,3 +167,13 @@ grep -c "重复模式" <file>    # 期望 1；>1 = edit 重复插入
 **验证**: 追加后 `grep -c "<关键标题>" <file>` 确认生效 + `wc -l` 行数增长。
 
 **阻塞条件**: 长 markdown/memory 内容用 edit 工具 append 且失败后未改用 heredoc。
+
+### 12. 禁止 cargo fmt 无差别运行 — workspace 格式漂移 (PIT-88)
+
+**规则**: 禁止 `cargo fmt` / `pixi run cargo fmt` 无参数或带 `-- <path>` 运行nyi——cargo fmt 的 `--` 后参数**不是路径过滤**，会格式化整个 workspace；且本工作区存在 rustfmt 版本漂移（历史文件格式与当前 rustfmt 期望不一致，全量 fmt 产生 112 文件/3000+ 行 diff）。需要单文件格式化时用 `rustfmt --edition 2024 <file>`（rustfmt CLI 支持单文件），或手动保持风格。
+
+**先例**: 2026-08-12 `pixi run cargo fmt -- crates/audemsp-host/src/sfu_media.rs` 误格式化 workspace 112 文件（3103 insertions），`git checkout -- .` 恢复后才重新应用功能改动，浪费 3+ 轮。
+
+**验证**: 任何 fmt 操作后 `git diff --stat | wc -l` 必须 == 预期文件数（通常 1）；`git status --short` 无意外文件。
+
+**阻塞条件**: 试图用 cargo fmt 做单文件格式化；fmt 后未验证 diff 范围。

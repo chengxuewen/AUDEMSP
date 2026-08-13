@@ -966,3 +966,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: ✅ 已修复 (2026-08-13, 05d89db) — `on_ice_connection_state_change(Failed) → error 日志 + exit(1)`, 由守护拉起（systemd Restart=always / audemsp.sh start host）; 验证: server 重启 → Disconnected → Failed → 进程 10s 内退出
 - **验证**: `pgrep -x audemsp-host` 后 grep host 日志 "ICE state"; server 重启后 host 应能在 30s 内自愈
 - **教训**: 诊断"web 拉流失败"先查 host 进程/ICE 状态 与 server room（`/api/admin/rooms`）; 9800 入口的 embedded dist 需 `npm run build` + 重启 server 才更新（rust-embed 编译期嵌入）
+
+## PIT-88: cargo fmt 无路径过滤 — 误格式化整个 workspace 112 文件 (2026-08-12)
+- **症状**: `pixi run cargo fmt -- crates/audemsp-host/src/sfu_media.rs` 把整个 workspace（112 文件, 3103 insertions）格式化——`cargo fmt` 的 `--` 后参数**不是路径过滤**，fmt 永远处理全部 target；且当前工作区历史格式与 rustfmt 期望不一致（rustfmt 版本漂移），全量 fmt 产生巨大 diff
+- **根因**: 误以为 `cargo fmt -- <path>` 能单文件格式化（rustfmt CLI 支持单文件，但 cargo fmt 包装器不支持路径参数）; 工作区历史格式与当前 rustfmt 版本漂移（预存在）
+- **解法**: `git checkout -- .` 全量恢复（本次无数据损失）; 需要单文件格式化时用 `rustfmt --edition 2024 <file>`（若可用）或**手动保持格式**（不跑 cargo fmt）
+- **验证**: 格式化后 `git diff --stat | wc -l` 必须 == 目标文件数; `git status --short | wc -l` 控制在目标范围
+- **禁止**: 任何 `pixi run cargo fmt` / `cargo fmt` 无差别运行（含 `-- <path>` 形式）— workspace 存在 rustfmt 版本漂移, 单文件需 rustfmt 直接调用

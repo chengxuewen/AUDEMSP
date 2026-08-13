@@ -394,3 +394,10 @@ libEGL/libv4lconvert 仅系统目录）；`cargo:rustc-link-arg` 不从 rlib 传
 conda 交叉编译器（会 PIT-85 复发）。
 
 **来源**: PIT-85 / D220 (2026-08-12)
+## C24: admin dist 编译期嵌入 — 改 TS 源码后必须 rebuild 才生效 (2026-08-13)
+
+**约束**: Admin Dashboard 前端（`www/apps/admin/src/`）修改后，**9800 生产入口（server 托管）不会自动生效**——`crates/audemsp-server/build.rs` 在编译期 `include_bytes!` 嵌入 `www/apps/admin/dist/`（rust-embed 模式）。开发验证必须走 5173（vite dev, 热更新）；9800 入口需：`cd www/apps/admin && npm run build` + `./audemsp.sh restart server`（build.rs rerun-if-changed 触发重新嵌入）。
+
+**检查**: 修改 sfu-client.ts/VideoPlayer.tsx 后，9800 页面 JS bundle 是否含新字段（`curl http://127.0.0.1:9800/admin` → HTML 引用的 `index-*.js` 与 `dist/assets/` 最新产物一致）。
+
+**来源**: PIT-87 诊断轮实证（2026-08-13: 编码耗时功能在 9800 不生效 = dist 旧构建）

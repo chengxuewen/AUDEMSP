@@ -1,6 +1,6 @@
 # AUDEMSP Status
 
-**生成**: 2026-08-12| 决策: 221 (D1-D220, 含跳号)| Phase: 3 完成 || 317 commits | 22 skills | mediasoup 0.24.1 | PIT-86 | 分支: main (编码双轨 + 5 codec + Web stats + BWE 恢复) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-12| 决策: 221 (D1-D220, 含跳号)| Phase: 3 完成 || 317 commits | 22 skills | mediasoup 0.24.1 | PIT-88 | 分支: main (编码双轨 + 5 codec + Web stats + BWE 恢复) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | audemsp-common | 71 | — | EncoderStatus 信令 + codec 字段 |
 | audemsp-media | 54 | — | |
