@@ -1,6 +1,6 @@
 # MediaServo Status
 
-**生成**: 2026-08-13| 决策: 222 (D1-D221, 含跳号)| Phase: 3 完成 || 343 commits | 22 skills | mediasoup 0.24.1 | PIT-88 | 分支: main (重命名 MediaServo + 编码双轨 + 5 codec + Web stats + BWE 恢复) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-13| 决策: 222 (D1-D221, 含跳号)| Phase: 3 完成 || 346 commits | 22 skills | mediasoup 0.24.1 | PIT-88 | 分支: main (重命名 MediaServo + 编码双轨 + 5 codec + Web stats + BWE 恢复) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | mediaservo-common | 72 | — | EncoderStatus 信令 + codec 字段 |
 | mediaservo-media | 107 | — | |
