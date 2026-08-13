@@ -1,6 +1,6 @@
 # 远程操控/遥控驾驶产品调研
 
-> 为 AUDEMSP WebRTC 遥操作模块设计提供参考
+> 为 MediaServo WebRTC 遥操作模块设计提供参考
 > 调研日期：2026-07-16
 
 ---
@@ -20,7 +20,7 @@
    - [Huawei 5G 远程驾驶](#31-huawei-5g-远程驾驶)
 4. [DataChannel 协议设计最佳实践](#4-datachannel-协议设计最佳实践)
 5. [总结合成：遥操作架构通用模式](#5-总结合成遥操作架构通用模式)
-6. [AUDEMSP 遥操作模块设计清单](#6-audemsp-遥操作模块设计清单)
+6. [MediaServo 遥操作模块设计清单](#6-mediaservo-遥操作模块设计清单)
 
 ---
 
@@ -149,7 +149,7 @@
 
 **教训**：
 - 直接操控作为"最后手段"意味着 99%+ 的干预是建议模式——这两种模式的技术需求完全不同
-- 低速限制（10 mph）大幅降低了操控难度和安全风险——AUDEMSP 可考虑分速度等级的操控策略
+- 低速限制（10 mph）大幅降低了操控难度和安全风险——MediaServo 可考虑分速度等级的操控策略
 - Tesla 的 Robotaxi 实际仍高度依赖人类（车内安全员 + RAOs），"自动驾驶"和"远程操控"的边界在实践中很模糊
 
 ---
@@ -231,7 +231,7 @@
 
 ### 2.3 tether-rally
 
-**概况**：tether-rally 是一个开源项目，通过 WebRTC 实现对 ARRMA RC 遥控车的全球远程操控。使用 Raspberry Pi + ESP32 + 摄像头模块实现低延迟 FPV 驾驶体验。虽为玩具级项目，但其 DataChannel 协议设计、稳定性系统和 ESP32 安全机制对 AUDEMSP 的设计有直接参考价值。GitHub：`roman01la/tether-rally`。
+**概况**：tether-rally 是一个开源项目，通过 WebRTC 实现对 ARRMA RC 遥控车的全球远程操控。使用 Raspberry Pi + ESP32 + 摄像头模块实现低延迟 FPV 驾驶体验。虽为玩具级项目，但其 DataChannel 协议设计、稳定性系统和 ESP32 安全机制对 MediaServo 的设计有直接参考价值。GitHub：`roman01la/tether-rally`。
 
 **技术架构**：
 ```
@@ -461,9 +461,9 @@ WebRTC DataChannel 最关键的工程问题：
 
 ---
 
-## 6. AUDEMSP 遥操作模块设计清单
+## 6. MediaServo 遥操作模块设计清单
 
-基于以上调研，AUDEMSP 遥操作模块应考虑以下设计要素：
+基于以上调研，MediaServo 遥操作模块应考虑以下设计要素：
 
 ### 6.1 视频传输
 

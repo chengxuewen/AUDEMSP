@@ -1,6 +1,6 @@
 # 推拉流产品调研报告
 
-> 调研日期：2026-07-16 | 目标：为 AUDEMSP 推拉流模块提供技术选型参考
+> 调研日期：2026-07-16 | 目标：为 MediaServo 推拉流模块提供技术选型参考
 
 ---
 
@@ -76,7 +76,7 @@
 - 没有内置虚拟演播室
 
 **可借鉴的设计**：
-1. **插件化输出模型**：每种协议是独立的 output 插件，通过统一接口对接编码器输出。AUDEMSP 的协议适配层可参考这种「统一编码产出 → 各协议分叉」的模式
+1. **插件化输出模型**：每种协议是独立的 output 插件，通过统一接口对接编码器输出。MediaServo 的协议适配层可参考这种「统一编码产出 → 各协议分叉」的模式
 2. **WHIP Simulcast 分层策略**：1 层=100%, 2 层=50%, 3 层=33%, 4 层=25% — 简单实用，无需复杂协商
 3. **跳过 interleaver 优化**：协议感知的管线优化 — WebRTC 不需要 FLV 的音视频交错，跳过此环节减少延迟
 
@@ -129,12 +129,12 @@
 
 **可借鉴的设计**：
 1. **Bus 音频系统**：比 OBS 更直观的多声道/多 bus 音频路由
-2. **PTZ 摄像机集成**：VISCA/ONVIF 协议与直播制作的深度整合，对 AUDEMSP 监控相机接入有参考价值
+2. **PTZ 摄像机集成**：VISCA/ONVIF 协议与直播制作的深度整合，对 MediaServo 监控相机接入有参考价值
 3. **NDI 零配置网络视频**：局域网内免配置的视频共享，适合企业内网场景
 
 **教训**：
 - Windows-only 限制受众和部署场景
-- 闭源依赖 — AUDEMSP 需要开源策略
+- 闭源依赖 — MediaServo 需要开源策略
 
 ---
 
@@ -179,7 +179,7 @@
 - 无 Linux 支持
 
 **可借鉴的设计**：
-1. **ISO 录制**：所有输入源独立录制，AUDEMSP 的录像模块可参考这种"多轨并行录制"模式
+1. **ISO 录制**：所有输入源独立录制，MediaServo 的录像模块可参考这种"多轨并行录制"模式
 2. **远程嘉宾管理**：Rendezvous 功能展示了如何将 RTMP/NDI/浏览器多源混合接入
 
 ---
@@ -239,7 +239,7 @@
 - C 代码基础在 2013 年，部分模块维护成本高
 
 **可借鉴的设计**：
-1. **单一内部表示的协议转换模式**：所有输入协议归一化到内部流，所有输出内部分派生 — 这是 AUDEMSP Unified Fragment Model 的核心灵感来源之一
+1. **单一内部表示的协议转换模式**：所有输入协议归一化到内部流，所有输出内部分派生 — 这是 MediaServo Unified Fragment Model 的核心灵感来源之一
 2. **协程架构**：高并发场景下比线程池更轻量，比 async/await 更简单
 3. **RTMP-to-* transmux**：零转码开销的协议转换
 
@@ -295,11 +295,11 @@
 - 纯 Go 生态，无法利用 GPU 硬件编码
 
 **可借鉴的设计**：
-1. **"Path" 抽象**：以路径为中心的解耦模型，publisher/source 与 reader 完全隔离，适合 AUDEMSP 的频道/房间模型
+1. **"Path" 抽象**：以路径为中心的解耦模型，publisher/source 与 reader 完全隔离，适合 MediaServo 的频道/房间模型
 2. **sourceOnDemand**：按需拉流，摄像头/IPC 休眠场景的节能模式
 3. **协议自动转换**：publisher 推一种协议，观众用任意协议观看，零配置
 4. **Read Replica 水平扩展模式**：简单的 origin-replica 架构，比 SRS 集群更轻量
-5. **Media-over-QUIC**：AUDEMSP 应考虑 QUIC 作为统一传输层
+5. **Media-over-QUIC**：MediaServo 应考虑 QUIC 作为统一传输层
 
 **教训**：
 - 不内置转码限制了独立使用场景（必须配 FFmpeg）
@@ -350,14 +350,14 @@
 - 无 DRM、无高级分析
 
 **可借鉴的设计**：
-1. **HTTP 回调事件系统**：`on_publish`/`on_play`/`on_done` — 简单的 stream lifecycle hook 模式。AUDEMSP 也需要类似的事件系统做认证和计费
-2. **push/pull relay**：简单的 origin-edge 拓扑，适合 AUDEMSP 初期部署
+1. **HTTP 回调事件系统**：`on_publish`/`on_play`/`on_done` — 简单的 stream lifecycle hook 模式。MediaServo 也需要类似的事件系统做认证和计费
+2. **push/pull relay**：简单的 origin-edge 拓扑，适合 MediaServo 初期部署
 3. **segment-based HLS 生成**：直接写入文件系统，HTTP 静态服务 — 最简模式
 
 **教训**：
 - 不支持 WebRTC 意味着它只能作为 RTMP 时代的遗产
 - per-stream FFmpeg fork 转码是性能黑洞（4 核机器只能跑 3-5 路）
-- **没有内部统一数据模型** — 每个协议各自处理，HLS 写磁盘、RTMP 走 TCP、DASH 又是独立路径 — AUDEMSP 必须避免这种碎片化
+- **没有内部统一数据模型** — 每个协议各自处理，HLS 写磁盘、RTMP 走 TCP、DASH 又是独立路径 — MediaServo 必须避免这种碎片化
 
 ---
 
@@ -402,7 +402,7 @@
 - 性能数据不透明（无公开 benchmark）
 
 **可借鉴的设计**：
-1. **Rust workspace 模块化**：协议作为独立 crate — 与 AUDEMSP 的 crate 架构高度一致
+1. **Rust workspace 模块化**：协议作为独立 crate — 与 MediaServo 的 crate 架构高度一致
 2. **StreamHub 模式**：类似 SRS 的内部 RTMP 流但更模块化
 3. **CLI 友好**：命令行快速切换协议端口 — 开发/测试效率高
 
@@ -487,7 +487,7 @@ ffmpeg -re -i input \
 **缺点**：命令行工具，不是服务器，无多观众分发能力
 
 **可借鉴的设计**：
-1. **管线参数模式**：`preset`/`tune`/`GOP` 的配置模式可作为 AUDEMSP 编码配置的参考
+1. **管线参数模式**：`preset`/`tune`/`GOP` 的配置模式可作为 MediaServo 编码配置的参考
 2. **零延迟调优策略**：`zerolatency` + `sc_threshold 0` + `bf=0`
 
 ---
@@ -513,7 +513,7 @@ ffmpeg -re -i input \
 
 ### 4.1 LVQR — Unified Fragment Model（核心参考）
 
-**概况**：Rust 编写，29-crate workspace。单二进制实现 RTMP/WHIP/SRT/RTSP/WebSocket fMP4 输入，LL-HLS/MPEG-DASH/WHEP/MoQ/WebSocket fMP4 输出。MIT 许可。**这是 AUDEMSP 管线模型最重要的参考项目**。
+**概况**：Rust 编写，29-crate workspace。单二进制实现 RTMP/WHIP/SRT/RTSP/WebSocket fMP4 输入，LL-HLS/MPEG-DASH/WHEP/MoQ/WebSocket fMP4 输出。MIT 许可。**这是 MediaServo 管线模型最重要的参考项目**。
 
 **核心架构 — Unified Fragment Model**：
 
@@ -580,10 +580,10 @@ WS fMP4       ┘                            ├─► LL-HLS playlist + segment
 | MoQ | 80ms | 200ms | 400ms → 800ms |
 | WS (fMP4) | 300ms | 800ms | 1200ms → 2500ms |
 
-**对 AUDEMSP 的启示**：
-1. **Fragment 就是 AUDEMSP 应该追求的 Unified Fragment Model** — 它是协议无关的中间表示，避免了 SRS 以 RTMP 为中心的限制
+**对 MediaServo 的启示**：
+1. **Fragment 就是 MediaServo 应该追求的 Unified Fragment Model** — 它是协议无关的中间表示，避免了 SRS 以 RTMP 为中心的限制
 2. **数据平面零虚函数分发** — Rust 的 enum dispatch 和具体类型对性能至关重要
-3. **chitchat gossip 集群** — 比 Raft/Paxos 简单但足够用，AUDEMSP 可以借鉴
+3. **chitchat gossip 集群** — 比 Raft/Paxos 简单但足够用，MediaServo 可以借鉴
 4. **MoQ 作为一等公民** — Media over QUIC 是低延迟传输的未来方向
 5. **玻璃到玻璃延迟的 SLO 体系** — 每种协议不同阈值，完整的可观测性
 6. **Mesh 卸载** — 带宽成本降低 94%+ 的大规模分发方案
@@ -675,13 +675,13 @@ gst-launch-1.0 webrtcsink name=ws meta="meta,name=gst-stream" \
 | 适用场景 | 长时间运行应用、嵌入式 | 批处理、一次性转码 |
 | WebRTC | webrtcbin（半原生） | 不支持（需 libdatachannel） |
 
-### 5.6 对 AUDEMSP 的启示
+### 5.6 对 MediaServo 的启示
 
 GStreamer 的 pipeline 模型与 LVQR 的 Unified Fragment Model 有本质区别：
 - GStreamer 是**元素级 pipeline**：数据在元素间以 buffer 形式流动，caps 协商复杂
 - LVQR 是**Fragment 级管道**：所有输入归一化到 Fragment，所有输出从 Fragment 派生
 
-**AUDEMSP 应走 LVQR 路线而非 GStreamer 路线**：
+**MediaServo 应走 LVQR 路线而非 GStreamer 路线**：
 1. LVQR 的 Fragment 模型更简单：只有一种内部格式
 2. 添加新协议只需桥接代码（~50 行）
 3. GStreamer 的 caps 协商在生产中是一个故障源
@@ -693,7 +693,7 @@ GStreamer 的 pipeline 模型与 LVQR 的 Unified Fragment Model 有本质区别
 
 ### 6.1 多协议适配最佳模式
 
-| 模式 | 代表产品 | 优点 | 缺点 | 适合 AUDEMSP？ |
+| 模式 | 代表产品 | 优点 | 缺点 | 适合 MediaServo？ |
 |------|---------|------|------|:---:|
 | 内部 RTMP 归一化 | SRS | 简单、成熟 | 受限于 RTMP 语义 | ❌ |
 | Path + 协议自动转换 | MediaMTX | 零配置、灵活 | 无统一数据模型 | ⚠️ |
@@ -716,7 +716,7 @@ GStreamer 的 pipeline 模型与 LVQR 的 Unified Fragment Model 有本质区别
 | Media-over-QUIC | ✅ | ✅ | <100ms | ✅ | - | 未来方向 |
 | MoQ (QUIC) | ✅ | ✅ | <100ms | ✅ | - | 未来方向 |
 
-### 6.3 AUDEMSP 技术选型建议
+### 6.3 MediaServo 技术选型建议
 
 **核心架构**：采用 LVQR 的 **Unified Fragment Model** 作为内部数据统一表示
 
@@ -727,18 +727,18 @@ GStreamer 的 pipeline 模型与 LVQR 的 Unified Fragment Model 有本质区别
 4. 数据平面零虚函数分发的性能优势（每 Fragment 调用走具体类型，零堆分配）
 
 **建议的 crate 拆分**（参考 LVQR 29-crate 结构）：
-- `audemsp-fragment` — Fragment 类型 + FragmentBroadcaster + FragmentObserver trait
-- `audemsp-ingest-rtmp` — RTMP 输入桥接
-- `audemsp-ingest-srt` — SRT 输入桥接
-- `audemsp-ingest-whip` — WHIP/WebRTC 输入桥接
-- `audemsp-ingest-rtsp` — RTSP 输入桥接
-- `audemsp-egress-hls` — LL-HLS 输出
-- `audemsp-egress-dash` — MPEG-DASH 输出
-- `audemsp-egress-whep` — WHEP/WebRTC 输出
-- `audemsp-egress-moq` — MoQ over QUIC 输出
-- `audemsp-segmenter` — CMAF segmenter（fMP4 打包）
-- `audemsp-record` — 录制引擎
-- `audemsp-cluster` — 集群 gossip（可选）
+- `mediaservo-fragment` — Fragment 类型 + FragmentBroadcaster + FragmentObserver trait
+- `mediaservo-ingest-rtmp` — RTMP 输入桥接
+- `mediaservo-ingest-srt` — SRT 输入桥接
+- `mediaservo-ingest-whip` — WHIP/WebRTC 输入桥接
+- `mediaservo-ingest-rtsp` — RTSP 输入桥接
+- `mediaservo-egress-hls` — LL-HLS 输出
+- `mediaservo-egress-dash` — MPEG-DASH 输出
+- `mediaservo-egress-whep` — WHEP/WebRTC 输出
+- `mediaservo-egress-moq` — MoQ over QUIC 输出
+- `mediaservo-segmenter` — CMAF segmenter（fMP4 打包）
+- `mediaservo-record` — 录制引擎
+- `mediaservo-cluster` — 集群 gossip（可选）
 
 **分阶段实施建议**：
 

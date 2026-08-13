@@ -275,7 +275,7 @@
 
 1. **唯一 100% 开源的全栈方案**——从 Web 客户端到 SFU 到信令到录制到 PSTN 网关，Jitsi 是唯一提供每种组件都完全开源的视频会议方案。不需要拼装多个项目，不需要依赖任何闭源组件。对数据主权和合规性要求高的场景（政府、医疗、律所），这是不可替代的优势。
 
-2. **Colibri2 信令协议**——RESTful 的 SFU 控制协议是 Jitsi 架构中最值得学习的设计。将会议端点建模为资源（创建/更新/销毁），ICE 候选交换采用 trickle ICE 增量推送，源管理支持 Simulcast 层和 SVC 层的精细化控制。REST 和 XMPP 双传输模式——开发调试用 cURL + JSON，生产环境走 XMPP 持久连接。这种「同一协议，两种传输」的设计，AUDEMSP 信令层应直接借鉴。
+2. **Colibri2 信令协议**——RESTful 的 SFU 控制协议是 Jitsi 架构中最值得学习的设计。将会议端点建模为资源（创建/更新/销毁），ICE 候选交换采用 trickle ICE 增量推送，源管理支持 Simulcast 层和 SVC 层的精细化控制。REST 和 XMPP 双传输模式——开发调试用 cURL + JSON，生产环境走 XMPP 持久连接。这种「同一协议，两种传输」的设计，MediaServo 信令层应直接借鉴。
 
 3. **Pools + Remote Pools 级联架构**——2022 年架构升级体现了「先踩坑再进化」的运维智慧。2020 年疫情期间 50+ shard 全连接 JVB mesh 导致 O(N²) 连接数爆炸、全网崩溃。修复方案：按区域分组 JVB Pool（星型拓扑），Remote Pools 单链路跨区连接，Region Groups 避免不必要的跨洋级联。这套架构是生产环境大规模部署的「正确答案」。
 
@@ -283,37 +283,37 @@
 
 5. **可插拔桥选择策略**——`BridgeSelectionStrategy` Java 接口支持运行时注入不同的 JVB 分配策略：单桥（小部署）、区域优先（多数据中心）、负载均衡（大规模）、访问者分离（安全要求）、自定义（特殊拓扑）。这种细粒度的部署灵活性是开源方案相较于商业产品的核心优势。
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 
 ### [Adopt] 可直接借鉴
 
-1. **Colibri2 RESTful 资源建模**：AUDEMSP Conference Controller 的 API 设计应直接借鉴。`POST /conferences`（创建会议+分配SFU）、`PATCH /conferences/{id}`（更新 ICE/源）、`DELETE /conferences/{id}`（销毁）、`GET /conferences/{id}/dominant-speaker`（活跃发言人）
-2. **Pools + Remote Pools 星型拓扑**：AUDEMSP 分布式 SFU 部署架构应直接采用——按 Region Group 划分 SFU Worker 池，Remote Pools 单链路跨区级联，避免全互联
-3. **BridgeSelectionStrategy → trait SfuSelector**：AUDEMSP 应定义 Rust trait `SfuSelector`，提供 Local/RegionBased/LoadBalanced 多种实现
-4. **P2P 降级模式**：双人通话直接走 WebRTC P2P（不经过 SFU）。AUDEMSP 的 `WebRtcPlugin` 应内置此能力——仅 3+ 人会议激活 `SfuRelayPlugin`
-5. **Last-N 活跃发言人策略**：SFU 只转发 N 个最活跃发言人的视频流。静音参与者完全不消耗视频带宽。AUDEMSP `SfuRelayPlugin` 应内置此逻辑
-6. **Docker Compose 完整方案**：AUDEMSP 应提供类似 Jitsi 的 `docker-compose up -d` 一键部署体验，降低用户上手门槛
+1. **Colibri2 RESTful 资源建模**：MediaServo Conference Controller 的 API 设计应直接借鉴。`POST /conferences`（创建会议+分配SFU）、`PATCH /conferences/{id}`（更新 ICE/源）、`DELETE /conferences/{id}`（销毁）、`GET /conferences/{id}/dominant-speaker`（活跃发言人）
+2. **Pools + Remote Pools 星型拓扑**：MediaServo 分布式 SFU 部署架构应直接采用——按 Region Group 划分 SFU Worker 池，Remote Pools 单链路跨区级联，避免全互联
+3. **BridgeSelectionStrategy → trait SfuSelector**：MediaServo 应定义 Rust trait `SfuSelector`，提供 Local/RegionBased/LoadBalanced 多种实现
+4. **P2P 降级模式**：双人通话直接走 WebRTC P2P（不经过 SFU）。MediaServo 的 `WebRtcPlugin` 应内置此能力——仅 3+ 人会议激活 `SfuRelayPlugin`
+5. **Last-N 活跃发言人策略**：SFU 只转发 N 个最活跃发言人的视频流。静音参与者完全不消耗视频带宽。MediaServo `SfuRelayPlugin` 应内置此逻辑
+6. **Docker Compose 完整方案**：MediaServo 应提供类似 Jitsi 的 `docker-compose up -d` 一键部署体验，降低用户上手门槛
 
 ### [Adapt] 需修改后采用
 
-1. **信令协议：XMPP → WebSocket + Protobuf**：XMPP/Prosody 协议栈重量级。AUDEMSP 应采用 WebSocket + Protobuf/JSON 双模（借鉴 Colibri2 API 设计但不用 XMPP 传输）。Native 客户端走 Protobuf，Web 客户端走 JSON
-2. **录制方案：Jibri → RTP Forwarding + 独立录制服务**：Jibri 的 Chrome + ffmpeg 方案对 AUDEMSP 太重。改用 `Plain RTP Transport`（参考 mediasoup）+ Rust 录制服务，避免引入 Chrome 依赖。双层架构——实时 RTP 录制（单轨存储）+ 离线合成（按需）
-3. **SFU 实现语言：Java/Kotlin → Rust**：JVB 的 JVM 内存开销不可接受。AUDEMSP SFU 核心使用 Rust——内存安全、无 GC 停顿、与 native-core 技术栈一致
-4. **认证体系：Lua 模块 → AuthProvider trait**：Jitsi 通过 Prosody Lua 模块实现 LDAP/JWT/SSO。AUDEMSP 使用 Rust trait `AuthProvider`，实现 Local（SQLite+JWT）和 AUDEBase（gRPC LDAP）两种模式
-5. **E2EE 密钥管理**：Jitsi 通过 Insertable Streams + 自定义密钥交换实现。AUDEMSP 应提供类似的 E2EE 可选能力——AUDEMSPCore 提供 trait `KeyExchange`，默认实现使用 ECDH，可替换为企业 KMS
-6. **Kubernetes 原生支持**：Jitsi 有社区 Helm Chart。AUDEMSP 应官方提供 Helm Chart + Terraform Module，支持多云环境一键部署
+1. **信令协议：XMPP → WebSocket + Protobuf**：XMPP/Prosody 协议栈重量级。MediaServo 应采用 WebSocket + Protobuf/JSON 双模（借鉴 Colibri2 API 设计但不用 XMPP 传输）。Native 客户端走 Protobuf，Web 客户端走 JSON
+2. **录制方案：Jibri → RTP Forwarding + 独立录制服务**：Jibri 的 Chrome + ffmpeg 方案对 MediaServo 太重。改用 `Plain RTP Transport`（参考 mediasoup）+ Rust 录制服务，避免引入 Chrome 依赖。双层架构——实时 RTP 录制（单轨存储）+ 离线合成（按需）
+3. **SFU 实现语言：Java/Kotlin → Rust**：JVB 的 JVM 内存开销不可接受。MediaServo SFU 核心使用 Rust——内存安全、无 GC 停顿、与 native-core 技术栈一致
+4. **认证体系：Lua 模块 → AuthProvider trait**：Jitsi 通过 Prosody Lua 模块实现 LDAP/JWT/SSO。MediaServo 使用 Rust trait `AuthProvider`，实现 Local（SQLite+JWT）和 AUDEBase（gRPC LDAP）两种模式
+5. **E2EE 密钥管理**：Jitsi 通过 Insertable Streams + 自定义密钥交换实现。MediaServo 应提供类似的 E2EE 可选能力——MediaServoCore 提供 trait `KeyExchange`，默认实现使用 ECDH，可替换为企业 KMS
+6. **Kubernetes 原生支持**：Jitsi 有社区 Helm Chart。MediaServo 应官方提供 Helm Chart + Terraform Module，支持多云环境一键部署
 
 ### [Avoid] 已知坑 / 不适用场景
 
-1. **避免 Java/JVM 技术栈**：mediasoup (C++) 和 LiveKit (Go) 已证明非 JVM 实现的内存效率优势。AUDEMSP 已选定 Rust，不要引入 Java 依赖
+1. **避免 Java/JVM 技术栈**：mediasoup (C++) 和 LiveKit (Go) 已证明非 JVM 实现的内存效率优势。MediaServo 已选定 Rust，不要引入 Java 依赖
 2. **避免 XMPP 协议栈**：XMPP 是 1999 年的协议，XML 序列化开销大、调试困难、学习曲线陡峭。WebSocket + gRPC 是 2026 年的标准选择
-3. **全连接 SFU mesh = 不可扩展**：Jitsi 2020 年的崩溃是 SFU 部署的教科书级反面案例。AUDEMSP 从 Day 1 采用 Pools 星型拓扑
+3. **全连接 SFU mesh = 不可扩展**：Jitsi 2020 年的崩溃是 SFU 部署的教科书级反面案例。MediaServo 从 Day 1 采用 Pools 星型拓扑
 4. **Jibri Chrome 录制 = 运维噩梦**：Chrome 版本升级、ffmpeg 参数调优、Xvfb 配置——每个环节都是运维痛点。采用 mediasoup PlainTransport + Rust 录制服务可彻底避免
-5. **跨区级联延迟预期**：即使有 Pools 架构，跨大洲级联（如 北京→法兰克福）新增 80-150ms 延迟。AUDEMSP UI 层应在连接质量指示中反映跨区域延迟
+5. **跨区级联延迟预期**：即使有 Pools 架构，跨大洲级联（如 北京→法兰克福）新增 80-150ms 延迟。MediaServo UI 层应在连接质量指示中反映跨区域延迟
 
 **总体评分**：★★★★☆ (4/5)
 
-> 评价：Jitsi 是开源视频会议的标杆。Colibri2 协议设计、Pools 级联架构、BridgeSelectionStrategy 可插拔机制都是 AUDEMSP 项目的重要设计参考。但 Java/XMPP 技术栈是其历史包袱，AUDEMSP 应取其架构设计精髓而弃其技术实现。
+> 评价：Jitsi 是开源视频会议的标杆。Colibri2 协议设计、Pools 级联架构、BridgeSelectionStrategy 可插拔机制都是 MediaServo 项目的重要设计参考。但 Java/XMPP 技术栈是其历史包袱，MediaServo 应取其架构设计精髓而弃其技术实现。
 
 ---
 
@@ -326,7 +326,7 @@
 > Jitsi 2020 年架构崩溃及恢复: Emil Ivov, "Scaling Jitsi Meet in the Cloud"
 > Jitsi Pools 架构设计: Boris Grozev, JVB Pools Technical Design (2022)
 > 社区论坛: community.jitsi.org
-> AUDEMSP: docs/research/video-conference.md
+> MediaServo: docs/research/video-conference.md
 
 
 ---
@@ -346,13 +346,13 @@ cp env.example .env
 docker-compose up -d
 ```
 
-AUDEMSP 应提供类似的 Docker Compose 一键部署体验。组件对应关系：
-- Jitsi Web ⬄ AUDEMSP Client（Tauri v2 + Web 界面）
-- Prosody ⬄ AUDEMSP Signaling（自研 WebSocket + JSON/Protobuf 信令）
-- Jicofo ⬄ AUDEMSP Conference Controller（Rust，管理房间+SFU选择+ICE协调）
-- JVB ⬄ AUDEMSP SfuRelayPlugin（Rust + mediasoup C++ Worker 或 str0m）
-- Jibri ⬄ AUDEMSP Recording Plugin（Rust + GStreamer ffmpeg 管线）
-- Jigasi ⬄ AUDEMSP Telephony Plugin（Rust + SIP stack 桥接）
+MediaServo 应提供类似的 Docker Compose 一键部署体验。组件对应关系：
+- Jitsi Web ⬄ MediaServo Client（Tauri v2 + Web 界面）
+- Prosody ⬄ MediaServo Signaling（自研 WebSocket + JSON/Protobuf 信令）
+- Jicofo ⬄ MediaServo Conference Controller（Rust，管理房间+SFU选择+ICE协调）
+- JVB ⬄ MediaServo SfuRelayPlugin（Rust + mediasoup C++ Worker 或 str0m）
+- Jibri ⬄ MediaServo Recording Plugin（Rust + GStreamer ffmpeg 管线）
+- Jigasi ⬄ MediaServo Telephony Plugin（Rust + SIP stack 桥接）
 
 Jitsi 部署的关键环境变量：
 - `AUTH_TYPE`：internal（本地用户）、jwt（JWT Token）、ldap（企业LDAP目录）
@@ -409,7 +409,7 @@ Region Group A           Region Group B
 - 各 Pool 独立扩缩容，按区域流量弹性伸缩
 - Region Groups 将邻近区域分组（法兰克福+伦敦组内就近通信，避免跨洋级联）
 
-对 AUDEMSP 的核心启示：从 Day 1 就采用 Pools 星型拓扑，永远不设计全互联多节点架构。全互联在 3 个节点以下可行，10 个节点是灾难，100 个节点是物理上不可能。
+对 MediaServo 的核心启示：从 Day 1 就采用 Pools 星型拓扑，永远不设计全互联多节点架构。全互联在 3 个节点以下可行，10 个节点是灾难，100 个节点是物理上不可能。
 
 ---
 
@@ -476,7 +476,7 @@ RESTful 设计要点：
 - 软状态续期（Soft-State Renewal）= 天然优雅处理断线
 - Trickle ICE = 增量候选更新（不必一次性发送所有候选）
 
-AUDEMSP 的 Conference Controller API 应设计为类似的 RESTful 风格——会议和参与者都是资源，通过 CRUD 操作管理。关键差异：AUDEMSP 使用 WebSocket（实时推送）+ gRPC（服务间）双通道，而非 Colibri2 的 REST + XMPP 双模式。
+MediaServo 的 Conference Controller API 应设计为类似的 RESTful 风格——会议和参与者都是资源，通过 CRUD 操作管理。关键差异：MediaServo 使用 WebSocket（实时推送）+ gRPC（服务间）双通道，而非 Colibri2 的 REST + XMPP 双模式。
 
 ---
 
@@ -493,14 +493,14 @@ AUDEMSP 的 Conference Controller API 应设计为类似的 RESTful 风格——
 7. **日志脱敏**：禁止记录 Participant ID、IP 地址等 PII（可通过 Prosody 模块实现）
 8. **定期更新**：Docker 镜像使用固定版本标签（而非 `latest`），定期 `docker pull` 更新
 
-对 AUDEMSP 的安全启示：
+对 MediaServo 的安全启示：
 - AuthProvider trait 强制要求——不可跳过认证直接进入会议
 - TURN 服务使用时效性凭证（类似 JWT token），而非长期密钥
 - 录制服务的访问控制——录制文件等同于会议录音，需要相同级别的权限控制
 
 ### 7.9 [Adopt] 深入参考：IFrame API 嵌入模式
 
-Jitsi 的 IFrame API 使视频会议可嵌入任何网页。AUDEMSP 的 Web 客户端应提供类似的嵌入能力：
+Jitsi 的 IFrame API 使视频会议可嵌入任何网页。MediaServo 的 Web 客户端应提供类似的嵌入能力：
 - 使用 Shadow DOM 隔离样式和脚本，避免与宿主页面冲突
 - 提供完整的 JavaScript API：join/leave/mute/unmute/shareScreen/setCamera
 - 事件驱动模型：onParticipantJoined/onTrackAdded/onChatMessage
@@ -508,7 +508,7 @@ Jitsi 的 IFrame API 使视频会议可嵌入任何网页。AUDEMSP 的 Web 客�
 
 ### 7.10 [Adapt] 深入参考：Bridge Selection 策略实现
 
-Jitsi 的 BridgeSelectionStrategy 可插拔接口是 AUDEMSP SfuSelector 的直接参考。AUDEMSP 应实现以下策略：
+Jitsi 的 BridgeSelectionStrategy 可插拔接口是 MediaServo SfuSelector 的直接参考。MediaServo 应实现以下策略：
 - RegionAwareStrategy（默认）：根据参与者和 Room 的区域配置选择同区域 Worker
 - LoadBalanceStrategy：基于 Worker 负载（参与者数、Consumer 数、CPU 使用率）选择
 - LatencyAwareStrategy：基于参与者到各 Worker 的网络距离选择
@@ -517,7 +517,7 @@ Jitsi 的 BridgeSelectionStrategy 可插拔接口是 AUDEMSP SfuSelector 的直�
 
 ### 7.11 [Avoid] 深入参考：Java GC 与 Rust 零成本抽象对比
 
-Jitsi 的 Java 实现在大规模部署中暴露了 GC 停顿问题，这是 AUDEMSP 选择 Rust 的重要论据：
+Jitsi 的 Java 实现在大规模部署中暴露了 GC 停顿问题，这是 MediaServo 选择 Rust 的重要论据：
 - Java JVB 在 50+ 参与者场景下 Full GC 停顿 200-500ms，导致 RTP 包被缓冲在 UDP socket 中
 - Rust 零 GC 特性保证了延时一致性（latency jitter <5ms）
 - Rust 的所有权模型避免了对象分配频率问题
@@ -525,7 +525,7 @@ Jitsi 的 Java 实现在大规模部署中暴露了 GC 停顿问题，这是 AUD
 
 ### 7.12 [Adopt] 深入参考：Last-N 活跃发言人策略
 
-Jitsi 的 Last-N 策略是 SFU 节省带宽的核心手段。AUDEMSP SfuRelayPlugin 应内置此能力：
+Jitsi 的 Last-N 策略是 SFU 节省带宽的核心手段。MediaServo SfuRelayPlugin 应内置此能力：
 - 默认 Last-N = 6（同时显示最多 6 个视频）
 - 动态 Last-N：根据参与者设备性能自适应调整
 - 发言人切换时视频平滑过渡（先切换低分辨率预热，再切换高分辨率）

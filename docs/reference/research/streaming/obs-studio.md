@@ -106,9 +106,9 @@ libobs 是 OBS Studio 的核心 C API 库，提供了所有插件的抽象接口
 
 ### 编码器性能对比
 
-OBS Studio 支持 6 种 GPU 编码后端和 3 种软件编码后端。以下对比 AUDEMSP 可参考的编码器选型依据：
+OBS Studio 支持 6 种 GPU 编码后端和 3 种软件编码后端。以下对比 MediaServo 可参考的编码器选型依据：
 
-| 编码器后端 | 平台 | H.264 | H.265/HEVC | AV1 | 多编码实例 | 延迟特性 | AUDEMSP 适用场景 |
+| 编码器后端 | 平台 | H.264 | H.265/HEVC | AV1 | 多编码实例 | 延迟特性 | MediaServo 适用场景 |
 |-----------|------|:----:|:---------:|:---:|:---------:|---------|-------------------|
 | NVENC (NVIDIA) | Windows/Linux | ✅ | ✅ | ✅ (Ada+) | ✅ (最多 5 路) | 超低 (<1ms) | Host 端远程桌面编码 |
 | AMF (AMD) | Windows/Linux | ✅ | ✅ | ✅ (RDNA3+) | ✅ (3 路) | 低 (1-2ms) | Host 端备选编码 |
@@ -120,14 +120,14 @@ OBS Studio 支持 6 种 GPU 编码后端和 3 种软件编码后端。以下对�
 
 **编码预设与延迟权衡**：
 
-| 预设 | NVENC 延迟 | x264 延迟 | 质量 | 适用 AUDEMSP 场景 |
+| 预设 | NVENC 延迟 | x264 延迟 | 质量 | 适用 MediaServo 场景 |
 |------|-----------|----------|------|-------------------|
 | ultrafast | ~0.5ms | ~5ms | 最低 | 远程桌面 (远控) — 最低延迟优先 |
 | veryfast | ~1ms | ~10ms | 低 | 通用直播推流 — 延迟与质量的平衡 |
 | faster | ~1.5ms | ~20ms | 中 | 视频会议 — 质量比远控要求高 |
 | medium | ~2ms | ~50ms | 高 | 录制存档 — 延迟不重要，质量优先 |
 
-**AUDEMSP 编码选型建议**：
+**MediaServo 编码选型建议**：
 - 远程桌面场景：NVENC/VideoToolbox ultrafast，延迟 <1ms 目标
 - 视频会议场景：NVENC/AMF veryfast，延迟 <10ms 目标
 - 监控录制场景：NVENC/SVT-AV1 medium，质量优先
@@ -145,7 +145,7 @@ OBS Studio 支持 5 种推流协议，各协议在不同场景下的性能差异
 | WHIP/WebRTC | 100-300ms | 200-500ms | 中（NACK+FEC） | ✅（HTTPS 443） | ✅ | 低延迟互动推流 |
 | HLS | 3-10s | 5-15s | 最高 | ✅（HTTP 80/443） | ✅ | 大规模分发 |
 
-**AUDEMSP 的推流协议选择策略**：
+**MediaServo 的推流协议选择策略**：
 - 远程桌面（远控）：WHIP/WebRTC — 最低延迟，浏览器原生支持
 - 视频会议：WHIP/WebRTC — 实时双向互动
 - 监控相机接入：SRT — 不丢帧，防火墙穿透较好
@@ -154,9 +154,9 @@ OBS Studio 支持 5 种推流协议，各协议在不同场景下的性能差异
 
 ### 编码参数配置详表
 
-以下是 OBS 编码参数对 AUDEMSP 实现编码配置系统的参考：
+以下是 OBS 编码参数对 MediaServo 实现编码配置系统的参考：
 
-| 参数 | OBS 配置路径 | 有效值范围 | 对延迟的影响 | AUDEMSP 等效 |
+| 参数 | OBS 配置路径 | 有效值范围 | 对延迟的影响 | MediaServo 等效 |
 |------|-----------|---------|:-----------:|--------------|
 | 码率控制 | CBR / VBR / CQP / CRF | 取决于编码器 | CBR最稳定 | RateControl 枚举 |
 | 关键帧间隔（GOP） | 0=auto / N | 1-300s | 越小延迟越低 | keyframe_interval: Duration |
@@ -170,7 +170,7 @@ OBS Studio 支持 5 种推流协议，各协议在不同场景下的性能差异
 
 **低延迟编码配置参考**（针对远程桌面 <100ms 场景）：
 ```ini
-# OBS 等效配置 → AUDEMSP 配置
+# OBS 等效配置 → MediaServo 配置
 tune=zerolatency       → b_frames: 0, lookahead: 0
 preset=veryfast        → preset: VeryFast
 gop=15 (0.5s@30fps)   → keyframe_interval: ms(500)
@@ -299,38 +299,38 @@ OBS Studio 拥有流媒体行业最丰富的插件生态：
 4. **Hybrid MP4 录制解决直播录制最大痛点**：崩溃恢复、分片写入。分段 MP4 (fMP4) 规格保证了崩溃后已录制部分的完整性。替代了传统的"移动后写入"模式，将录制可靠性从"全有或全无"提升到"最大努力保存"
 5. **obs-websocket 成为行业互操作标准**：WebSocket JSON-RPC 远程控制协议覆盖 OBS 的所有功能。Stream Deck、Touch Portal、LioranBoard、SAMMI、OBS Blade 等数十个工具都使用此协议。这是 OBS 生态系统的核心粘合剂
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 ### [Adopt] 可直接借鉴
-1. **Source → Filter → Encoder → Output 管线模型**：这个管线是 AUDEMSP `MediaSource → MediaProcessor → MediaSink` 插件 trait 的直接参考。每种输出协议作为独立的 `MediaSink` 实现，通过统一接口消费 Fragment 流。管线的每个阶段都可以独立替换和组合
-2. **obs-websocket 远程控制协议设计**：AUDEMSP 的 Host 嵌入式 Web 配置页和 Client 的远程控制能力可以参考 obs-websocket 的简洁设计：JSON-RPC 风格、事件驱动、全功能覆盖、请求/响应配对。WAMP 或纯 WebSocket 都可以作为传输
-3. **WHIP Simulcast 分层策略**：等比缩放的分层模型简单且实用。AUDEMSP 的 WebRTC 推流可以直接采用 1-4 层等比降分辨率的策略，避免复杂的带宽协商
-4. **协议感知的管线裁剪**：OBS 为 WebRTC 输出跳过 interleaver 的优化策略展示了协议感知优化的重要性。AUDEMSP 的 PipelineEngine 应该在管线构建时根据输出协议类型自动跳过不必要的处理步骤（如 HTTP-FLV 不需要 transmux 到 fMP4）
-5. **Hybrid MP4 的崩溃恢复模式**：分片 fMP4 写入策略是录制系统的基础保障。AUDEMSP 的录制模块（从 Fragment 流直接写入）应该采用相同的分片策略
+1. **Source → Filter → Encoder → Output 管线模型**：这个管线是 MediaServo `MediaSource → MediaProcessor → MediaSink` 插件 trait 的直接参考。每种输出协议作为独立的 `MediaSink` 实现，通过统一接口消费 Fragment 流。管线的每个阶段都可以独立替换和组合
+2. **obs-websocket 远程控制协议设计**：MediaServo 的 Host 嵌入式 Web 配置页和 Client 的远程控制能力可以参考 obs-websocket 的简洁设计：JSON-RPC 风格、事件驱动、全功能覆盖、请求/响应配对。WAMP 或纯 WebSocket 都可以作为传输
+3. **WHIP Simulcast 分层策略**：等比缩放的分层模型简单且实用。MediaServo 的 WebRTC 推流可以直接采用 1-4 层等比降分辨率的策略，避免复杂的带宽协商
+4. **协议感知的管线裁剪**：OBS 为 WebRTC 输出跳过 interleaver 的优化策略展示了协议感知优化的重要性。MediaServo 的 PipelineEngine 应该在管线构建时根据输出协议类型自动跳过不必要的处理步骤（如 HTTP-FLV 不需要 transmux 到 fMP4）
+5. **Hybrid MP4 的崩溃恢复模式**：分片 fMP4 写入策略是录制系统的基础保障。MediaServo 的录制模块（从 Fragment 流直接写入）应该采用相同的分片策略
 
 ### [Adapt] 需修改后采用
-1. **多输出流原生支持**：OBS 的单输出限制是架构缺陷。AUDEMSP 应该从一开始就支持一条输入管线 fork 到多条输出管线。参考 LVQR 的 FragmentBroadcaster（一个输入 → 多个 Observer tap），避免 OBS 的多平台推流需要复制编码资源的低效模式
-2. **编码器抽象**：OBS 的 `obs_encoder_t` 假设输入是原始帧（音频/视频帧）。AUDEMSP 需要更灵活的编码器抽象：编码器可以接受 Fragment 作为输入（transmux 路径）或原始帧作为输入（编码路径）。支持 CBR/VBR/CQP/CRF 等多种码率控制模式
-3. **音频系统设计**：OBS 的 Audio Mixer 在 v32.1 才获得较完善的功能。AUDEMSP 应该借鉴 vMix 的 Bus 音频系统 — 多 Bus 路由、独立监听、灵活的子混音 — 在初期就设计好。避免 OBS 的音频系统升级路径
-4. **录制格式**：OBS 支持多种录制容器格式。AUDEMSP 应该统一使用 CMAF/fMP4（与 Fragment payload 格式一致），避免容器格式转换。录制目标应该支持多种存储后端（本地磁盘、S3/OSS 对象存储、NFS 网络挂载）
-5. **Virtual Camera 输出**：将视频流注册为系统虚拟摄像头的功能可以作为 AUDEMSP 的可选 `VirtualCameraPlugin`。需要委托各平台的摄像头驱动 API（Windows DirectShow, macOS CoreMedia DAL, Linux v4l2loopback）
-6. **编码器硬件抽象**：OBS 为每种 GPU 编码平台（NVENC/AMF/QSV/VT/VAAPI）编写了独立的编码器实现。AUDEMSP 应该在 `HardwareEncoder` trait 下统一配置接口，隐藏各平台的差异。参考 MediaMTX RPI Camera 模块的配置统一策略
+1. **多输出流原生支持**：OBS 的单输出限制是架构缺陷。MediaServo 应该从一开始就支持一条输入管线 fork 到多条输出管线。参考 LVQR 的 FragmentBroadcaster（一个输入 → 多个 Observer tap），避免 OBS 的多平台推流需要复制编码资源的低效模式
+2. **编码器抽象**：OBS 的 `obs_encoder_t` 假设输入是原始帧（音频/视频帧）。MediaServo 需要更灵活的编码器抽象：编码器可以接受 Fragment 作为输入（transmux 路径）或原始帧作为输入（编码路径）。支持 CBR/VBR/CQP/CRF 等多种码率控制模式
+3. **音频系统设计**：OBS 的 Audio Mixer 在 v32.1 才获得较完善的功能。MediaServo 应该借鉴 vMix 的 Bus 音频系统 — 多 Bus 路由、独立监听、灵活的子混音 — 在初期就设计好。避免 OBS 的音频系统升级路径
+4. **录制格式**：OBS 支持多种录制容器格式。MediaServo 应该统一使用 CMAF/fMP4（与 Fragment payload 格式一致），避免容器格式转换。录制目标应该支持多种存储后端（本地磁盘、S3/OSS 对象存储、NFS 网络挂载）
+5. **Virtual Camera 输出**：将视频流注册为系统虚拟摄像头的功能可以作为 MediaServo 的可选 `VirtualCameraPlugin`。需要委托各平台的摄像头驱动 API（Windows DirectShow, macOS CoreMedia DAL, Linux v4l2loopback）
+6. **编码器硬件抽象**：OBS 为每种 GPU 编码平台（NVENC/AMF/QSV/VT/VAAPI）编写了独立的编码器实现。MediaServo 应该在 `HardwareEncoder` trait 下统一配置接口，隐藏各平台的差异。参考 MediaMTX RPI Camera 模块的配置统一策略
 
 ### [Avoid] 已知坑 / 不适用场景
-1. **不要复制 OBS 的 C 插件 ABI**：OBS 通过结构体函数指针表实现多态的 C API（如 `obs_source_t.audio_render` 函数指针）在 2026 年已过时。AUDEMSP 应该使用 Rust trait 实现多态，由编译器保证类型安全
-2. **不要依赖 librtmp**：OBS 自维护 librtmp fork 的历史表明，社区标准的 librtmp 对 Enhanced RTMP 支持不足。AUDEMSP 应该自研或选择高质量的 Rust RTMP 实现。如果必须用 C 库，通过 FFI facade crate 隔离
-3. **GPLv2 许可隔离**：OBS 是 GPLv2，AUDEMSP 是 Apache 2.0。参考架构设计不构成版权问题，但不能直接复制代码。接口定义和管线拓扑可以借鉴，实现必须独立编写
-4. **Scene Graph 适合 UI 端，不适合服务端**：OBS 的 Scene Graph 是为交互式画面创作设计的，要求 GPU 实时渲染。AUDEMSP Host（headless 服务端）如果需要画面合成，应考虑轻量级 compositor（如 GStreamer `compositor` 元素或自定义着色器），而非完整的 Scene Graph
-5. **不要绑定特定 UI 框架**：OBS 深度绑定 Qt/Cocoa。AUDEMSP Client 使用 Tauri v2 + React，Host 使用 axum + 静态 HTML。不要参考 OBS 的 UI 架构
-6. **单进程架构 vs 多进程**：OBS 在单一进程中运行所有功能。AUDEMSP 的架构是 Client（GUI 进程）、Host（headless 进程）、Backend（服务进程）分离。进程间通信（FlatBuffers、gRPC）是 AUDEMSP 独有的复杂度，OBS 没有这方面的经验可参考
+1. **不要复制 OBS 的 C 插件 ABI**：OBS 通过结构体函数指针表实现多态的 C API（如 `obs_source_t.audio_render` 函数指针）在 2026 年已过时。MediaServo 应该使用 Rust trait 实现多态，由编译器保证类型安全
+2. **不要依赖 librtmp**：OBS 自维护 librtmp fork 的历史表明，社区标准的 librtmp 对 Enhanced RTMP 支持不足。MediaServo 应该自研或选择高质量的 Rust RTMP 实现。如果必须用 C 库，通过 FFI facade crate 隔离
+3. **GPLv2 许可隔离**：OBS 是 GPLv2，MediaServo 是 Apache 2.0。参考架构设计不构成版权问题，但不能直接复制代码。接口定义和管线拓扑可以借鉴，实现必须独立编写
+4. **Scene Graph 适合 UI 端，不适合服务端**：OBS 的 Scene Graph 是为交互式画面创作设计的，要求 GPU 实时渲染。MediaServo Host（headless 服务端）如果需要画面合成，应考虑轻量级 compositor（如 GStreamer `compositor` 元素或自定义着色器），而非完整的 Scene Graph
+5. **不要绑定特定 UI 框架**：OBS 深度绑定 Qt/Cocoa。MediaServo Client 使用 Tauri v2 + React，Host 使用 axum + 静态 HTML。不要参考 OBS 的 UI 架构
+6. **单进程架构 vs 多进程**：OBS 在单一进程中运行所有功能。MediaServo 的架构是 Client（GUI 进程）、Host（headless 进程）、Backend（服务进程）分离。进程间通信（FlatBuffers、gRPC）是 MediaServo 独有的复杂度，OBS 没有这方面的经验可参考
 
 
 **总体评分**：★★★★☆ (4/5)
 
-OBS Studio 是生产工具 benchmark — 在编码器客户端和制作工具方面无可匹敌。其对 AUDEMSP 的核心价值在于：Source→Filter→Encoder→Output 管线架构参考、WHIP Simulcast 分层策略、obs-websocket 远程控制协议设计、Hybrid MP4 录制模式。不适合直接参考的是：单输出流限制、C 插件 ABI、Scene Graph 架构。
+OBS Studio 是生产工具 benchmark — 在编码器客户端和制作工具方面无可匹敌。其对 MediaServo 的核心价值在于：Source→Filter→Encoder→Output 管线架构参考、WHIP Simulcast 分层策略、obs-websocket 远程控制协议设计、Hybrid MP4 录制模式。不适合直接参考的是：单输出流限制、C 插件 ABI、Scene Graph 架构。
 
 ### [Adopt] 补充 — 编码器抽象层设计
 
-**6. HardwareEncoder trait 的设计参考**：OBS 为每种 GPU 编码平台维护独立的 C 实现，导致代码分散在 `libobs/media-io/` 下的多个文件中。AUDEMSP 应定义一个统一的 `HardwareEncoder` trait：
+**6. HardwareEncoder trait 的设计参考**：OBS 为每种 GPU 编码平台维护独立的 C 实现，导致代码分散在 `libobs/media-io/` 下的多个文件中。MediaServo 应定义一个统一的 `HardwareEncoder` trait：
 
 ```rust
 #[async_trait]
@@ -358,7 +358,7 @@ pub struct EncoderConfig {
 
 ### [Adapt] 补充 — 多流输出架构设计
 
-**7. 单输入→多输出分叉策略**：OBS 的单输出流限制是多平台推流的瓶颈。AUDEMSP 的 FragmentBroadcaster 天然支持一对多分叉 — 一个 MediaSource 的 Fragment 流可同时被多个 MediaSink 消费，无需额外编码资源：
+**7. 单输入→多输出分叉策略**：OBS 的单输出流限制是多平台推流的瓶颈。MediaServo 的 FragmentBroadcaster 天然支持一对多分叉 — 一个 MediaSource 的 Fragment 流可同时被多个 MediaSink 消费，无需额外编码资源：
 
 ```
 RTMP Source → FragmentBroadcaster ─┬──→ HlsSink (LL-HLS)
@@ -372,9 +372,9 @@ RTMP Source → FragmentBroadcaster ─┬──→ HlsSink (LL-HLS)
 
 ### [Avoid] 补充 — 更多坑
 
-**7. 不是所有 GPU 编码器都支持 AV1**：OBS 的 AV1 支持需 Ada Lovelace (NVENC AV1)、RDNA3 (AMF AV1)、Arc (QSV AV1)。旧硬件仅支持 H.264/H.265。AUDEMSP 的 `HardwareEncoderRegistry` 必须报告编码器能力，由配置层根据硬件能力自动降级。
+**7. 不是所有 GPU 编码器都支持 AV1**：OBS 的 AV1 支持需 Ada Lovelace (NVENC AV1)、RDNA3 (AMF AV1)、Arc (QSV AV1)。旧硬件仅支持 H.264/H.265。MediaServo 的 `HardwareEncoderRegistry` 必须报告编码器能力，由配置层根据硬件能力自动降级。
 
-**8. 多编码实例的 GPU 内存限制**：OBS 的 WHIP Simulcast 4 层编码消耗大量显存。AUDEMSP 的 Simulcast 层数应根据 GPU 显存动态上限，默认为 3 层（1080p → 540p → 360p）。
+**8. 多编码实例的 GPU 内存限制**：OBS 的 WHIP Simulcast 4 层编码消耗大量显存。MediaServo 的 Simulcast 层数应根据 GPU 显存动态上限，默认为 3 层（1080p → 540p → 360p）。
 
 ---
 **相关决策**: D45 (采集-编码耦合), D6, D19, D-SIMULCAST
@@ -427,7 +427,7 @@ WHIP Simulcast 同时编码多个分辨率层：
 | 3 | 3x NVENC | 100%+50%+33% | 50%+30%+20% | 弱网络 |
 | 4 | 4x NVENC | 100%+50%+33%+25% | 40%+25%+20%+15% | 自适应 |
 
-对 AUDEMSP 的启示：
+对 MediaServo 的启示：
 - HardwareEncoder 插件应支持同时创建多个编码实例 (1-4 个)
 - 每层分辨率和码率是可配置比例，非绝对数值
 - RTCP 反馈回路需集成到 PipelineEngine 质量监控中
@@ -441,7 +441,7 @@ obs-websocket 使用 WebSocket (ws://localhost:4455) + JSON-RPC 风格。
 
 **常用 Request 类型** (共 100+)：
 
-| RequestType | 功能 | AUDEMSP 等效 |
+| RequestType | 功能 | MediaServo 等效 |
 |-------------|------|----------------|
 | GetSceneList | 获取所有场景 | Stream.List |
 | SetCurrentProgramScene | 切换场景 | Stream.Switch |
@@ -453,7 +453,7 @@ obs-websocket 使用 WebSocket (ws://localhost:4455) + JSON-RPC 风格。
 
 **常用 Event 类型** (共 50+)：
 
-| EventType | 触发时机 | AUDEMSP 等效 |
+| EventType | 触发时机 | MediaServo 等效 |
 |-----------|---------|----------------|
 | StreamStateChanged | 推流状态变更 | StreamStateChanged |
 | RecordStateChanged | 录制状态变更 | RecordStateChanged |
@@ -461,9 +461,9 @@ obs-websocket 使用 WebSocket (ws://localhost:4455) + JSON-RPC 风格。
 | InputVolumeChanged | 音量变更 | AudioLevelChanged |
 | StreamStatus | 推流统计 (码率/丢帧) | StreamStats (周期) |
 
-AUDEMSP 的 Host 配置页和 Client 控制协议可参考此消息结构
+MediaServo 的 Host 配置页和 Client 控制协议可参考此消息结构
 (JSON-RPC + Request/Response + Event 推送)，但操作模型需替换为
-AUDEMSP 自己的域模型 (Stream/Record/Audio/Filter 等)。
+MediaServo 自己的域模型 (Stream/Record/Audio/Filter 等)。
 
 ---
 
@@ -491,25 +491,25 @@ AUDEMSP 自己的域模型 (Stream/Record/Audio/Filter 等)。
 | fast | 中慢 | 中高 | 中 | 本地录制 |
 | medium | 慢 | 高 | 中高 | 高质量录制 |
 
-对 AUDEMSP 的启示：
+对 MediaServo 的启示：
 - 编码预设应该有默认值 (veryfast) 并允许用户根据场景切换
 - 远控场景 (remote desktop) 应使用 ultrafast+tune=zerolatency
 - 录制场景可使用 medium 获得更高压缩率
 - WHIP Simulcast 4 层 +35% GPU 开销是合理的编码资源预算
-- 6 小时稳定性是 AUDEMSP 录制系统的基准目标
+- 6 小时稳定性是 MediaServo 录制系统的基准目标
 
 OBS Studio 的 libobs 核心引擎和 obs-websocket 远程控制协议是流媒体
 客户端架构的两个基石。Source -> Filter -> Encoder -> Output 管线
-启发了 AUDEMSP 的 MediaSource -> MediaProcessor -> MediaSink trait 设计。
-obs-websocket 的 JSON-RPC 事件驱动模式是 AUDEMSP Host/Client 控制
+启发了 MediaServo 的 MediaSource -> MediaProcessor -> MediaSink trait 设计。
+obs-websocket 的 JSON-RPC 事件驱动模式是 MediaServo Host/Client 控制
 协议的参考基准。
 
-OBS 的弱项 — 单输出流限制、C 插件 ABI、无服务端功能 — 恰好是 AUDEMSP
-需要补充和完善的部分。OBS 做不了服务器，AUDEMSP 做不了 UI 端编码器，
+OBS 的弱项 — 单输出流限制、C 插件 ABI、无服务端功能 — 恰好是 MediaServo
+需要补充和完善的部分。OBS 做不了服务器，MediaServo 做不了 UI 端编码器，
 两者互补而非竞争。
 
 核心教训：插件化管线和远程控制协议的设计是 OBS 最可迁移的价值，
-其 UI 框架和 GPU 渲染管线则完全不适用于 AUDEMSP。
+其 UI 框架和 GPU 渲染管线则完全不适用于 MediaServo。
 
 
 ---

@@ -179,5 +179,5 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 
 - AUDEMSP → MediaServo 全量重命名（T1: 259 文件机械替换 + 7 crate 目录/CLI mv; T2: AUDE 生态剥离 docs; T3: compose name/service/pixi 名）✅
 - 定位: 独立部署实时媒体伺服平台（监控/NVR + 会议 + 桌面 + 遥操作），脱离 AUDE 生态（D221 修订 D209）
-- 命名冲突实证 0/0/0（crates.io/npm/GitHub）; 保留面: memorys/plans/research 历史提及保留
+- 命名冲突实证 0/0/0（crates.io/npm/GitHub）; 保留面: 仅 .agents/（历史提及）; docs 调研存档/vendor 已统一 MediaServo
 - T4 构建测试: 部分阻塞（webrtc-sys workspace 级构建失败, 疑磁盘/并行竞态, 与重命名无关已取证）; T5 运行时验证待完成

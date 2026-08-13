@@ -352,41 +352,41 @@ Vay 至今融资总额估计超过 $1.5 亿美元。其商业模式可持续性�
 4. **双 Safety Controller 对等架构**：操控站和车端各有一个独立的 Safety Controller，运行相同的安全边界计算，互相校验。即使操控站被黑客完全控制，车端 Safety Controller 仍可独立确保安全——这是防御纵深在遥操作安全中的最高实现
 5. **远程驾驶 RLHF 数据闭环**：将商业运营产生的每一英里远程驾驶数据用于训练端到端自动驾驶模型。形成"人工驾驶 → 数据收集 → AI 训练 → 减少人工介入 → 扩展运营 → 更多数据"的正向飞轮
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 ### [Adopt] 可直接借鉴
-- **Safety Tunnel 安全边界计算模式**：将操控参数安全上限的计算从指令执行管道中完全独立。AUDEMSP teleop SDK 应定义 `SafetyEnvelope` trait，在每条控制指令到达车端执行器前通过 `validateInEnvelope()` 校验
+- **Safety Tunnel 安全边界计算模式**：将操控参数安全上限的计算从指令执行管道中完全独立。MediaServo teleop SDK 应定义 `SafetyEnvelope` trait，在每条控制指令到达车端执行器前通过 `validateInEnvelope()` 校验
 - **双端安全校验**：操控站端 `CommandSanitizer`（发前校验）+ 车端 `SafetyValidator`（收后校验），车端拥有最终否决权。两端独立运行相同逻辑，互为验证
 - **多运营商蜂窝并行传输策略**：`MultiPathTransport` 支持 bonding 模式（并行发送 + 去重），而非 failover
-- **延迟可视化理念**：AUDEMSP Client 遥操作 UI 模块应将网络延迟量化为 HMI 层可视化提示，而非仅显示数字
+- **延迟可视化理念**：MediaServo Client 遥操作 UI 模块应将网络延迟量化为 HMI 层可视化提示，而非仅显示数字
 - **Fail-Safe + MRM 四级降级**：连接丢失 → Phase1 通知 → Phase2 减速 → Phase3 停车 → Phase4 恢复
 - **MRM 触发条件明确化**：延迟阈值、丢包阈值、心跳超时、异常指令检测——所有触发条件可配置且可独立启用
 - **端到端加密 + Token 双向认证**：DTLS-SRTP + 应用层 Token 验证
 
 ### [Adapt] 需修改后采用
-- **ASIL-D → 功能安全分级**：Vay 的 ASIL-D 硬件成本极高。AUDEMSP 需定义自己的 QM/A/B/C/D 功能安全等级，根据部署场景选择适当的安全等级
-- **延迟感知视频编码**：Vay 的自研编码器 → AUDEMSP 使用 WebRTC GCC + 编码参数动态调整（GOP 1→4、码率 1M→4Mbps、分辨率 480p→1080p）
-- **远程驾驶员培训 → 操作员认证**：Vay 的专业驾驶员培训体系 → AUDEMSP 的操作员分级认证（Operator Level 0-4：观察员/路径引导/慢速操控/城市操控/全场景操控）
-- **疲劳管理 → 会话时长管理**：Vay 的 <2h 连续操控 + 15min 强制休息 → AUDEMSP 的 `SessionDurationPolicy`，可配置不同操作等级的时长上限
-- **360° 拼接 → 多路独立视频**：Vay 的多摄像头拼接方案 → AUDEMSP 采用多路独立视频 + 前端画布合成（而非 GPU 融合），更灵活且降低车端算力要求
-- **RLHF 数据闭环 → 遥操作数据记录**：Vay 的 AI 训练闭环 → AUDEMSP 实现操作日志记录、回放分析和操作质量评估，不要求达到 AI 训练级别
+- **ASIL-D → 功能安全分级**：Vay 的 ASIL-D 硬件成本极高。MediaServo 需定义自己的 QM/A/B/C/D 功能安全等级，根据部署场景选择适当的安全等级
+- **延迟感知视频编码**：Vay 的自研编码器 → MediaServo 使用 WebRTC GCC + 编码参数动态调整（GOP 1→4、码率 1M→4Mbps、分辨率 480p→1080p）
+- **远程驾驶员培训 → 操作员认证**：Vay 的专业驾驶员培训体系 → MediaServo 的操作员分级认证（Operator Level 0-4：观察员/路径引导/慢速操控/城市操控/全场景操控）
+- **疲劳管理 → 会话时长管理**：Vay 的 <2h 连续操控 + 15min 强制休息 → MediaServo 的 `SessionDurationPolicy`，可配置不同操作等级的时长上限
+- **360° 拼接 → 多路独立视频**：Vay 的多摄像头拼接方案 → MediaServo 采用多路独立视频 + 前端画布合成（而非 GPU 融合），更灵活且降低车端算力要求
+- **RLHF 数据闭环 → 遥操作数据记录**：Vay 的 AI 训练闭环 → MediaServo 实现操作日志记录、回放分析和操作质量评估，不要求达到 AI 训练级别
 
 ### [Avoid] 已知坑 / 不适用场景
-- **ASIL-D 硬件成本过高**：Vay 的单车改造成本（>$50K）对于 AUDEMSP 的通用多媒体平台不可接受。AUDEMSP 仅应在关键功能（紧急制动）上达到高安全等级
-- **TÜV 认证耗时级年**：独立第三方安全评估需要 12-24 个月。AUDEMSP 初期仅需功能正确性验证，安全认证留待商业化阶段
-- **多 SIM 卡硬件 + 月费成本**：3-4 SIM 卡并行方案增加单车成本和月费。AUDEMSP 应提供可配置的冗余级别（单卡/双卡/多卡）
-- **每城市单独审批**：Vay 的商业模式受各地监管显著影响。AUDEMSP 作为技术平台，责任边界在软件/协议层面，不涉及道路运营许可
-- **ODD 以网络为第一约束**：Vay 的经验说明网络覆盖是遥操作硬天花板。AUDEMSP 的设计必须将 `NetworkQualityProfile` 作为功能降级的第一决策因素
-- **延迟可视化不能替代网络优化**：HMI 层的延迟补偿是最后手段，AUDEMSP 必须在网络层（TURN 中继选优/多路径）、编码层（GCC 自适应/SVC）、HMI 层三管齐下
-- **商业机密限制**：Vay 的核心实现（具体协议格式、双 Safety Controller 通信机制、AI 训练流程）未公开，AUDEMSP 只能借鉴其公开的架构级别设计原则
-- **功耗与散热**：多基带 + 多 GPU 编码在南半球/夏季车端可能过热，AUDEMSP 的硬件适配需要关注散热设计
+- **ASIL-D 硬件成本过高**：Vay 的单车改造成本（>$50K）对于 MediaServo 的通用多媒体平台不可接受。MediaServo 仅应在关键功能（紧急制动）上达到高安全等级
+- **TÜV 认证耗时级年**：独立第三方安全评估需要 12-24 个月。MediaServo 初期仅需功能正确性验证，安全认证留待商业化阶段
+- **多 SIM 卡硬件 + 月费成本**：3-4 SIM 卡并行方案增加单车成本和月费。MediaServo 应提供可配置的冗余级别（单卡/双卡/多卡）
+- **每城市单独审批**：Vay 的商业模式受各地监管显著影响。MediaServo 作为技术平台，责任边界在软件/协议层面，不涉及道路运营许可
+- **ODD 以网络为第一约束**：Vay 的经验说明网络覆盖是遥操作硬天花板。MediaServo 的设计必须将 `NetworkQualityProfile` 作为功能降级的第一决策因素
+- **延迟可视化不能替代网络优化**：HMI 层的延迟补偿是最后手段，MediaServo 必须在网络层（TURN 中继选优/多路径）、编码层（GCC 自适应/SVC）、HMI 层三管齐下
+- **商业机密限制**：Vay 的核心实现（具体协议格式、双 Safety Controller 通信机制、AI 训练流程）未公开，MediaServo 只能借鉴其公开的架构级别设计原则
+- **功耗与散热**：多基带 + 多 GPU 编码在南半球/夏季车端可能过热，MediaServo 的硬件适配需要关注散热设计
 
 ### [Adopt] 可直接借鉴 (补充)
 
-- **SafetyEnvelope 安全边界计算独立化**：将操控参数物理上限的计算从指令执行管道中完全独立——安全边界仅依赖物理约束（道路曲率、路面μ估计、当前速度），不依赖指令内容。AUDEMSP 的 `SafetyValidator` 模块应在控制回路之外独立运行
+- **SafetyEnvelope 安全边界计算独立化**：将操控参数物理上限的计算从指令执行管道中完全独立——安全边界仅依赖物理约束（道路曲率、路面μ估计、当前速度），不依赖指令内容。MediaServo 的 `SafetyValidator` 模块应在控制回路之外独立运行
 - **双端安全校验互为冗余**：操控站端 `CommandSanitizer` 负责发前校验，车端 `SafetyValidator` 负责收后校验。两端独立运行相同的 SafetyEnvelope 计算逻辑，车端拥有最终否决权
-- **多运营商 bonding 而非 failover**：AUDEMSP 的 `MultiPathTransport` 组件应支持 bonding 模式（并行发送 + 接收端去重），延迟由最快路径决定，而非 failover 的切换开销
-- **延迟可视化的 HMI 编码**：通过颜色、形状、透明度等多维度编码在车辆位置指示器上。AUDEMSP Client 遥操作 UI 的 `TeleopHmiOverlay` 组件应采用类似的多维度延迟编码策略
-- **MRM 四级降级标准化**：Phase 1(警告) → Phase 2(减速) → Phase 3(停车) → Phase 4(诊断) 作为 AUDEMSP SDK 的默认 `EmergencyHandler` 实现
+- **多运营商 bonding 而非 failover**：MediaServo 的 `MultiPathTransport` 组件应支持 bonding 模式（并行发送 + 接收端去重），延迟由最快路径决定，而非 failover 的切换开销
+- **延迟可视化的 HMI 编码**：通过颜色、形状、透明度等多维度编码在车辆位置指示器上。MediaServo Client 遥操作 UI 的 `TeleopHmiOverlay` 组件应采用类似的多维度延迟编码策略
+- **MRM 四级降级标准化**：Phase 1(警告) → Phase 2(减速) → Phase 3(停车) → Phase 4(诊断) 作为 MediaServo SDK 的默认 `EmergencyHandler` 实现
 - **DTLS 1.3 + 双向 Token 认证**：所有媒体和控制通道必须经过 DTLS 1.3 加密 + 应用层双向 Token 验证
 
 ### [Adapt] 需修改后采用 (补充)
@@ -394,40 +394,40 @@ Vay 至今融资总额估计超过 $1.5 亿美元。其商业模式可持续性�
 - **ASIL-D → 分级功能安全**：定义 QM/A/B/C/D 多个功能安全等级，不同部署场景选择适当等级。低速室内机器人用 QM，公共道路低速车辆用 ASIL-B，高速场景用 ASIL-C/D
 - **360° GPU 拼接 → 前端画布合成**：传输多路独立视频，在操控端用 WebGL/Canvas 2D 合成 360° 视图。降低车端算力要求，前端可按需切换显示布局
 - **延迟感知编码策略 → WebRTC GCC 动态码率**：利用 WebRTC 内置 GCC，结合 Transport-CC RTP 扩展实现码率自适应。编码插件应支持 `EncoderDynamicConfig` trait
-- **RLHF 数据闭环 → TeleopDataCollector + ReplayAnalyzer**：AUDEMSP 初期实现操作日志记录、回放分析和操作质量评估的轻量版本。`TeleopDataCollector` 按时间戳对齐记录视频+控制+遥测数据
+- **RLHF 数据闭环 → TeleopDataCollector + ReplayAnalyzer**：MediaServo 初期实现操作日志记录、回放分析和操作质量评估的轻量版本。`TeleopDataCollector` 按时间戳对齐记录视频+控制+遥测数据
 - **专业驾驶员培训 → OperatorLevel 分级认证**：Operator Level 0(观察员) / 1(路径引导) / 2(低速操控 <30km/h) / 3(城市全速) / 4(全场景)
 - **疲劳管理 → SessionDurationPolicy**：可配置的策略——不同 OperatorLevel 有不同的时长上限，可根据操控场景调整
 
 ### [Avoid] 已知坑 / 不适用场景 (补充)
 
-- **TÜV 安全认证耗时不可承受**：独立第三方安全评估需要 12-24 个月，费用数十万至数百万欧元。AUDEMSP 初期仅需功能正确性验证，安全认证留待商业化阶段
-- **多 SIM 卡硬件成本不可推广**：3-4 个蜂窝基带模块 + 数据套餐月费大幅增加单车成本。AUDEMSP 应提供可配置的冗余级别：单卡/双卡/多卡
-- **每城市单独审批模式不可扩展**：Vay 的商业模式受各地监管显著影响。AUDEMSP 是技术平台，责任边界在软件/协议层面，不涉及道路运营许可
-- **延迟可视化不能替代网络优化**：HMI 层的延迟补偿是最后防线。AUDEMSP 必须在网络层（TURN 中继选优）、传输层（WebRTC GCC）、HMI 层三管齐下
-- **ODD 以网络为第一约束**：AUDEMSP 的 `NetworkQualityProfile` 必须作为功能降级的第一决策因素
-- **商业机密限制**：Vay 核心实现未公开，AUDEMSP 只能借鉴架构设计原则，具体实现必须自主设计
+- **TÜV 安全认证耗时不可承受**：独立第三方安全评估需要 12-24 个月，费用数十万至数百万欧元。MediaServo 初期仅需功能正确性验证，安全认证留待商业化阶段
+- **多 SIM 卡硬件成本不可推广**：3-4 个蜂窝基带模块 + 数据套餐月费大幅增加单车成本。MediaServo 应提供可配置的冗余级别：单卡/双卡/多卡
+- **每城市单独审批模式不可扩展**：Vay 的商业模式受各地监管显著影响。MediaServo 是技术平台，责任边界在软件/协议层面，不涉及道路运营许可
+- **延迟可视化不能替代网络优化**：HMI 层的延迟补偿是最后防线。MediaServo 必须在网络层（TURN 中继选优）、传输层（WebRTC GCC）、HMI 层三管齐下
+- **ODD 以网络为第一约束**：MediaServo 的 `NetworkQualityProfile` 必须作为功能降级的第一决策因素
+- **商业机密限制**：Vay 核心实现未公开，MediaServo 只能借鉴架构设计原则，具体实现必须自主设计
 - **功耗与散热不可忽视**：多基带模块 + GPU 编码在夏季高温环境中可能导致车端过热
 
 ### [Adopt] 可直接借鉴 (补充二)
 
-- **控制指令四级超时响应**：Phase 1(50-100ms 保持最后指令) → Phase 2(100-300ms 方向盘回中+油门归零) → Phase 3(300-2000ms 全功率制动) → Phase 4(>2000ms 安全停车+双闪)。AUDEMSP 的 `TimeoutHandler` 组件应实现此四级超时作为默认安全策略
-- **车端看门狗定时器**：独立于主控制器的硬件看门狗，在安全控制器无响应时触发车辆安全停车。AUDEMSP Vehicle Agent 应实现 `HardwareWatchdog` 与 `SoftwareWatchdog` 双级看门狗
-- **操控指令来源认证**：每条控制指令携带唯一操作员标识和序列号，车端校验来源合法性。AUDEMSP 的 `ControlCommand` 结构体应包含 `operator_id` 字段
+- **控制指令四级超时响应**：Phase 1(50-100ms 保持最后指令) → Phase 2(100-300ms 方向盘回中+油门归零) → Phase 3(300-2000ms 全功率制动) → Phase 4(>2000ms 安全停车+双闪)。MediaServo 的 `TimeoutHandler` 组件应实现此四级超时作为默认安全策略
+- **车端看门狗定时器**：独立于主控制器的硬件看门狗，在安全控制器无响应时触发车辆安全停车。MediaServo Vehicle Agent 应实现 `HardwareWatchdog` 与 `SoftwareWatchdog` 双级看门狗
+- **操控指令来源认证**：每条控制指令携带唯一操作员标识和序列号，车端校验来源合法性。MediaServo 的 `ControlCommand` 结构体应包含 `operator_id` 字段
 
 ### [Adapt] 需修改后采用 (补充二)
 
-- **Vay 的 6 摄像头 360° 方案 → AUDEMSP 的模块化多摄像头架构**：Vay 使用固定 6 路摄像头（前向+左前/右前+左后/右后+后向）。AUDEMSP 应设计 `CameraConfig` 可配置的摄像头布局，支持 2-8 路摄像头，布局由部署场景决定
-- **Vay 的专用硬件操控站 → AUDEMSP 的通用 Client 操控模式**：Vay 使用定制的力反馈方向盘+液压踏板+多联屏。AUDEMSP Client 应支持多种操控模式——游戏手柄（入门）、键盘+鼠标（标准）、方向盘+踏板（专业）、触屏手势（移动端）
-- **Vay 的 Safety Controller 双端心跳 → AUDEMSP 的 RTCDataChannel 心跳通道**：双 Safety Controller 之间的专用心跳信号（安全关键）。AUDEMSP 使用独立的 RTCDataChannel 心跳通道（2Hz, 5 字节最小包），在应用层实现同等功能
+- **Vay 的 6 摄像头 360° 方案 → MediaServo 的模块化多摄像头架构**：Vay 使用固定 6 路摄像头（前向+左前/右前+左后/右后+后向）。MediaServo 应设计 `CameraConfig` 可配置的摄像头布局，支持 2-8 路摄像头，布局由部署场景决定
+- **Vay 的专用硬件操控站 → MediaServo 的通用 Client 操控模式**：Vay 使用定制的力反馈方向盘+液压踏板+多联屏。MediaServo Client 应支持多种操控模式——游戏手柄（入门）、键盘+鼠标（标准）、方向盘+踏板（专业）、触屏手势（移动端）
+- **Vay 的 Safety Controller 双端心跳 → MediaServo 的 RTCDataChannel 心跳通道**：双 Safety Controller 之间的专用心跳信号（安全关键）。MediaServo 使用独立的 RTCDataChannel 心跳通道（2Hz, 5 字节最小包），在应用层实现同等功能
 
 ### [Avoid] 已知坑 / 不适用场景 (补充二)
 
-- **Vay 的 ASIL-D 安全控制器不可直接采购**：Infineon Aurix TC4xx 系列 MCU 的采购周期长（12-20 周）、批量价格高（$30-50/片）、开发工具链复杂。AUDEMSP 初期应优先使用工业级 MCU（STM32H7/NXP i.MX RT 系列）实现功能安全子集
-- **Vay 的远程驾驶员培训体系不可复制**：多阶段培训（理论+模拟器+实车+延迟适应训练）需要数周时间和专用场地。AUDEMSP 的操作员认证应基于模拟器评估和在线培训，降低培训门槛
-- **Vay 的商业模式受保险和法律约束**：远程驾驶的保险定价和事故责任认定在全球范围内尚无统一标准。AUDEMSP 作为技术平台，需在服务协议中明确责任边界
+- **Vay 的 ASIL-D 安全控制器不可直接采购**：Infineon Aurix TC4xx 系列 MCU 的采购周期长（12-20 周）、批量价格高（$30-50/片）、开发工具链复杂。MediaServo 初期应优先使用工业级 MCU（STM32H7/NXP i.MX RT 系列）实现功能安全子集
+- **Vay 的远程驾驶员培训体系不可复制**：多阶段培训（理论+模拟器+实车+延迟适应训练）需要数周时间和专用场地。MediaServo 的操作员认证应基于模拟器评估和在线培训，降低培训门槛
+- **Vay 的商业模式受保险和法律约束**：远程驾驶的保险定价和事故责任认定在全球范围内尚无统一标准。MediaServo 作为技术平台，需在服务协议中明确责任边界
 
 **总体评分**：★★★★★ (5/5)
-— 作为商业化远程驾驶的行业标杆，Vay 提供了最完整的遥操作安全架构参考。Safety Tunnel 的独立安全边界计算、双 Safety Controller 对等校验、多运营商并行传输和延迟可视化补偿是 AUDEMSP 遥操作安全设计的核心参考来源。唯一遗憾是核心技术闭源，具体实现无法直接复用。
+— 作为商业化远程驾驶的行业标杆，Vay 提供了最完整的遥操作安全架构参考。Safety Tunnel 的独立安全边界计算、双 Safety Controller 对等校验、多运营商并行传输和延迟可视化补偿是 MediaServo 遥操作安全设计的核心参考来源。唯一遗憾是核心技术闭源，具体实现无法直接复用。
 **相关决策**: D73, D77, D15, D96, D117, D62-D63
 
 
@@ -495,8 +495,8 @@ fn on_packet(&mut self, seq: u16, data: &[u8]) -> Option<&[u8]> {
 }
 ```
 
-### D. Vay vs AUDEMSP 安全架构映射
-| Vay 组件 | AUDEMSP 对应 | 实现优先级 |
+### D. Vay vs MediaServo 安全架构映射
+| Vay 组件 | MediaServo 对应 | 实现优先级 |
 |----------|---------------|-----------|
 | Safety Tunnel | SafetyEnvelope trait | P0 (核心安全) |
 | 双 Safety Controller | CommandSanitizer (操控站) + SafetyValidator (车端) | P0 (双端校验) |

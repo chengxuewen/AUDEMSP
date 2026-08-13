@@ -170,7 +170,7 @@
 
 ### teleoprtc 内部模块设计
 
-| 模块 | 职责 | 对应 AUDEMSP 组件 |
+| 模块 | 职责 | 对应 MediaServo 组件 |
 |------|------|-------------------|
 | `VideoStreamTrack` | 从硬件编码器 FD 读取 H.264 流，注入 RTCPeerConnection | `HardwareEncoderPlugin` + `WebRtcVideoSource` |
 | `DataChannelBridge` | 维护 dc-in/dc-out 双向通道，处理 JSON ↔ 内部消息转换 | `DataChannelManager` + `MessageProxy` |
@@ -213,7 +213,7 @@ rlog 录制格式 (Cap'n Proto):
   Events: [{ type, severity, timestamp }]
 ```
 
-所有数据类型共享同一个 `timestamp` 时钟源（CLOCK_MONOTONIC），确保回放时各数据流精确同步。此设计模式对 AUDEMSP 的 `TeleopDataCollector` 有直接参考价值——统一时钟源是实现多流精确同步的基础。
+所有数据类型共享同一个 `timestamp` 时钟源（CLOCK_MONOTONIC），确保回放时各数据流精确同步。此设计模式对 MediaServo 的 `TeleopDataCollector` 有直接参考价值——统一时钟源是实现多流精确同步的基础。
 
 ## 3. 功能概览
 ### 核心功能模块
@@ -320,9 +320,9 @@ rlog 录制格式 (Cap'n Proto):
 
 ### 已知问题与改进方向
 
-1. **云强依赖**：athenad 必须通过 comma 云服务器访问设备，局域网直连不支持。AUDEMSP 必须支持离线/局域网模式作为第一设计约束
+1. **云强依赖**：athenad 必须通过 comma 云服务器访问设备，局域网直连不支持。MediaServo 必须支持离线/局域网模式作为第一设计约束
 2. **RTCDataChannel JSON 低效**：50Hz testJoystick JSON 比二进制浪费约 11x 带宽
-3. **自签名证书安全风险**：HTTPS 自签名证书在非浏览器场景有中间人攻击风险。AUDEMSP 生产部署应使用 Let's Encrypt 或企业 CA
+3. **自签名证书安全风险**：HTTPS 自签名证书在非浏览器场景有中间人攻击风险。MediaServo 生产部署应使用 Let's Encrypt 或企业 CA
 4. **无安全模块**：无超时安全停车、无安全边界校验、无 MRM 机制
 5. **aiortc 兼容性维护**：Python asyncio + aiortc 的 WebRTC 实现与浏览器端兼容性需持续测试
 
@@ -351,46 +351,46 @@ rlog 录制格式 (Cap'n Proto):
 2. **Cereal/Cap'n Proto 零拷贝序列化**：比 Protobuf 更高效 — 零拷贝读取字段（无需反序列化整个结构），适合 100Hz+ 高频传感器数据（LiDAR 点云/IMU/摄像头帧）
 3. **管理面与数据面完全分离**：athenad（WebSocket + JSON-RPC）与 webrtcd（WebRTC）独立进程 — 借鉴网络设备控制面/转发面经典架构，故障隔离 + 独立扩展
 4. **硬件编码器直通 WebRTC**：`LiveStreamVideoStreamTrack` 直接读取硬件 H.264 字节流注入 RTCPeerConnection，避免解码→重编码完整往返，节省 30-60ms 编码开销和 CPU 资源
-5. **GOP=15→5 的优化教训**：这一参数变更对遥操作延迟的改善（关键帧间隔 ~500ms→~167ms）是 WebRTC 视频传输在遥操作场景的关键配置经验值，为 AUDEMSP 提供了直接的编码参数基准
+5. **GOP=15→5 的优化教训**：这一参数变更对遥操作延迟的改善（关键帧间隔 ~500ms→~167ms）是 WebRTC 视频传输在遥操作场景的关键配置经验值，为 MediaServo 提供了直接的编码参数基准
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 ### [Adopt] 可直接借鉴
 - **WebRTC RTCDataChannel 双向桥接模式**：将内部消息总线透明延伸到远程 RTCDataChannel，类似 CerealOutgoingProxy/CerealIncomingProxy 的设计。双向数据通道各一条独立 RTCDataChannel
-- **管理面与数据面分离**：AUDEMSP 的信令服务与 teleop SDK 数据面应采用独立模块，类似 athenad/webrtcd 的分工
-- **硬件编码器直通 WebRTC**：AUDEMSP 的 `HardwareEncoder` 插件输出应可直接注入 WebRTC VideoTrack，实现零拷贝编码→传输管道
-- **GOP ≤ 5 作为遥操作编码基准**：关键帧间隔 ≤ 200ms 应作为 AUDEMSP 遥操作视频编码的默认配置
-- **单编码器 + 动态切换架构**：在资源受限 edge 设备上，AUDEMSP teleop SDK 应支持单编码器多摄像头动态切换
+- **管理面与数据面分离**：MediaServo 的信令服务与 teleop SDK 数据面应采用独立模块，类似 athenad/webrtcd 的分工
+- **硬件编码器直通 WebRTC**：MediaServo 的 `HardwareEncoder` 插件输出应可直接注入 WebRTC VideoTrack，实现零拷贝编码→传输管道
+- **GOP ≤ 5 作为遥操作编码基准**：关键帧间隔 ≤ 200ms 应作为 MediaServo 遥操作视频编码的默认配置
+- **单编码器 + 动态切换架构**：在资源受限 edge 设备上，MediaServo teleop SDK 应支持单编码器多摄像头动态切换
 - **4 Mbps 码率 + H.264 720p** 作为室内/低速机器人遥操作的推荐视频配置
 
 ### [Adapt] 需修改后采用
-- **Cereal/Cap'n Proto → FlatBuffers 消息总线映射**：AUDEMSP 使用 FlatBuffers，需实现类似 msgq 的 pub-sub 机制
-- **athenad 云管理模式 → AUDEMSP 信令服务**：借鉴设备管理/配对/Token 认证，但必须支持局域网直连模式（无云依赖）
-- **RTCDataChannel JSON → 二进制协议**：AUDEMSP 必须采用全二进制 RTCDataChannel 协议（参考 tether-rally），绝不在控制通道上使用 JSON
+- **Cereal/Cap'n Proto → FlatBuffers 消息总线映射**：MediaServo 使用 FlatBuffers，需实现类似 msgq 的 pub-sub 机制
+- **athenad 云管理模式 → MediaServo 信令服务**：借鉴设备管理/配对/Token 认证，但必须支持局域网直连模式（无云依赖）
+- **RTCDataChannel JSON → 二进制协议**：MediaServo 必须采用全二进制 RTCDataChannel 协议（参考 tether-rally），绝不在控制通道上使用 JSON
 - **二维码配对 → 操作员认证**：一次性二维码配对流程可用于初步设备-操作员关联，但需增加企业级认证（LDAP/RBAC）
 - **Python webrtcd → Rust webrtcd 实现**：需将 `webrtcd` 架构映射到 Rust + webrtc-rs/str0m。实现 Rust 版 `VideoTrackAdapter` 和 `MessageProxy`
 
 ### [Avoid] 已知坑 / 不适用场景
-- **RTCDataChannel JSON 序列化效率极低**：openpilot 的 testJoystick JSON 包在 50Hz 下比二进制浪费约 11x 带宽。AUDEMSP 必须从架构设计初期就采用二进制协议
-- **aiortc 兼容性维护成本**：AUDEMSP 使用 Rust webrtc-rs/str0m（sans-I/O 设计）可更好地控制兼容性
-- **单编码器局限**：多摄像头同时流送场景下不适用。AUDEMSP 需要支持多编码器并行或硬件 SVC
-- **自签名证书不适合生产**：AUDEMSP 生产部署应使用 Let's Encrypt 或企业 CA 证书
-- **athenad 云强依赖是致命缺陷**：AUDEMSP 必须支持完全离线/局域网模式
+- **RTCDataChannel JSON 序列化效率极低**：openpilot 的 testJoystick JSON 包在 50Hz 下比二进制浪费约 11x 带宽。MediaServo 必须从架构设计初期就采用二进制协议
+- **aiortc 兼容性维护成本**：MediaServo 使用 Rust webrtc-rs/str0m（sans-I/O 设计）可更好地控制兼容性
+- **单编码器局限**：多摄像头同时流送场景下不适用。MediaServo 需要支持多编码器并行或硬件 SVC
+- **自签名证书不适合生产**：MediaServo 生产部署应使用 Let's Encrypt 或企业 CA 证书
+- **athenad 云强依赖是致命缺陷**：MediaServo 必须支持完全离线/局域网模式
 - **comma body 仅低速场景经验值不能直接迁移**：高速车辆遥控（>30 km/h）可能需要 GOP=1、SVC、多冗余等更严格配置
-- **无安全模块**：AUDEMSP 必须内置超时安全停车、安全边界校验、MRM 机制（参考 Vay 和 tether-rally）
-- **非公开 G2G 延迟指标**：无法直接作为 AUDEMSP 的延迟目标基准
+- **无安全模块**：MediaServo 必须内置超时安全停车、安全边界校验、MRM 机制（参考 Vay 和 tether-rally）
+- **非公开 G2G 延迟指标**：无法直接作为 MediaServo 的延迟目标基准
 
 ### [Adopt] 可直接借鉴 (补充)
 
-- **athenad/webrtcd 控制面与数据面完全分离**：管理通道（WebSocket + JSON-RPC）与实时数据通道（WebRTC + RTCDataChannel）使用独立守护进程。AUDEMSP 的 `SignalingService` 和 `TeleopPeerConnection` 应采用独立的进程/线程运行
-- **LiveStreamVideoStreamTrack 零拷贝设计**：直接从硬件编码器 FD 读取 H.264 字节流注入 VideoTrack。AUDEMSP 的 `HardwareEncoderPlugin` 应实现同样的 `VideoSource` trait
-- **GOP=5 作为遥操作编码基准配置**：PR #37732 将 GOP 从 15 降至 5（~500ms → ~167ms）。AUDEMSP 默认配置：GOP=5（基础），GOP=1（安全模式），GOP=15（低带宽模式）
+- **athenad/webrtcd 控制面与数据面完全分离**：管理通道（WebSocket + JSON-RPC）与实时数据通道（WebRTC + RTCDataChannel）使用独立守护进程。MediaServo 的 `SignalingService` 和 `TeleopPeerConnection` 应采用独立的进程/线程运行
+- **LiveStreamVideoStreamTrack 零拷贝设计**：直接从硬件编码器 FD 读取 H.264 字节流注入 VideoTrack。MediaServo 的 `HardwareEncoderPlugin` 应实现同样的 `VideoSource` trait
+- **GOP=5 作为遥操作编码基准配置**：PR #37732 将 GOP 从 15 降至 5（~500ms → ~167ms）。MediaServo 默认配置：GOP=5（基础），GOP=1（安全模式），GOP=15（低带宽模式）
 - **4 Mbps H.264 720p 作为室内/低速机器人推荐配置**：码率 4Mbps、720p、30fps 是低速场景下视频质量与带宽的均衡配置
 - **单编码器 + 动态摄像头切换架构**：通过 RTCDataChannel 信令在运行时切换摄像头源，比维护多个并发编码器更高效
 - **testJoystick 服务模式**：20-50Hz 控制频率 + 键盘/WASD + Gamepad API 作为低速遥操作的标准 UI 模式
 
 ### [Adapt] 需修改后采用 (补充)
 
-- **Cereal/Cap'n Proto → FlatBuffers 零拷贝消息总线**：AUDEMSP 选用 FlatBuffers，需要实现 `FlatBuffersBroker`——类似 msgq 的发布-订阅消息总线
+- **Cereal/Cap'n Proto → FlatBuffers 零拷贝消息总线**：MediaServo 选用 FlatBuffers，需要实现 `FlatBuffersBroker`——类似 msgq 的发布-订阅消息总线
 - **athenad 云管理模式 → 信令服务支持 P2P 直连+云辅助**：同时支持 LAN 直连模式（同一局域网内无需云服务器）和云辅助模式（跨 NAT 通过 TURN 中继）
 - **二维码配对 → 企业级认证**：支持 LDAP/RBAC/OAuth2 等认证方式，`AuthProvider` trait 允许替换认证策略
 - **aiortc Python → Rust webrtc-rs/str0m**：Rust 实现提供更低延迟、更好内存安全和更小二进制体积。`WebRtcPeer` 组件封装 Sans-I/O 状态机设计
@@ -398,17 +398,17 @@ rlog 录制格式 (Cap'n Proto):
 
 ### [Avoid] 已知坑 / 不适用场景 (补充)
 
-- **RTCDataChannel JSON 序列化不可用于生产级遥操作**：AUDEMSP 必须从第一天就采用全二进制 RTCDataChannel 协议
+- **RTCDataChannel JSON 序列化不可用于生产级遥操作**：MediaServo 必须从第一天就采用全二进制 RTCDataChannel 协议
 - **自签名证书不适合生产部署**：必须使用可信 CA 签发的证书（Let's Encrypt / ZeroSSL / 企业 CA）
 - **athenad 云强依赖是致命架构缺陷**：必须支持完全离线/局域网模式，云仅作为辅助角色
 - **comma body 低速场景经验不能直接迁移到高速车辆**：高速遥操作（>30 km/h）需要 GOP=1、SVC、多重冗余和多级安全机制
-- **无安全模块是致命缺陷**：AUDEMSP 必须内置超时安全停车、安全边界校验、MRM 机制，从第一天就设计在架构中
-- **非公开 G2G 延迟指标**：AUDEMSP 应以 TUM 的公开延迟数据（LTE 中位数 160ms, P99 ~400ms）作为网络评估基准
+- **无安全模块是致命缺陷**：MediaServo 必须内置超时安全停车、安全边界校验、MRM 机制，从第一天就设计在架构中
+- **非公开 G2G 延迟指标**：MediaServo 应以 TUM 的公开延迟数据（LTE 中位数 160ms, P99 ~400ms）作为网络评估基准
 - **多摄像头并发受限**：若需多摄像头同步推流，需采用多编码器并行或硬件 SVC 编码方案
 
 ### [Adopt] 错误处理分级借鉴
 
-| 错误场景 | openpilot 错误消息 | AUDEMSP 对应枚举 |
+| 错误场景 | openpilot 错误消息 | MediaServo 对应枚举 |
 |---------|-------------------|-------------------|
 | 设备已被占用 | "Device is already being controlled by another user" | `OccupiedByOther` |
 | 设备未启动 | "Device is not powered on" | `DeviceOffline` |
@@ -419,18 +419,18 @@ rlog 录制格式 (Cap'n Proto):
 
 ### [Adapt] 需修改后采用 (补充二)
 
-- **单一 athenad 云连接 → 多通道连接管理**：openpilot 的 athenad 仅维护一条 WebSocket 连接到 comma 云。AUDEMSP 的 `ConnectionManager` 应支持同时维护多条连接——主连接（云辅助，用于 TURN 信令和设备发现）+ 局域网直连（P2P WebRTC）+ 备用连接（failover TURN 服务器）
-- **testJoystick 20Hz → 自适应控制频率**：openpilot 固定 20Hz 的 testJoystick 发送频率。AUDEMSP 的 `ControlChannel` 应根据 RTT 和网络质量动态调整发送频率——RTT < 50ms 时 100Hz，RTT 50-200ms 时 50Hz，RTT > 200ms 时 20Hz
-- **单一 rlog 日志格式 → 多级数据记录**：openpilot 将所有消息记录为统一 rlog 格式。AUDEMSP 的 `TeleopDataCollector` 应支持三级数据记录——Level 0（仅遥测和事件，低存储）、Level 1（遥测+控制指令，标准）、Level 2（全量视频+遥测+控制，调试）
+- **单一 athenad 云连接 → 多通道连接管理**：openpilot 的 athenad 仅维护一条 WebSocket 连接到 comma 云。MediaServo 的 `ConnectionManager` 应支持同时维护多条连接——主连接（云辅助，用于 TURN 信令和设备发现）+ 局域网直连（P2P WebRTC）+ 备用连接（failover TURN 服务器）
+- **testJoystick 20Hz → 自适应控制频率**：openpilot 固定 20Hz 的 testJoystick 发送频率。MediaServo 的 `ControlChannel` 应根据 RTT 和网络质量动态调整发送频率——RTT < 50ms 时 100Hz，RTT 50-200ms 时 50Hz，RTT > 200ms 时 20Hz
+- **单一 rlog 日志格式 → 多级数据记录**：openpilot 将所有消息记录为统一 rlog 格式。MediaServo 的 `TeleopDataCollector` 应支持三级数据记录——Level 0（仅遥测和事件，低存储）、Level 1（遥测+控制指令，标准）、Level 2（全量视频+遥测+控制，调试）
 
 ### [Avoid] 已知坑 / 不适用场景 (补充二)
 
-- **openpilot 的 Qualcomm Snapdragon 硬件绑定**：comma body/three 使用 Qualcomm Snapdragon 845/8cx Gen3，其 ISP 和 VPU 的硬件编码器接口是 Qualcomm 专有的。AUDEMSP 必须保持硬件平台无关性，通过 `HardwareEncoderPlugin` trait 抽象不同平台的编码器接口
-- **AGNOS 操作系统锁定**：openpilot 运行在 comma 定制的 AGNOS 操作系统上，基于 Ubuntu 但包含专有驱动和内核模块。AUDEMSP 必须支持主流 Linux 发行版（Ubuntu/Debian/Fedora）和嵌入式 Linux（Yocto/Buildroot）
-- **社区维护成本高**：300+ 车型的 CAN 信号映射需要持续维护（每个车型年更新需要重新逆向）。AUDEMSP 的 VehicleInterface 应设计为可插拔且社区可贡献的架构
+- **openpilot 的 Qualcomm Snapdragon 硬件绑定**：comma body/three 使用 Qualcomm Snapdragon 845/8cx Gen3，其 ISP 和 VPU 的硬件编码器接口是 Qualcomm 专有的。MediaServo 必须保持硬件平台无关性，通过 `HardwareEncoderPlugin` trait 抽象不同平台的编码器接口
+- **AGNOS 操作系统锁定**：openpilot 运行在 comma 定制的 AGNOS 操作系统上，基于 Ubuntu 但包含专有驱动和内核模块。MediaServo 必须支持主流 Linux 发行版（Ubuntu/Debian/Fedora）和嵌入式 Linux（Yocto/Buildroot）
+- **社区维护成本高**：300+ 车型的 CAN 信号映射需要持续维护（每个车型年更新需要重新逆向）。MediaServo 的 VehicleInterface 应设计为可插拔且社区可贡献的架构
 
 **总体评分**：★★★★☆ (4/5)
-— openpilot 是 WebRTC 遥操作在生产环境中最大规模的开源实践，其 athenad/webrtcd 分离架构、硬件编码器直通 WebRTC 模式和 Cereal 消息总线设计具有极高的参考价值。核心教训（JSON 低效、GOP 优化、单编码器局限、云强依赖、无安全模块）为 AUDEMSP 提供了明确的反面参考。对于 AUDEMSP teleop SDK，openpilot 的架构模式可作为设计蓝图，但控制协议和数据安全需从 tether-rally 和 Vay 补充。
+— openpilot 是 WebRTC 遥操作在生产环境中最大规模的开源实践，其 athenad/webrtcd 分离架构、硬件编码器直通 WebRTC 模式和 Cereal 消息总线设计具有极高的参考价值。核心教训（JSON 低效、GOP 优化、单编码器局限、云强依赖、无安全模块）为 MediaServo 提供了明确的反面参考。对于 MediaServo teleop SDK，openpilot 的架构模式可作为设计蓝图，但控制协议和数据安全需从 tether-rally 和 Vay 补充。
 **相关决策**: D62-D63, D4, D149
 
 
@@ -454,7 +454,7 @@ class CerealOutgoingMessageProxy:
 ```
 
 ```rust
-// Rust (AUDEMSP MessageProxy — FlatBuffers → RTCDataChannel)
+// Rust (MediaServo MessageProxy — FlatBuffers → RTCDataChannel)
 struct FlatBuffersOutgoingProxy {
     dc_out: DataChannelSender,
     subscriptions: Vec<Subscription>,
@@ -484,7 +484,7 @@ impl FlatBuffersOutgoingProxy {
 | 压缩效率 (相对 GOP=15) | 100% (基准) | ~80% | ~30% |
 | 码率影响 (同质量) | 基准 | +20% | +230% |
 | 适用场景 | 视频会议/直播 | 遥操作/机器人 | 安全关键/高速遥控 |
-| AUDEMSP 推荐 | 非遥操作场景 | 默认遥操作配置 | 安全模式 (紧急情况下) |
+| MediaServo 推荐 | 非遥操作场景 | 默认遥操作配置 | 安全模式 (紧急情况下) |
 
 ### C. openpilot 遥操作体系中的消息流
 ```
@@ -507,10 +507,10 @@ impl FlatBuffersOutgoingProxy {
   │   (testJoystick)         │                        │                  │
 ```
 
-### D. comma body 遥操作与 AUDEMSP teleop SDK 功能映射
-| comma body 功能 | AUDEMSP teleop SDK 映射 | 差异说明 |
+### D. comma body 遥操作与 MediaServo teleop SDK 功能映射
+| comma body 功能 | MediaServo teleop SDK 映射 | 差异说明 |
 |----------------|--------------------------|---------|
-| athenad 设备管理 | SignalingService + DeviceRegistry | AUDEMSP 支持离线/局域网直连 |
+| athenad 设备管理 | SignalingService + DeviceRegistry | MediaServo 支持离线/局域网直连 |
 | webrtcd WebRTC 网关 | TeleopPeerConnection + DataChannelManager | Rust 实现 vs Python |
 | LiveStreamVideoTrack | HardwareEncoderPlugin → WebRTC VideoTrack | 统一 EncoderPlugin trait |
 | CerealOutgoingProxy | FlatBuffersOutgoingProxy | FlatBuffers 零拷贝替换 Cap'n Proto |

@@ -445,64 +445,64 @@ Kurento 过滤器               →        解耦过滤器架构
 
 ---
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 
 ### 7.1 PipelineEngine 架构对照
 
-AUDEMSP 目前规划中有 `PipelineEngine` 作为微内核核心组件。Kurento 的 MediaPipeline 是其最直接、最成熟的参考实现：
+MediaServo 目前规划中有 `PipelineEngine` 作为微内核核心组件。Kurento 的 MediaPipeline 是其最直接、最成熟的参考实现：
 
-| 概念 | Kurento | AUDEMSP (规划对照) |
+| 概念 | Kurento | MediaServo (规划对照) |
 |------|---------|-------------------|
 | **流水线** | MediaPipeline (GStreamer pipeline 的包装) | PipelineEngine (计划中) |
 | **处理单元** | MediaElement (四大类型: Input/Filter/Hub/Output) | 可复用此分类法，为 Rust trait 建模提供参考 |
 | **连接语义** | `source.connect(sink)` → GStreamer pad link | 可借鉴单向数据流 + 自动格式适配 |
 | **插件注册** | .kmd.json → 代码生成 → 工厂模式 | 可参考声明式接口定义 + 编译期注册 |
-| **运行时控制** | JSON-RPC over WebSocket | AUDEMSP 可用 gRPC 或自研协议 |
+| **运行时控制** | JSON-RPC over WebSocket | MediaServo 可用 gRPC 或自研协议 |
 | **自动适配** | Agnostic Media Adapter (自动转码) | 关键设计——减少用户手动处理格式转换 |
-| **Hub 抽象** | Composite / Dispatcher / DispatcherOneToMany | 对多路媒体管理的优雅抽象，适合纳入 AUDEMSP |
+| **Hub 抽象** | Composite / Dispatcher / DispatcherOneToMany | 对多路媒体管理的优雅抽象，适合纳入 MediaServo |
 
 ### 7.2 值得借鉴的设计
 
 1. **两层抽象：Element → Pipeline**
    - Element 定义"做什么"，Pipeline 定义"怎么做"
    - `connect()` 单一语义表达所有拓扑——极其简洁
-   - AUDEMSP 的 PipelineEngine trait 可设计为 `fn connect(&mut self, output: ElementId, input: ElementId, sink_pad: PadId)`
+   - MediaServo 的 PipelineEngine trait 可设计为 `fn connect(&mut self, output: ElementId, input: ElementId, sink_pad: PadId)`
 
 2. **Hub 模式处理多路流**
    - Composite/Dispatcher 抽象将 N:M 路由降维为 hub.port 概念
    - 避免了在 Pipeline 层面维护复杂的 N×M 连接矩阵
-   - AUDEMSP 的远程桌面场景（多窗口→合成→编码）天然适合此模式
+   - MediaServo 的远程桌面场景（多窗口→合成→编码）天然适合此模式
 
 3. **声明式插件接口 (kmd.json)**
    - 方法/属性/事件的完整元数据驱动
    - 自动生成多语言客户端绑定（Java/JS/TS）
-   - AUDEMSP 的 napi-binding 和 gRPC 服务可参考此模式
+   - MediaServo 的 napi-binding 和 gRPC 服务可参考此模式
 
 4. **GStreamerFilter 的"逃生舱"模式**
    - 提供通用扩展点（注入 GStreamer pipeline），但不暴露内部复杂性
-   - AUDEMSP 可为 PluginManager 设计类似的 RawFilter trait
+   - MediaServo 可为 PluginManager 设计类似的 RawFilter trait
 
 ### 7.3 应避免的设计
 
 1. **单进程媒体处理**
    - Kurento 的 GStreamer pipeline 在单一进程内——CPU 密集时成为瓶颈
-   - AUDEMSP 的 PipelineEngine 应从设计阶段考虑多线程/多进程调度
+   - MediaServo 的 PipelineEngine 应从设计阶段考虑多线程/多进程调度
 
 2. **ABI 脆弱性**
    - Kurento 插件的编译器版本绑定导致部署困难
-   - AUDEMSP (Rust) 天然避免此问题，但需注意 C FFI 边界的稳定性
+   - MediaServo (Rust) 天然避免此问题，但需注意 C FFI 边界的稳定性
 
 3. **过度依赖底层框架**
    - Kurento 强绑定 GStreamer→迁移成本极高
-   - AUDEMSP 的 PipelineEngine 应保持后端无关（trait 抽象），支持多种后端（GStreamer/FFmpeg/自定义 Rust 实现）
+   - MediaServo 的 PipelineEngine 应保持后端无关（trait 抽象），支持多种后端（GStreamer/FFmpeg/自定义 Rust 实现）
 
 4. **"全功能服务器"哲学**
    - Kurento 试图覆盖所有媒体处理场景→导致代码库庞大、维护负担重
-   - AUDEMSP 应聚焦 AUDE 生态的核心需求（远程桌面、视频会议、直播推拉流、监控相机），其余通过插件扩展
+   - MediaServo 应聚焦 AUDE 生态的核心需求（远程桌面、视频会议、直播推拉流、监控相机），其余通过插件扩展
 
 ### 7.4 Rust 实现的优势
 
-| 维度 | Kurento (C++/GStreamer) | AUDEMSP 可获得的 Rust 优势 |
+| 维度 | Kurento (C++/GStreamer) | MediaServo 可获得的 Rust 优势 |
 |------|------------------------|--------------------------|
 | **内存安全** | GStreamer 引用计数 + 手动管理 | 所有权系统 + 生命周期编译期检查 |
 | **并发** | GStreamer 内部线程池 + 全局锁 | async/await + tokio + 无数据竞争 |
@@ -513,7 +513,7 @@ AUDEMSP 目前规划中有 `PipelineEngine` 作为微内核核心组件。Kurent
 
 ### 7.5 总结
 
-Kurento 的 MediaPipeline 模型是视频处理流水线的**最佳参考实现**——它的 Element 分类法、Hub 抽象、connect() 语义、声明式插件系统都经历了十余年的生产验证。AUDEMSP 的 PipelineEngine 应在吸收这些设计精华的基础上，利用 Rust 的类型系统和并发模型实现更安全、更高性能的版本，同时避免 Kurento 在单进程瓶颈和底层框架强绑定方面的历史包袱。
+Kurento 的 MediaPipeline 模型是视频处理流水线的**最佳参考实现**——它的 Element 分类法、Hub 抽象、connect() 语义、声明式插件系统都经历了十余年的生产验证。MediaServo 的 PipelineEngine 应在吸收这些设计精华的基础上，利用 Rust 的类型系统和并发模型实现更安全、更高性能的版本，同时避免 Kurento 在单进程瓶颈和底层框架强绑定方面的历史包袱。
 
 **核心借鉴:**
 - `MediaPipeline::connect()` 单一语义 → PipelineEngine 核心 trait

@@ -229,7 +229,7 @@
 | ESP32 | 微控制器 | ✅ 轻量 WebRTC（IoT 场景） |
 | C++ | 原生 | 社区维护 |
 
-**Rust SDK 设计战略**：Rust SDK 不仅是给 Rust 开发者的。它是所有其他非 Web 平台 SDK 的「共享核心层」。Rust 封装信令和 WebRTC 逻辑（通过 `webrtc-sys` FFI 绑定 C 底层库），然后通过 C FFI 导出给 Unity、iOS、Android、Flutter 等平台。这与 AUDEMSP 的 `native-core`（Rust core + FFI + napi-rs）战略完全一致。
+**Rust SDK 设计战略**：Rust SDK 不仅是给 Rust 开发者的。它是所有其他非 Web 平台 SDK 的「共享核心层」。Rust 封装信令和 WebRTC 逻辑（通过 `webrtc-sys` FFI 绑定 C 底层库），然后通过 C FFI 导出给 Unity、iOS、Android、Flutter 等平台。这与 MediaServo 的 `native-core`（Rust core + FFI + napi-rs）战略完全一致。
 
 ### 4.3 社区与文档
 
@@ -300,7 +300,7 @@
 
 1. **AI Agent 原生集成——唯一将 AI 作为平台能力的 SFU**：LiveKit 不是「SFU 支持 AI 插件」——它的架构从设计之初就包含 Agent 作为一等参与者。Agent Worker/Dispatcher/Job 系统是核心架构的一部分。Python/Node.js Plugin 系统连接 OpenAI、ElevenLabs、Deepgram、Cartesia 等。AI Agent 可以像真人一样加入房间——发布音频（TTS）、订阅参与者音频（转录）、收听 RTCDataChannel 消息。这是 2026 年实时通信基础设施的前沿演进方向
 
-2. **Rust SDK 跨平台核心模式——与 AUDEMSP 战略完美匹配**：LiveKit 的 Rust SDK 不仅是给 Rust 用户用的。它是整个跨平台 SDK 生态的底层核心——Rust 封装信令和 WebRTC 业务逻辑，C FFI 导出接口，Unity/Swift/Kotlin/Flutter 通过 FFI 调用。这就是 AUDEMSP 的 `native-core`（Rust → napi-rs → Node.js / C-FFI → AUDESYS）模式的活证据——这个模式不是理论，是 LiveKit 已经在生产环境中每天运行的基础设施
+2. **Rust SDK 跨平台核心模式——与 MediaServo 战略完美匹配**：LiveKit 的 Rust SDK 不仅是给 Rust 用户用的。它是整个跨平台 SDK 生态的底层核心——Rust 封装信令和 WebRTC 业务逻辑，C FFI 导出接口，Unity/Swift/Kotlin/Flutter 通过 FFI 调用。这就是 MediaServo 的 `native-core`（Rust → napi-rs → Node.js / C-FFI → MediaServo）模式的活证据——这个模式不是理论，是 LiveKit 已经在生产环境中每天运行的基础设施
 
 3. **零运维单二进制——开发者体验的顶峰**：Go 静态链接编译——一个可执行文件就是完整的 SFU + 信令 + 路由服务。`./livekit-server --config config.yaml` 三秒启动完毕。没有 JVM、没有 npm install、没有系统依赖。Docker 和 K8s 原生支持。这是 mediasoup「半小时才能跑通 demo」和 LiveKit「五分钟从零到上线」之间的体验鸿沟
 
@@ -308,37 +308,37 @@
 
 5. **高速迭代 + 完整生态 —6 年从零到 19.7K Stars**：14 种客户端 SDK + 8 种 Server SDK + UI 组件库 + Starter Apps + Agents Framework + CLI + 监控方案 + Terraform + Helm + 3 种录制模式。LiveKit 把 SFU 从「引擎」做成了「平台」。对于那些不需要 mediasoup 级别的定制灵活性，而是需要「快速上线」的场景，LiveKit 是 2026 年的最佳选择
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 
 ### [Adopt] 可直接借鉴
 
-1. **六层架构设计作为 audemsp-conference 分层蓝本**：Service→Routing→Core RTC→SFU Pipeline→Storage→Infrastructure。这不是 LiveKit 独有的——这是大多数生产级 SFU 的共同模式。AUDEMSP 的 conference crate 应直接按这六层组织代码
-2. **Router 接口抽象 + 多实现模式**：`trait Router` 定义路由策略——`LocalRouter`（单机开发）、`RedisRouter`（集群生产）、自定义实现（如 etcd-based）。AUDEMSP 的 signaling 层多部署模式应原生支持此设计
-3. **Dynacast 按需编码融入 PipelineEngine**：发布者只编码有订阅者的层。这在 AUDEMSP 的车端推流场景尤其重要——移动网络上行为稀缺资源。PipelineEngine 的 QoS 控制器应内置 Dynacast 逻辑
-4. **Rust SDK 跨平台核心模式**：LiveKit 已经验证了「Rust core + FFI binding → 多平台 SDK」的可行性。AUDEMSP native-core 应该完全相同地设计——所有媒体处理逻辑在 Rust 层，通过 C-FFI 和 napi-rs 导出给不同消费端
-5. **PSRPC 类型安全节点间 RPC**：基于 Pub/Sub 的节点间远程调用框架（Protobuf 消息 + Redis 通道）。AUDEMSP SFU 节点间状态同步可以直接借鉴此模式
-6. **Prometheus 全栈指标**：participant_count、packet_loss_rate、forwarded_rtp_total、join_latency、peer_connection_state 等。AUDEMSP 的 Telemetry 应直接参照这些指标命名和采集维度
-7. **llms.txt + 完整文档体系**：LiveKit 的文档质量是开源 SFU 中最好的。AUDEMSP 在文档阶段（Phase 0）就应该建立 `llms.txt` 和 API 文档体系
+1. **六层架构设计作为 mediaservo-conference 分层蓝本**：Service→Routing→Core RTC→SFU Pipeline→Storage→Infrastructure。这不是 LiveKit 独有的——这是大多数生产级 SFU 的共同模式。MediaServo 的 conference crate 应直接按这六层组织代码
+2. **Router 接口抽象 + 多实现模式**：`trait Router` 定义路由策略——`LocalRouter`（单机开发）、`RedisRouter`（集群生产）、自定义实现（如 etcd-based）。MediaServo 的 signaling 层多部署模式应原生支持此设计
+3. **Dynacast 按需编码融入 PipelineEngine**：发布者只编码有订阅者的层。这在 MediaServo 的车端推流场景尤其重要——移动网络上行为稀缺资源。PipelineEngine 的 QoS 控制器应内置 Dynacast 逻辑
+4. **Rust SDK 跨平台核心模式**：LiveKit 已经验证了「Rust core + FFI binding → 多平台 SDK」的可行性。MediaServo native-core 应该完全相同地设计——所有媒体处理逻辑在 Rust 层，通过 C-FFI 和 napi-rs 导出给不同消费端
+5. **PSRPC 类型安全节点间 RPC**：基于 Pub/Sub 的节点间远程调用框架（Protobuf 消息 + Redis 通道）。MediaServo SFU 节点间状态同步可以直接借鉴此模式
+6. **Prometheus 全栈指标**：participant_count、packet_loss_rate、forwarded_rtp_total、join_latency、peer_connection_state 等。MediaServo 的 Telemetry 应直接参照这些指标命名和采集维度
+7. **llms.txt + 完整文档体系**：LiveKit 的文档质量是开源 SFU 中最好的。MediaServo 在文档阶段（Phase 0）就应该建立 `llms.txt` 和 API 文档体系
 
 ### [Adapt] 需修改后采用
 
-1. **私有信令协议 → 标准 SDP/JESP**：LiveKit 的自研二进制 WebSocket 信令不适用 AUDEMSP——我们必须保持与标准 WebRTC 客户端的互操作性。AUDEMSP 信令层使用标准 SDP offer/answer 模型 + WebSocket transport
-2. **Egress/Ingress 分离服务 → 统一录制注入网关**：LiveKit 的 Egress 和 Ingress 是两个独立服务。AUDEMSP 应统一为 `MediaGateway` 插件——RTP Forwarding 注入 + FFmpeg/GStreamer 编码 → 存储/CDN。避免引入 LiveKit 的 Go 依赖
-3. **Agents Framework → PipelineEngine AI 节点**：LiveKit 的 Agent Plugin 系统很优雅，但它是 Python/Node.js 生态的。AUDEMSP Agent 作为 PipelineEngine 中的 `trait MediaProcessor` 实现——Agent 是一个处理节点（AUDIO IN → ASR → LLM → TTS → AUDIO OUT），不依赖特定语言运行时
-4. **WHIP/WHEP → AUDEMSP 统一媒体入口**：AUDEMSP 的推拉流模块可以同时支持 RTMP/SRT/HLS 和 WHIP/WHEP。统一入口 = 同一套 PipelineEngine 处理所有输入源
-5. **Redis 依赖 → 多后端支持**：LiveKit 分布式模式仅支持 Redis。AUDEMSP 的 `trait StateBackend` 应支持 Redis/etcd/NATS/内嵌 Raft 多种实现
+1. **私有信令协议 → 标准 SDP/JESP**：LiveKit 的自研二进制 WebSocket 信令不适用 MediaServo——我们必须保持与标准 WebRTC 客户端的互操作性。MediaServo 信令层使用标准 SDP offer/answer 模型 + WebSocket transport
+2. **Egress/Ingress 分离服务 → 统一录制注入网关**：LiveKit 的 Egress 和 Ingress 是两个独立服务。MediaServo 应统一为 `MediaGateway` 插件——RTP Forwarding 注入 + FFmpeg/GStreamer 编码 → 存储/CDN。避免引入 LiveKit 的 Go 依赖
+3. **Agents Framework → PipelineEngine AI 节点**：LiveKit 的 Agent Plugin 系统很优雅，但它是 Python/Node.js 生态的。MediaServo Agent 作为 PipelineEngine 中的 `trait MediaProcessor` 实现——Agent 是一个处理节点（AUDIO IN → ASR → LLM → TTS → AUDIO OUT），不依赖特定语言运行时
+4. **WHIP/WHEP → MediaServo 统一媒体入口**：MediaServo 的推拉流模块可以同时支持 RTMP/SRT/HLS 和 WHIP/WHEP。统一入口 = 同一套 PipelineEngine 处理所有输入源
+5. **Redis 依赖 → 多后端支持**：LiveKit 分布式模式仅支持 Redis。MediaServo 的 `trait StateBackend` 应支持 Redis/etcd/NATS/内嵌 Raft 多种实现
 
 ### [Avoid] 已知坑与不适用场景
 
-1. **Redis 单点依赖——避免**：在生产环境中 Redis 是 SPOF（单点故障）。AUDEMSP 应支持 etcd/NATS 作为无单点替代方案。`StateBackend` trait 的多个实现是架构期的必选项
-2. **私有信令协议——避免**：与标准 WebRTC 客户端的互操作性是 AUDEMSP 的核心价值主张之一。使用标准 SDP/JSEP，不使用任何私有信令
-3. **AI Agent 过度绑定平台——保持厂商中立**：LiveKit Agents Plugin 生态连接特定 AI 提供商。AUDEMSP AI 管线通过 PipelineEngine 通用节点接入——LLM 可以是 OpenAI/Claude/本地部署模型，STT 可以是 Deepgram/Whisper/自研，都是可替换的 Provider
-4. **14 种 SDK 维护成本过高——优先 Rust core + FFI 路径**：维护 14 种 SDK 是 LiveKit 团队的负担。AUDEMSP 应走 Rust core + 少量语言绑定（TypeScript via napi-rs、C via FFI）的路线。其他语言通过 FFI 间接支持
-5. **单进程无 Worker 隔离——参考 mediasoup 补充**：LiveKit 是单进程 Go 应用。AUDEMSP 应借鉴 mediasoup 的 Worker 进程隔离模式——每个 CPU 核一个 Rust Worker 进程 + IPC 通信。结合 LiveKit 的 Router 抽象和 mediasoup 的 Worker 隔离，取两者之长
+1. **Redis 单点依赖——避免**：在生产环境中 Redis 是 SPOF（单点故障）。MediaServo 应支持 etcd/NATS 作为无单点替代方案。`StateBackend` trait 的多个实现是架构期的必选项
+2. **私有信令协议——避免**：与标准 WebRTC 客户端的互操作性是 MediaServo 的核心价值主张之一。使用标准 SDP/JSEP，不使用任何私有信令
+3. **AI Agent 过度绑定平台——保持厂商中立**：LiveKit Agents Plugin 生态连接特定 AI 提供商。MediaServo AI 管线通过 PipelineEngine 通用节点接入——LLM 可以是 OpenAI/Claude/本地部署模型，STT 可以是 Deepgram/Whisper/自研，都是可替换的 Provider
+4. **14 种 SDK 维护成本过高——优先 Rust core + FFI 路径**：维护 14 种 SDK 是 LiveKit 团队的负担。MediaServo 应走 Rust core + 少量语言绑定（TypeScript via napi-rs、C via FFI）的路线。其他语言通过 FFI 间接支持
+5. **单进程无 Worker 隔离——参考 mediasoup 补充**：LiveKit 是单进程 Go 应用。MediaServo 应借鉴 mediasoup 的 Worker 进程隔离模式——每个 CPU 核一个 Rust Worker 进程 + IPC 通信。结合 LiveKit 的 Router 抽象和 mediasoup 的 Worker 隔离，取两者之长
 
 **总体评分**：★★★★★ (5/5)
 
-> 评价：LiveKit 是增长最快的 SFU 项目。单二进制、内置信令、AI Agent 原生集成、Dynacast 智能、Rust 跨平台核心——这些都是 AUDEMSP 项目的直接灵感来源。但 AUDEMSP 应保持比 LiveKit 更好的标准兼容性（SDP/JSEP 信令而非私有协议）和更少的供应商锁定（多后端 StateBackend 而非仅 Redis）。取 LiveKit 的架构智慧 + mediasoup 的性能模型 + Jitsi 的标准兼容经验 = AUDEMSP 的最佳路径。
+> 评价：LiveKit 是增长最快的 SFU 项目。单二进制、内置信令、AI Agent 原生集成、Dynacast 智能、Rust 跨平台核心——这些都是 MediaServo 项目的直接灵感来源。但 MediaServo 应保持比 LiveKit 更好的标准兼容性（SDP/JSEP 信令而非私有协议）和更少的供应商锁定（多后端 StateBackend 而非仅 Redis）。取 LiveKit 的架构智慧 + mediasoup 的性能模型 + Jitsi 的标准兼容经验 = MediaServo 的最佳路径。
 
 ---
 
@@ -351,7 +351,7 @@
 > LiveKit Agents Framework: docs.livekit.io/agents
 > LiveKit Cloud Pricing: livekit.io/pricing
 > LiveKit Terraform Module: registry.terraform.io
-> AUDEMSP: docs/research/video-conference.md
+> MediaServo: docs/research/video-conference.md
 
 ---
 **相关决策**: D14, D53, D95(obsolete→D97)
@@ -408,7 +408,7 @@ services:
     command: redis-server --appendonly yes
 ```
 
-AUDEMSP 部署应提供类似的 Docker Compose + Helm Chart 体验——目标是「docker-compose up -d」即可启动完整视频会议栈。
+MediaServo 部署应提供类似的 Docker Compose + Helm Chart 体验——目标是「docker-compose up -d」即可启动完整视频会议栈。
 
 ---
 
@@ -449,7 +449,7 @@ if __name__ == "__main__":
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 ```
 
-AUDEMSP 的 Agent 集成应采用不同的范式——Agent 是 PipelineEngine 中的一个处理节点，而非独立的 Worker 服务。优势：Agent 逻辑与媒体管线在同一 Rust 进程中运行，避免 Python/JS 到 Rust 的跨语言 FFI 开销。但缺点：失去 LiveKit 的丰富 Plugin 生态（OpenAI/ElevenLabs/Deepgram 等 Python SDK）。AUDEMSP 需要通过 FFI 或 HTTP API 桥接这些 AI 服务。
+MediaServo 的 Agent 集成应采用不同的范式——Agent 是 PipelineEngine 中的一个处理节点，而非独立的 Worker 服务。优势：Agent 逻辑与媒体管线在同一 Rust 进程中运行，避免 Python/JS 到 Rust 的跨语言 FFI 开销。但缺点：失去 LiveKit 的丰富 Plugin 生态（OpenAI/ElevenLabs/Deepgram 等 Python SDK）。MediaServo 需要通过 FFI 或 HTTP API 桥接这些 AI 服务。
 
 ---
 
@@ -469,13 +469,13 @@ AUDEMSP 的 Agent 集成应采用不同的范式——Agent 是 PipelineEngine �
             ├── 是 → mediasoup (C++ Worker + libuv)
             └── 否 → LiveKit (Go 性能足够 99% 的场景)
 
-AUDEMSP 的定位：
-需要自定义信令（Rust native 信令 + napi-rs → AUDEBase + FFI → AUDESYS）
+MediaServo 的定位：
+需要自定义信令（Rust native 信令 + napi-rs → AUDEBase + FFI → MediaServo）
 → mediasoup 路径
 + 借鉴 LiveKit 的 Router 抽象、Dynacast、文档体系、单二进制体验
 + 借鉴 Jitsi 的 Colibri2 信令协议设计、Pools 级联架构
 + 借鉴 Zoom 的 MMR 三层调度、音频优先 QoS、混合部署
-= AUDEMSP 最佳路径
+= MediaServo 最佳路径
 ```
 
 
@@ -507,7 +507,7 @@ LiveKit Egress 是独立于 Server 的 Go 服务，负责录制和直播推流�
 - `output_type`: mp4/webm/ogg/hls——mp4 最通用，webm 浏览器原生支持，hls 适合直播
 - 录制后回调：Egress 完成后通过 Webhook 通知应用层（含文件存储路径和元数据）
 
-对 AUDEMSP 的启示：录制服务应设计为独立插件，通过 RTP Forwarding 而非虚拟 Chrome 与会方式进行录制。避免 Jitsi Jibri 的 Chrome 依赖。
+对 MediaServo 的启示：录制服务应设计为独立插件，通过 RTP Forwarding 而非虚拟 Chrome 与会方式进行录制。避免 Jitsi Jibri 的 Chrome 依赖。
 
 ---
 
@@ -525,7 +525,7 @@ LiveKit Egress 是独立于 Server 的 Go 服务，负责录制和直播推流�
 | 成本 | 按 Session 分钟计费（变动的运营支出） | 固定服务器成本 + 运维人力 |
 | 适用场景 | 快速原型、中小企业、短期项目 | 大规模企业、合规要求、长期项目 |
 
-对 AUDEMSP 的启示：
+对 MediaServo 的启示：
 - 提供 Cloud 托管版（对标 LiveKit Cloud）+ Self-Hosted 版（对标 LiveKit OSS）
 - Cloud 版共享同一核心代码（LiveKit 的经验证明这是可行的）
 - Self-Hosted 版提供 Docker Compose / Helm Chart / Terraform 多种部署路径
@@ -533,23 +533,23 @@ LiveKit Egress 是独立于 Server 的 Go 服务，负责录制和直播推流�
 
 ### 7.8 [Adapt] 深入参考：Rust SDK 跨平台策略
 
-LiveKit 的 Rust SDK 设计理念与 AUDEMSP 的 native-core 战略高度一致。LiveKit 的 Rust SDK 作为所有平台 SDK 的共享核心层，封装信令和 WebRTC 逻辑。AUDEMSP 应借鉴此模式：
-- audemsp-core 作为 Rust 核心 crate，封装信令、WebRTC、SFU 控制逻辑
+LiveKit 的 Rust SDK 设计理念与 MediaServo 的 native-core 战略高度一致。LiveKit 的 Rust SDK 作为所有平台 SDK 的共享核心层，封装信令和 WebRTC 逻辑。MediaServo 应借鉴此模式：
+- mediaservo-core 作为 Rust 核心 crate，封装信令、WebRTC、SFU 控制逻辑
 - 通过 napi-rs 为 AUDEBase 提供 Node.js API
-- 通过 C FFI 为 AUDESYS 提供静态链接能力
+- 通过 C FFI 为 MediaServo 提供静态链接能力
 - 通过 Cargo 特性标志（feature flags）控制平台依赖
 
 ### 7.9 [Adopt] 深入参考：WHIP/WHEP 标准化入口
 
-LiveKit 对 WHIP/WHEP 的支持使其能与 OBS Studio、FFmpeg、GStreamer 等标准工具互操作。AUDEMSP 也应支持 WHIP/WHEP 作为统一媒体入口协议：
-- WHIP 注入：OBS Studio 和 FFmpeg 可直接推流到 AUDEMSP 会议
-- WHEP 输出：任意标准 WebRTC 客户端可订阅 AUDEMSP 流
+LiveKit 对 WHIP/WHEP 的支持使其能与 OBS Studio、FFmpeg、GStreamer 等标准工具互操作。MediaServo 也应支持 WHIP/WHEP 作为统一媒体入口协议：
+- WHIP 注入：OBS Studio 和 FFmpeg 可直接推流到 MediaServo 会议
+- WHEP 输出：任意标准 WebRTC 客户端可订阅 MediaServo 流
 - 监控相机接入：支持通过 WHIP 将 ONVIF 流转发到会议
 - 车端推流：支持通过 WHIP 将车辆摄像头推流到云端 Room
 
 ### 7.10 [Avoid] 深入参考：避免 Redis 单点故障
 
-LiveKit 的 Redis 强依赖是其最显著的架构风险。AUDEMSP 应设计多后端支持：
+LiveKit 的 Redis 强依赖是其最显著的架构风险。MediaServo 应设计多后端支持：
 - 抽象 Store trait，支持 Redis、etcd、NATS 等多种实现
 - 分布式模式下使用 Redis Cluster 或 etcd（避免单点 Redis）
 - 单机部署模式下使用内存存储（LocalStore，零依赖）

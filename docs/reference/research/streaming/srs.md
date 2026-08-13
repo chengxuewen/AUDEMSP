@@ -144,7 +144,7 @@ SRS 最核心的设计决策是将所有输入协议归一化到内部的 RTMP �
 
 SRS 的协议转换矩阵以 RTMP 流为中间表示，与非 RTMP 协议的交互存在以下性能特征：
 
-| 协议路径 | SRS 处理方式 | 编解码开销 | 延迟范围 | AUDEMSP Fragment 处理方式 | 延迟改善 |
+| 协议路径 | SRS 处理方式 | 编解码开销 | 延迟范围 | MediaServo Fragment 处理方式 | 延迟改善 |
 |---------|-------------|:---------:|:-------:|---------------------------|:--------:|
 | RTMP→HLS | FLV→TS transmux | 无 | 3-10s | Fragment→CMAF→LL-HLS | 改善50% (1-3s) |
 | RTMP→HTTP-FLV | FLV 直通 | 无 | 1-3s | Fragment→FLV tag 生成 | 持平 |
@@ -285,35 +285,35 @@ SRS 没有官方插件系统。扩展方式：
 - **中国市场占有率**：中文互联网直播场景中 RTMP 服务器市场的约 30-40% (预估)，Oryx (SRS Stack) Docker 镜像下载量数百万次
 
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 ### [Adopt] 可直接借鉴
-1. **Transmux 零转码快速路径**：AUDEMSP 应该支持"快速 transmux 路径"：当 Fragment payload 是 fMP4/CMAF 时，输出 HLS/DASH/HTTP-FLV 直接复用 payload 或仅做容器格式转换，不解码/编码。这是性能最优的路径。当需要 ABR 时才启动编码管线
-2. **HTTP Callback 事件系统**：`on_publish`/`on_play`/`on_unpublish`/`on_stop`/`on_dvr` 的流生命周期回调模式简洁实用。AUDEMSP 的 `StreamingSDK` 需要相同的钩子系统用于认证、计费、通知、自动化转码触发
-3. **Origin-Edge 集群拓扑**：多级边缘节点经大规模验证的集群模型。适合 CDN 边缘分发场景。AUDEMSP 的 `ClusterPlugin` 在初期可以采用相似拓扑，简单有效
-4. **GOP Cache 机制**：缓存最近 GOP 使新观众秒开。这是在线直播的基本要求。AUDEMSP 的 HLS/HTTP-FLV 输出层必须实现。参考 SRS 的 ring buffer + keyframe boundary 策略
-5. **Prometheus + Grafana 可观测性参考**：SRS 的 metrics 设计（流数/客户端数/码率/延迟分布）是基础参考。AUDEMSP 应该在此基础上增加 Fragment 级指标（Fragment 吞吐量、Observer 延迟、SLO 违反次数）
-6. **Docker + Helm 部署模式**：Docker 镜像 + Helm Chart 的部署方式是 K8s 时代的标配。AUDEMSP 应该参考 SRS 的部署配置（多架构 Dockerfile + K8s values.yaml）
+1. **Transmux 零转码快速路径**：MediaServo 应该支持"快速 transmux 路径"：当 Fragment payload 是 fMP4/CMAF 时，输出 HLS/DASH/HTTP-FLV 直接复用 payload 或仅做容器格式转换，不解码/编码。这是性能最优的路径。当需要 ABR 时才启动编码管线
+2. **HTTP Callback 事件系统**：`on_publish`/`on_play`/`on_unpublish`/`on_stop`/`on_dvr` 的流生命周期回调模式简洁实用。MediaServo 的 `StreamingSDK` 需要相同的钩子系统用于认证、计费、通知、自动化转码触发
+3. **Origin-Edge 集群拓扑**：多级边缘节点经大规模验证的集群模型。适合 CDN 边缘分发场景。MediaServo 的 `ClusterPlugin` 在初期可以采用相似拓扑，简单有效
+4. **GOP Cache 机制**：缓存最近 GOP 使新观众秒开。这是在线直播的基本要求。MediaServo 的 HLS/HTTP-FLV 输出层必须实现。参考 SRS 的 ring buffer + keyframe boundary 策略
+5. **Prometheus + Grafana 可观测性参考**：SRS 的 metrics 设计（流数/客户端数/码率/延迟分布）是基础参考。MediaServo 应该在此基础上增加 Fragment 级指标（Fragment 吞吐量、Observer 延迟、SLO 违反次数）
+6. **Docker + Helm 部署模式**：Docker 镜像 + Helm Chart 的部署方式是 K8s 时代的标配。MediaServo 应该参考 SRS 的部署配置（多架构 Dockerfile + K8s values.yaml）
 
 ### [Adapt] 需修改后采用
-1. **RTMP 归一化 → Unified Fragment Model**：SRS 所有输入归一化到 RTMP。AUDEMSP 应该借鉴归一化思想，但用 Fragment 替代 RTMP。Fragment 没有 RTMP 的语义限制（无固定音视频交错、有无序 object ID、有 subgroup 概念），可以自然地映射到 MoQ/QUIC 等新协议
-2. **协程模型 → Tokio async/await**：ST 协程是非标准技术。AUDEMSP 用 Rust 的 Tokio（业界标准），功能相同但生态更完整。同步风格的 async/await 代码可读性同样好
-3. **RTMP 协议实现的参考**：SRS 的 RTMP 实现可以作为 `audemsp-ingest-rtmp` 的功能规范和兼容性基准。但不能直接移植代码（语言和许可不兼容）。需用 Rust 重新实现，重点关注 Enhanced RTMP 兼容性
-4. **GB28181 协议的参考实现**：AUDEMSP 的 `SurveillanceSDK` 在 Phase 3+ 应考虑 GB28181。SRS 的 SIP 信令 + RTP/PS 解包是唯一可参考的开源实现。需要关注 SIP 注册、心跳、catalog 查询、invite 信令流程
-5. **HTTP-FLV 输出**：中文直播生态特有的 HTTP-FLV 协议。AUDEMSP 的 `HlsPlugin` 可以附加 HTTP-FLV 输出能力（从 Fragment payload 生成 FLV tag 序列）。这是轻量级的格式转换
-6. **Oryx 管理平台的理念**：Docker 一键部署 + Web UI 的模式对 AUDEMSP 的部署形态有参考价值。但 AUDEMSP 的 Client 是桌面应用，Host 的嵌入式配置页是 axum + 静态 HTML，不是 SRS 的 Web SPA
+1. **RTMP 归一化 → Unified Fragment Model**：SRS 所有输入归一化到 RTMP。MediaServo 应该借鉴归一化思想，但用 Fragment 替代 RTMP。Fragment 没有 RTMP 的语义限制（无固定音视频交错、有无序 object ID、有 subgroup 概念），可以自然地映射到 MoQ/QUIC 等新协议
+2. **协程模型 → Tokio async/await**：ST 协程是非标准技术。MediaServo 用 Rust 的 Tokio（业界标准），功能相同但生态更完整。同步风格的 async/await 代码可读性同样好
+3. **RTMP 协议实现的参考**：SRS 的 RTMP 实现可以作为 `mediaservo-ingest-rtmp` 的功能规范和兼容性基准。但不能直接移植代码（语言和许可不兼容）。需用 Rust 重新实现，重点关注 Enhanced RTMP 兼容性
+4. **GB28181 协议的参考实现**：MediaServo 的 `SurveillanceSDK` 在 Phase 3+ 应考虑 GB28181。SRS 的 SIP 信令 + RTP/PS 解包是唯一可参考的开源实现。需要关注 SIP 注册、心跳、catalog 查询、invite 信令流程
+5. **HTTP-FLV 输出**：中文直播生态特有的 HTTP-FLV 协议。MediaServo 的 `HlsPlugin` 可以附加 HTTP-FLV 输出能力（从 Fragment payload 生成 FLV tag 序列）。这是轻量级的格式转换
+6. **Oryx 管理平台的理念**：Docker 一键部署 + Web UI 的模式对 MediaServo 的部署形态有参考价值。但 MediaServo 的 Client 是桌面应用，Host 的嵌入式配置页是 axum + 静态 HTML，不是 SRS 的 Web SPA
 
 ### [Avoid] 已知坑 / 不适用场景
-1. **不要以 RTMP 作为内部统一表示（核心教训）**：RTMP 的语义限制（固定音视频交错、无 subgroup、无 object ID）使得添加新协议困难。AUDEMSP 必须用 Fragment Model 替代 RTMP 归一化。这是从 SRS 吸取的最重要教训
-2. **不要用 ST 协程或非标准并发技术**：ST 协程调试工具不完善、社区小、招聘难。AUDEMSP 应该使用 Tokio async/await（Rust 标准异步运行时）
-3. **不要完全依赖外部转码**：SRS 不内置转码，依赖外部 FFmpeg 进程。AUDEMSP 需要内置 transmux（必须）和可选编码管线（ABR、格式转码等场景）。`Transcoder` trait 支持多种后端
-4. **不要使用多语言混合进程架构**：SRS 的 SRT 独立 Go 进程 + TCP 管道桥接是历史包袱。跨进程通信增加了延迟和故障点。AUDEMSP 应将所有关键路径保持在 Rust 单进程中
-5. **17 万行 C 代码的技术债务教训**：单仓库大代码库的维护挑战。AUDEMSP 应该从初期就保持清晰的 crate 边界（参考 LVQR 的 29 crate），避免单体代码库
-6. **TURN 服务器独立部署的运维负担**：SRS 依赖外部 coturn 是持续的痛点。AUDEMSP 应将 TURN/STUN 作为一个可选的内置模块（`StunTurnPlugin`），简化部署
-7. **WebRTC 推流转 RTMP 的编解码开销**：SRS WHIP 推流转 RTMP 需要解码→重新编码，破坏 transmux 性能。AUDEMSP 如果用 Fragment Model，WHIP 输入直接产生 Fragment，无需重新编码
+1. **不要以 RTMP 作为内部统一表示（核心教训）**：RTMP 的语义限制（固定音视频交错、无 subgroup、无 object ID）使得添加新协议困难。MediaServo 必须用 Fragment Model 替代 RTMP 归一化。这是从 SRS 吸取的最重要教训
+2. **不要用 ST 协程或非标准并发技术**：ST 协程调试工具不完善、社区小、招聘难。MediaServo 应该使用 Tokio async/await（Rust 标准异步运行时）
+3. **不要完全依赖外部转码**：SRS 不内置转码，依赖外部 FFmpeg 进程。MediaServo 需要内置 transmux（必须）和可选编码管线（ABR、格式转码等场景）。`Transcoder` trait 支持多种后端
+4. **不要使用多语言混合进程架构**：SRS 的 SRT 独立 Go 进程 + TCP 管道桥接是历史包袱。跨进程通信增加了延迟和故障点。MediaServo 应将所有关键路径保持在 Rust 单进程中
+5. **17 万行 C 代码的技术债务教训**：单仓库大代码库的维护挑战。MediaServo 应该从初期就保持清晰的 crate 边界（参考 LVQR 的 29 crate），避免单体代码库
+6. **TURN 服务器独立部署的运维负担**：SRS 依赖外部 coturn 是持续的痛点。MediaServo 应将 TURN/STUN 作为一个可选的内置模块（`StunTurnPlugin`），简化部署
+7. **WebRTC 推流转 RTMP 的编解码开销**：SRS WHIP 推流转 RTMP 需要解码→重新编码，破坏 transmux 性能。MediaServo 如果用 Fragment Model，WHIP 输入直接产生 Fragment，无需重新编码
 
 **总体评分**：★★★☆☆ (3/5)
 
-SRS 是 RTMP 时代的标杆 — 协议兼容性、生产稳定性、传输性能、中文社区支持均无可匹敌。但以 RTMP 为中心的归一化模型是它的根本性架构缺陷，限制了向 MoQ/QUIC 等现代协议的演进。AUDEMSP 应从 SRS 学习 transmux 哲学、HTTP Callback 事件系统、Origin-Edge 集群拓扑和可观测性设计，但必须用 Fragment Model 替代 RTMP 归一化，从根本上解决 13 年前的架构遗留问题。
+SRS 是 RTMP 时代的标杆 — 协议兼容性、生产稳定性、传输性能、中文社区支持均无可匹敌。但以 RTMP 为中心的归一化模型是它的根本性架构缺陷，限制了向 MoQ/QUIC 等现代协议的演进。MediaServo 应从 SRS 学习 transmux 哲学、HTTP Callback 事件系统、Origin-Edge 集群拓扑和可观测性设计，但必须用 Fragment Model 替代 RTMP 归一化，从根本上解决 13 年前的架构遗留问题。
 
 ---
 **相关决策**: D5 (Unified Fragment), D6, D19, D-STREAM-TOPOLOGY, D-GOP-CACHE
@@ -359,9 +359,9 @@ ST 是 2001 年 Netscape 开发的用户态线程库。SRS 自 2013 年起使用
 
 ### [Adopt] 补充 — HTTP Callback 事件系统详细设计
 
-**10. HTTP Callback 的事件类型与 AUDEMSP 映射**：
+**10. HTTP Callback 的事件类型与 MediaServo 映射**：
 
-| SRS Callback | 触发时机 | 返回控制 | AUDEMSP 等效 |
+| SRS Callback | 触发时机 | 返回控制 | MediaServo 等效 |
 |-------------|---------|---------|---------------|
 | on_publish | publisher 推流请求 | HTTP 200=允许, 其他=拒绝 | MediaSource::on_publish |
 | on_unpublish | publisher 断开连接 | 无（通知） | MediaSource::on_unpublish |
@@ -371,13 +371,13 @@ ST 是 2001 年 Netscape 开发的用户态线程库。SRS 自 2013 年起使用
 | on_hls | HLS segment 生成 | 无（通知） | HlsSink::on_partial_ready |
 | on_rtc_play | WebRTC 播放开始 | HTTP 200=允许, 其他=拒绝 | WhepSink::on_subscribe |
 
-AUDEMSP 的 callback 系统应设计为 `EventHook` trait，支持 HTTP 回调（远程服务）和本地回调（内建认证/计费插件）两种模式。
+MediaServo 的 callback 系统应设计为 `EventHook` trait，支持 HTTP 回调（远程服务）和本地回调（内建认证/计费插件）两种模式。
 
-### [Adapt] 补充 — Origin-Edge 集群的 AUDEMSP 实现
+### [Adapt] 补充 — Origin-Edge 集群的 MediaServo 实现
 
 **8. Origin-Edge 拓扑在 ClusterPlugin 中的实现策略**：
 
-AUDEMSP Phase 1-2 的集群模型可以直接采用 Origin-Edge 拓扑（与 SRS 一致）：
+MediaServo Phase 1-2 的集群模型可以直接采用 Origin-Edge 拓扑（与 SRS 一致）：
 
 ```
 Origin 节点                          Edge 节点
@@ -391,13 +391,13 @@ Origin 节点                          Edge 节点
           └── 非本地 edge 通过远程拉流       └── 广播到本地 Sink
 ```
 
-关键差异：SRS 的 Edge 从 Origin 拉取 RTMP 流（需要编解码器感知），AUDEMSP 的 Edge 从 Origin 拉取 Fragment 流（协议无关）。这意味着 Edge 可以缓存和分发的数据格式不受协议限制 — 同一个 Fragment 流可以被 Edge 的 HLS、DASH、WHEP 三个 Sink 独立消费。
+关键差异：SRS 的 Edge 从 Origin 拉取 RTMP 流（需要编解码器感知），MediaServo 的 Edge 从 Origin 拉取 Fragment 流（协议无关）。这意味着 Edge 可以缓存和分发的数据格式不受协议限制 — 同一个 Fragment 流可以被 Edge 的 HLS、DASH、WHEP 三个 Sink 独立消费。
 
 ### [Avoid] 补充 — 更多不适用场景
 
-**8. RTMP 作为推流协议的生命周期**：RTMP 于 2009 年由 Adobe 公开规范，至今超过 15 年。虽然 RTMP 兼容性在直播生态中不可替代（OBS→RTMP→SRS 是目前最成熟的推流链路），但 Adobe Flash Player 已于 2020 年退役。RTMP 在传输层面逐渐被 SRT/WebRTC/MoQ 替代。AUDEMSP 必须支持 RTMP（Phase 1，因为 OBS 和推流工具链依赖它），但不应将其作为架构核心。Fragment Model 使 RTMP 成为平等的协议之一，而非架构中心。
+**8. RTMP 作为推流协议的生命周期**：RTMP 于 2009 年由 Adobe 公开规范，至今超过 15 年。虽然 RTMP 兼容性在直播生态中不可替代（OBS→RTMP→SRS 是目前最成熟的推流链路），但 Adobe Flash Player 已于 2020 年退役。RTMP 在传输层面逐渐被 SRT/WebRTC/MoQ 替代。MediaServo 必须支持 RTMP（Phase 1，因为 OBS 和推流工具链依赖它），但不应将其作为架构核心。Fragment Model 使 RTMP 成为平等的协议之一，而非架构中心。
 
-**9. 17 万行 C 代码的维护代价**：SRS 的单体代码库 (170K 行 C/C++) 使得新人贡献门槛极高。AUDEMSP 从 Phase 0 就要避免这个问题 — 每个 crate 保持在 2000-5000 行 Rust 代码，加上清晰的 crate 边界和 trait 隔离，让新人可以在单个 crate 范围内完成工作而不需要理解整个代码库。
+**9. 17 万行 C 代码的维护代价**：SRS 的单体代码库 (170K 行 C/C++) 使得新人贡献门槛极高。MediaServo 从 Phase 0 就要避免这个问题 — 每个 crate 保持在 2000-5000 行 Rust 代码，加上清晰的 crate 边界和 trait 隔离，让新人可以在单个 crate 范围内完成工作而不需要理解整个代码库。
 
 | 多核利用 | 单线程 (M:1) | 多线程 work-stealing (M:N) |
 | 调试支持 | 无原生调试器 | Rust IDE/tracing |
@@ -407,7 +407,7 @@ Origin 节点                          Edge 节点
 | 招聘难度 | 几乎不可能 | 容易 (Rust 开发者都会) |
 
 SRS 使用 ST 的历史原因：2013 年 C/C++ 没有标准异步模型。
-现在 Rust 的 async/await 是更好的选择。AUDEMSP 使用 Tokio 正确。
+现在 Rust 的 async/await 是更好的选择。MediaServo 使用 Tokio 正确。
 
 ---
 
@@ -467,7 +467,7 @@ FragmentBroadcasterRegistry -> Observer taps
 
 ### B.3 迁移路径对比
 
-| 组件 | RTMP 归一化 (SRS) | Fragment Model (AUDEMSP) |
+| 组件 | RTMP 归一化 (SRS) | Fragment Model (MediaServo) |
 |------|-------------------|---------------------------|
 | 内部表示 | FLV tag stream | Fragment stream |
 | RTMP 输入 | 零转换 (FLV-FLV) | 小转换 (FLV-Fragment) |
@@ -523,7 +523,7 @@ vhost __defaultVhost__ {
 }
 ```
 
-对 AUDEMSP 的启示：
+对 MediaServo 的启示：
 - INI 格式虽然传统，但配置参数设计简洁 (hls_fragment 仅需一个数字)
 - HTTP Callback 的 URL 模式用参数化路径如 [app]/[stream]
 - dvr_plan: segment 按时间分段是标准录制策略

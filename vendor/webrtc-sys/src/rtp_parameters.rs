@@ -143,7 +143,7 @@ pub mod ffi {
         pub active: bool,
         pub rid: String,
         pub adaptive_ptime: bool,
-        pub request_key_frame: bool, // AUDEMSP vendored: libwebrtc RtpEncodingParameters.request_key_frame (GOP 周期触发, PIT-76)
+        pub request_key_frame: bool, // MediaServo vendored: libwebrtc RtpEncodingParameters.request_key_frame (GOP 周期触发, PIT-76)
     }
 
     #[derive(Debug)]

@@ -301,7 +301,7 @@ Xiu 在 Rust 流媒体生态中处于独特位置：
 
 ### 6.1 亮点
 
-1. **纯 Rust 实现**：内存安全、无 GC、编译时保证并发安全。对于同样使用 Rust 技术栈的 AUDEMSP 具有直接参考价值。
+1. **纯 Rust 实现**：内存安全、无 GC、编译时保证并发安全。对于同样使用 Rust 技术栈的 MediaServo 具有直接参考价值。
 2. **代码架构清晰**：15 个 crate 的 workspace 分层明确（应用层/协议层/库层），每个协议独立可复用。
 3. **StreamHub 设计优雅**：发布-订阅模式解耦协议实现，新增协议只需对接 StreamHub 接口。
 4. **协议转换无重编码**：remux/repackaging 模式，CPU 开销极低。
@@ -321,26 +321,26 @@ Xiu 在 Rust 流媒体生态中处于独特位置：
 8. **没有插件系统**：扩展协议需要修改源码，无动态加载机制。
 9. **错误处理使用 anyhow**：应用级代码使用 anyhow，不适合作为库的精细错误处理。
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 
 ### 7.1 可直接借鉴的模式
 
 1. **Workspace 分层架构**（★★★★★）
-   - Xiu 的 `application/protocol/library` 三层划分与 AUDEMSP 的 `host/remote/server` 三层有结构上的相似性
+   - Xiu 的 `application/protocol/library` 三层划分与 MediaServo 的 `host/remote/server` 三层有结构上的相似性
    - 建议参考其协议 crate 的独立性和 `streamhub` 的发布-订阅解耦模式
 
 2. **StreamHub 发布-订阅模式**（★★★★★）
    - `publish()` / `subscribe()` / `unsubscribe()` 接口设计简洁高效
-   - AUDEMSP 的 PipelineEngine 可以借鉴此模式，用通道（channel）连接采集→编码→推流节点
+   - MediaServo 的 PipelineEngine 可以借鉴此模式，用通道（channel）连接采集→编码→推流节点
    - `streamhub` 的 `StatisticDataSender` 统计接口值得复用
 
 3. **bytesio 字节流抽象**（★★★★）
    - 统一的 TCP/UDP 字节流读写抽象，减少协议层代码重复
-   - AUDEMSP 中采集源（屏幕/摄像头）到编码器再到网络推流，同样需要统一的字节流抽象
+   - MediaServo 中采集源（屏幕/摄像头）到编码器再到网络推流，同样需要统一的字节流抽象
 
 4. **协议转换的 Remux 策略**（★★★★）
    - 不重编码的协议转换（RTMP→HTTP-FLV 直接复用 FLV 数据、RTMP→HLS 仅重封装为 TS）
-   - AUDEMSP 可能需要 RTMP 输出 → HTTP-FLV 分发的场景，remux 模式可最小化 CPU 开销
+   - MediaServo 可能需要 RTMP 输出 → HTTP-FLV 分发的场景，remux 模式可最小化 CPU 开销
 
 5. **配置系统设计**（★★★）
    - TOML 配置文件 + CLI 参数双模式，互斥处理
@@ -355,19 +355,19 @@ Xiu 在 Rust 流媒体生态中处于独特位置：
 
 1. **避免使用 anyhow 在库代码中**（★★★）
    - Xiu 大量使用 `anyhow` 和 `failure` crate，不利于库使用者进行精细的错误处理
-   - AUDEMSP 应使用 `thiserror`（库 crate）和 `anyhow`（应用 crate）的分层策略
+   - MediaServo 应使用 `thiserror`（库 crate）和 `anyhow`（应用 crate）的分层策略
 
 2. **避免 GOP 缓存的内存泄漏模式**（★★★）
    - 音频流 GOP 无限增长的 bug 说明：缓存必须有基于时间/大小的硬上限，不能仅依赖关键帧触发淘汰
-   - AUDEMSP 的 GOP 缓存设计应包含强制淘汰策略和内存预算
+   - MediaServo 的 GOP 缓存设计应包含强制淘汰策略和内存预算
 
 3. **避免静态配置的 relay**（★★）
    - 静态 relay 配置缺乏弹性
-   - AUDEMSP 的 Server 应有动态会话管理和路由能力
+   - MediaServo 的 Server 应有动态会话管理和路由能力
 
 4. **避免无内建的运维可观测性**（★★）
    - 缺少 metrics、health check、admin panel
-   - AUDEMSP 应在设计初期就考虑可观测性
+   - MediaServo 应在设计初期就考虑可观测性
 
 ### 7.3 作为 Rust 流媒体的参考基线
 
@@ -375,21 +375,21 @@ Xiu 是目前 Rust 流媒体生态中**最简洁、最易读的参考实现**，
 
 - 理解 RTMP/RTSP 协议在 Rust 中的实现方式
 - 理解 tokio 在流媒体场景中的使用模式
-- 作为 AUDEMSP MVP 阶段的架构对照——Xiu 的代码量适中，可以快速阅读并提取有用模式
-- 对比评估：当 AUDEMSP 需要更高级功能（动态路由、编解码管线、插件系统）时，需要比 Xiu 更深入的架构设计
+- 作为 MediaServo MVP 阶段的架构对照——Xiu 的代码量适中，可以快速阅读并提取有用模式
+- 对比评估：当 MediaServo 需要更高级功能（动态路由、编解码管线、插件系统）时，需要比 Xiu 更深入的架构设计
 
 ### 7.4 具体可复用的 crate
 
-| Xiu crate | 用途 | AUDEMSP 复用价值 |
+| Xiu crate | 用途 | MediaServo 复用价值 |
 |-----------|------|-------------------|
 | `streamhub` | 发布-订阅路由 | 高 — Pipeline 节点间通信模式 |
 | `bytesio` | 字节流 I/O 抽象 | 高 — 统一网络读写接口 |
 | `rtmp` | RTMP 协议 | 中 — 如果需要 RTMP 输出 |
 | `xflv` | FLV 容器 | 中 — FLV 分装/解封 |
 | `xmpegts` | MPEG-TS 容器 | 中 — HLS 分片 |
-| `h264` | H.264 解析 | 低 — AUDEMSP 将使用系统编解码器 |
+| `h264` | H.264 解析 | 低 — MediaServo 将使用系统编解码器 |
 
-> **核心建议**: AUDEMSP 不需要直接 fork 或依赖 Xiu 的 crate，但应认真学习其架构思想，尤其是 StreamHub 的解耦模式和 workspace 分层组织方式。
+> **核心建议**: MediaServo 不需要直接 fork 或依赖 Xiu 的 crate，但应认真学习其架构思想，尤其是 StreamHub 的解耦模式和 workspace 分层组织方式。
 
 ---
 **相关决策**: D5 (Fragment Model), D6, D19

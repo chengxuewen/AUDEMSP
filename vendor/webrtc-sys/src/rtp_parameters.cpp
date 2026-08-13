@@ -127,7 +127,7 @@ webrtc::RtpEncodingParameters to_native_rtp_encoding_paramters(
   if (parameters.has_scale_resolution_down_by)
     native.scale_resolution_down_by = parameters.scale_resolution_down_by;
 
-  // AUDEMSP vendored: libwebrtc RtpEncodingParameters.request_key_frame
+  // MediaServo vendored: libwebrtc RtpEncodingParameters.request_key_frame
   // (GOP 周期触发, PIT-76) — GenerateKeyFrame 经 SetParameters 标准路径
   native.request_key_frame = parameters.request_key_frame;
   return native;

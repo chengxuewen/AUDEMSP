@@ -248,13 +248,13 @@
   - **官方公共服务器**：免费使用，但性能和带宽有上限，适合个人和小团队
 
 ## 6. 产品特色
-1. **技术栈与 AUDEMSP 高度对齐**：RustDesk 是目前唯一以 Rust 语言编写、达到生产级成熟度的远程桌面项目。其 Rust + Protobuf + 跨平台屏幕捕获抽象层的技术栈选择，与 AUDEMSP 的设计方向高度一致。RustDesk 的实际工程经验证明 Rust 在远程桌面领域（网络 I/O、视频编解码桥接、跨平台系统调用）是可行且高效的。
-2. **单二进制多进程架构的优雅设计**：同一二进制文件通过命令行参数区分 4 种进程角色，进程间通过 IPC 通信。这种设计同时解决了权限隔离（Server 以 SYSTEM 运行处理网络 I/O）和部署简化（分发单文件即可）的矛盾。对 AUDEMSP 的 Client/Host 双应用架构有直接参考意义。
-3. **自托管数据主权模型**：HBBS（信令）+ HBBR（中继）双服务器架构清晰分离控制面和数据面职责。Docker 一键部署降低了自托管门槛。所有网络数据经过 NaCl 端到端加密，即使中继服务器也无法读取内容。这是 AUDEMSP "独立部署 + 委托平台"双模式的理想参考。
-4. **跨平台屏幕捕获的 Rust 抽象**：`libs/scrap` 通过 `Capturer` trait 统一了 Windows DXGI Desktop Duplication、Linux X11 SHM/KMS-DRM、macOS CoreGraphics/ScreenCaptureKit 等不同系统的屏幕捕获 API。接口设计简洁（`capture()` 返回 `Frame`），trait 可被第三方自由实现。是 AUDEMSP ScreenCapture 插件的最佳实践范本。
-5. **Protobuf 驱动的版本演进**：所有网络消息通过 Protobuf 定义，实现了编译期类型检查和运行时的向前/向后兼容。这在开源项目协作中尤为重要——多个贡献者可以独立添加协议字段而不会破坏兼容性。AUDEMSP 同样采用 Protobuf，RustDesk 的 Proto 组织方式值得参考。
+1. **技术栈与 MediaServo 高度对齐**：RustDesk 是目前唯一以 Rust 语言编写、达到生产级成熟度的远程桌面项目。其 Rust + Protobuf + 跨平台屏幕捕获抽象层的技术栈选择，与 MediaServo 的设计方向高度一致。RustDesk 的实际工程经验证明 Rust 在远程桌面领域（网络 I/O、视频编解码桥接、跨平台系统调用）是可行且高效的。
+2. **单二进制多进程架构的优雅设计**：同一二进制文件通过命令行参数区分 4 种进程角色，进程间通过 IPC 通信。这种设计同时解决了权限隔离（Server 以 SYSTEM 运行处理网络 I/O）和部署简化（分发单文件即可）的矛盾。对 MediaServo 的 Client/Host 双应用架构有直接参考意义。
+3. **自托管数据主权模型**：HBBS（信令）+ HBBR（中继）双服务器架构清晰分离控制面和数据面职责。Docker 一键部署降低了自托管门槛。所有网络数据经过 NaCl 端到端加密，即使中继服务器也无法读取内容。这是 MediaServo "独立部署 + 委托平台"双模式的理想参考。
+4. **跨平台屏幕捕获的 Rust 抽象**：`libs/scrap` 通过 `Capturer` trait 统一了 Windows DXGI Desktop Duplication、Linux X11 SHM/KMS-DRM、macOS CoreGraphics/ScreenCaptureKit 等不同系统的屏幕捕获 API。接口设计简洁（`capture()` 返回 `Frame`），trait 可被第三方自由实现。是 MediaServo ScreenCapture 插件的最佳实践范本。
+5. **Protobuf 驱动的版本演进**：所有网络消息通过 Protobuf 定义，实现了编译期类型检查和运行时的向前/向后兼容。这在开源项目协作中尤为重要——多个贡献者可以独立添加协议字段而不会破坏兼容性。MediaServo 同样采用 Protobuf，RustDesk 的 Proto 组织方式值得参考。
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 ### [Adopt] 可直接借鉴
 - `libs/scrap` 的跨平台屏幕捕获 Trait 抽象设计思路和接口形态
 - Protobuf 定义所有协议消息的组织方式（消息类型 enum、oneof 多态消息、field number 管理策略）
@@ -264,26 +264,26 @@
 - 屏幕捕获后端矩阵的按平台实现策略（trait + conditional compilation）
 
 ### [Adapt] 需修改后采用
-- 单二进制多进程架构 → AUDEMSP 微内核 + 插件动态加载（编译期 feature flag → 运行时 dlopen/动态注册）
+- 单二进制多进程架构 → MediaServo 微内核 + 插件动态加载（编译期 feature flag → 运行时 dlopen/动态注册）
 - 四维度权限控制 → 扩展为完整的 RBAC + 会话配额（时长/分辨率/码率上限）+ 功能许可验证
 - Cargo feature flag 编码器选择 → 运行时插件注册机制，支持热加载/卸载编码器插件
 - Flutter UI → Tauri/Electron（桌面）+ Flutter（移动端可选，复用社区生态）
 - TCP 打洞 → ICE/STUN/TURN 标准协议族（WebRTC 标准栈，与 Parsec/CRD 路线一致）
 
 ### [Avoid] 已知坑 / 不适用场景
-- **TCP 打洞成功率低**：严禁在 AUDEMSP 中自研打洞算法。必须采用 ICE/STUN/TURN 标准协议族
+- **TCP 打洞成功率低**：严禁在 MediaServo 中自研打洞算法。必须采用 ICE/STUN/TURN 标准协议族
 - **AGPLv3 许可证边界**：不能将 AGPLv3 代码并入 Apache 2.0 项目。只能借鉴架构设计思想，需严格代码审计确保无许可证污染
-- **Flutter 4K 渲染开销**：AUDEMSP 渲染路径直接使用原生 GPU API（DirectX/Metal/Vulkan），避免 GUI 框架和 GPU 间纹理拷贝
+- **Flutter 4K 渲染开销**：MediaServo 渲染路径直接使用原生 GPU API（DirectX/Metal/Vulkan），避免 GUI 框架和 GPU 间纹理拷贝
 - **Web 与原生双协议栈**：从设计阶段统一信令和数据面协议——Web 端和原生端使用同一套 WebRTC 协议栈
 
-- **官方公共服务器并非SLA保障**：免费基础设施在高峰时段有性能瓶颈。如果AUDEMSP提供免费的公共中继服务，必须在服务条款中明确SLA边界
-- **iOS后台限制**：iOS不赋予第三方App长期后台运行权限，远程访问体验不完整。如果AUDEMSP需要iOS远程桌面支持，必须在需求分析阶段明确此限制
+- **官方公共服务器并非SLA保障**：免费基础设施在高峰时段有性能瓶颈。如果MediaServo提供免费的公共中继服务，必须在服务条款中明确SLA边界
+- **iOS后台限制**：iOS不赋予第三方App长期后台运行权限，远程访问体验不完整。如果MediaServo需要iOS远程桌面支持，必须在需求分析阶段明确此限制
 
-### RustDesk对AUDEMSP代码组织的参考
-RustDesk的仓库组织方式对AUDEMSP有直接参考价值：
+### RustDesk对MediaServo代码组织的参考
+RustDesk的仓库组织方式对MediaServo有直接参考价值：
 ```
-AUDEMSP参考RustDesk的monorepo结构：
-audemsp/
+MediaServo参考RustDesk的monorepo结构：
+mediaservo/
 ├── crates/
 │   ├── core/              # 微内核（类似RustDesk src/laminar）
 │   ├── screen-capture/    # 跨平台屏幕捕获trait（类似libs/scrap）
@@ -293,7 +293,7 @@ audemsp/
 │   ├── codec/             # 编解码器工厂（类似RustDesk编码器管理）
 │   ├── transport/         # 传输层抽象（类似socket_helpers）
 │   └── clipboard/         # 跨平台剪贴板（类似libs/clipboard）
-├── plugins/               # AUDEMSP特有：动态加载的插件
+├── plugins/               # MediaServo特有：动态加载的插件
 ├── apps/                  # 应用程序入口
 │   ├── client/            # Tauri/Electron客户端
 │   └── host/              # 无GUI守护进程
@@ -302,7 +302,7 @@ audemsp/
 
 RustDesk的crates拆分粒度（~8个核心crate）是一个好的参考基准——不太少（不导致单crate过大），不多于15个（避免编译时间和依赖管理复杂度爆炸）。
 **总体评分**：★★★★★ (5/5)
-**评语**：技术栈最接近 AUDEMSP 的参考项目。在 Rust 远程桌面工程实践、自托管架构、跨平台屏幕捕获抽象方面提供了无可替代的一手经验。是 Phase 0 架构设计的首选技术参考。
+**评语**：技术栈最接近 MediaServo 的参考项目。在 Rust 远程桌面工程实践、自托管架构、跨平台屏幕捕获抽象方面提供了无可替代的一手经验。是 Phase 0 架构设计的首选技术参考。
 <!-- -->
 **相关决策**: D3, D51, D52, D81
 ## 附录：RustDesk 关键文件与代码结构
@@ -358,19 +358,19 @@ rustdesk/
 | Python 插件系统 | 不支持 | 支持 |
 | 优先技术支持 | 不支持 | 支持 |
 
-## 附录：对 AUDEMSP 架构决策的影响总结
+## 附录：对 MediaServo 架构决策的影响总结
 
-RustDesk 作为 AUDEMSP 技术栈最接近的参考项目，其对架构决策的影响涵盖以下关键领域：
+RustDesk 作为 MediaServo 技术栈最接近的参考项目，其对架构决策的影响涵盖以下关键领域：
 1. 协议层：Protobuf 的版本演进友好性已由 RustDesk 400+ 贡献者协作验证
 2. 抽象层：Trait-based 跨平台屏幕捕获是正确方向（RustDesk scrap 库验证）
-3. 部署层：单二进制多进程 → AUDEMSP 演化方向为微内核+插件
-4. 安全层：NaCl E2E 加密 → AUDEMSP 可升级为 DTLS-SRTP+NaCl 混合方案
-5. UI层：Flutter 的跨平台覆盖 → AUDEMSP 考虑桌面 Tauri + 移动 Flutter 混合策略
+3. 部署层：单二进制多进程 → MediaServo 演化方向为微内核+插件
+4. 安全层：NaCl E2E 加密 → MediaServo 可升级为 DTLS-SRTP+NaCl 混合方案
+5. UI层：Flutter 的跨平台覆盖 → MediaServo 考虑桌面 Tauri + 移动 Flutter 混合策略
 
-6. 发布层：RustDesk的Release工程（39个Release的版本管理经验）→ AUDEMSP的CI/CD pipeline设计参考
+6. 发布层：RustDesk的Release工程（39个Release的版本管理经验）→ MediaServo的CI/CD pipeline设计参考
 
 ## 附录：RustDesk Native依赖最小化分析
-RustDesk的核心依赖树被严格控制在最小必要集合，这是AUDEMSP应学习的工程纪律：
+RustDesk的核心依赖树被严格控制在最小必要集合，这是MediaServo应学习的工程纪律：
 ```
 核心直接依赖（Cargo.toml关键条目）:
 ├── tokio (异步运行时) — 远程桌面I/O密集型，tokio是Rust标准
@@ -384,11 +384,11 @@ RustDesk的核心依赖树被严格控制在最小必要集合，这是AUDEMSP�
 总计：核心功能仅约10个直接Rust依赖（不含传递依赖）
 对比：如果使用Electron+WebRTC，直接依赖约50-80个
 
-启发：AUDEMSP核心crate应遵循类似纪律——每个依赖都有明确不可替代的理由
+启发：MediaServo核心crate应遵循类似纪律——每个依赖都有明确不可替代的理由
 ```
 
 ## 附录：RustDesk信令协议消息类型分析
-RustDesk的Protobuf消息组织方式启发了AUDEMSP的协议设计：
+RustDesk的Protobuf消息组织方式启发了MediaServo的协议设计：
 ```protobuf
 // RustDesk消息结构模式（简化，基于公开Proto文件）
 message Message {
@@ -409,12 +409,12 @@ message Message {
 关键设计决策：
 - oneof多态消息：同一连接上的所有消息类型共享一个外层容器 → 单TCP连接多路复用
 - 消息分类按功能模块编号(1-10认证, 10-20媒体, 20-30扩展) → field number管理策略
-- AUDEMSP应采用类似的oneof模式 + 模块化field number区间管理
+- MediaServo应采用类似的oneof模式 + 模块化field number区间管理
 
-## 附录：RustDesk 与 AUDEMSP 技术栈对齐对比
-RustDesk是AUDEMSP技术选型最接近的参考项目，以下是关键技术对齐分析：
+## 附录：RustDesk 与 MediaServo 技术栈对齐对比
+RustDesk是MediaServo技术选型最接近的参考项目，以下是关键技术对齐分析：
 
-| 维度 | RustDesk现状 | AUDEMSP规划 | 对齐度 |
+| 维度 | RustDesk现状 | MediaServo规划 | 对齐度 |
 |------|------------|-------------|--------|
 | 核心语言 | Rust (67.6%) | Rust (100%核心) | 完全对齐 |
 | 跨平台UI | Flutter (24.1%) | Tauri/Electron+Flutter移动 | 高度对齐 |
@@ -435,35 +435,35 @@ RustDesk是AUDEMSP技术选型最接近的参考项目，以下是关键技术�
 4. 许可证：AGPLv3 vs Apache 2.0（不能复用代码，必须独立实现）
 
 ## 附录：从RustDesk工程决策中学习的经验
-1. Protobuf的oneof多态消息模式是AUDEMSP协议设计的首选（400+贡献者验证）
+1. Protobuf的oneof多态消息模式是MediaServo协议设计的首选（400+贡献者验证）
 2. Trait抽象+条件编译是跨平台屏幕捕获的正确方向（scrap库验证）
 3. ~8个核心crate的拆分粒度是好的起点（既不太碎也不太胖）
 4. 单二进制多角色的部署简化是巧妙的工程优化
 5. 开源+Pro Server的双许可模式是可持续的开源商业模式
 
-### RustDesk技术债务清单（AUDEMSP应避免）
-1. TCP打洞成功率有限：在对称NAT和多层运营商NAT下成功率不足。AUDEMSP采用ICE/STUN/TURN
-2. Flutter 4K渲染开销：GPU纹理传递有额外开销。AUDEMSP用原生GPU API直接渲染
-3. AGPLv3许可证：商业集成的障碍。AUDEMSP用Apache 2.0
+### RustDesk技术债务清单（MediaServo应避免）
+1. TCP打洞成功率有限：在对称NAT和多层运营商NAT下成功率不足。MediaServo采用ICE/STUN/TURN
+2. Flutter 4K渲染开销：GPU纹理传递有额外开销。MediaServo用原生GPU API直接渲染
+3. AGPLv3许可证：商业集成的障碍。MediaServo用Apache 2.0
 4. iOS后台限制：远程访问体验不完整。需在需求阶段明确
-5. Web与原生双协议栈：功能覆盖差异。AUDEMSP统一WebRTC协议栈
+5. Web与原生双协议栈：功能覆盖差异。MediaServo统一WebRTC协议栈
 6. 官方公共服务器容量限制：免费基础设施无SLA保障
 7. Wayland兼容性持续演进：不同合成器兼容性不一致
 8. Pro Server定价不透明：无公开价格页面
 9. 音频传输跨平台不一致：各平台捕获/播放方案差异大
 
-### 总结：RustDesk对AUDEMSP的核心价值
-RustDesk是AUDEMSP技术栈最接近的参考项目——Rust+Protobuf+自托管+跨平台屏幕捕获Trait。RustDesk的实际工程经验证明了：
+### 总结：RustDesk对MediaServo的核心价值
+RustDesk是MediaServo技术栈最接近的参考项目——Rust+Protobuf+自托管+跨平台屏幕捕获Trait。RustDesk的实际工程经验证明了：
 - Rust在远程桌面领域（网络I/O、视频编解码桥接、跨平台系统调用）是可行且高效的
 - Protobuf的版本演进友好性已被400+贡献者协作验证
 - 单二进制多进程架构是部署简化和权限隔离之间的优雅平衡
 - 自托管数据主权模型有明确的市场需求
-- ~8个核心crate的拆分粒度是AUDEMSP工作空间组织的参考基准
+- ~8个核心crate的拆分粒度是MediaServo工作空间组织的参考基准
 
-RustDesk的AGPLv3许可证意味着AUDEMSP不能直接复用其代码，但可以借鉴其架构设计思想和工程实践（在Apache 2.0下独立实现）。
+RustDesk的AGPLv3许可证意味着MediaServo不能直接复用其代码，但可以借鉴其架构设计思想和工程实践（在Apache 2.0下独立实现）。
 
-## 附录：RustDesk对AUDEMSP功能优先级的影响
-基于RustDesk的功能体系和技术验证，AUDEMSP开发优先级建议：
+## 附录：RustDesk对MediaServo功能优先级的影响
+基于RustDesk的功能体系和技术验证，MediaServo开发优先级建议：
 
 Phase 0（架构定义）：Protobuf协议定义（oneof模式）、Capturer trait屏幕捕获抽象、HBBS/HBBR信令中继分离模型
 Phase 1（MVP）：P2P+ICE中继远程桌面、VP8/VP9软件编码、H.264/H.265硬件编码、文件传输
@@ -471,7 +471,7 @@ Phase 2（增强）：TCP隧道端口转发、终端访问、多显示器支持�
 Phase 3（企业）：LDAP/OIDC集成、审计日志、品牌白标、批量部署工具
 Phase 4（扩展）：Web客户端（WebRTC统一协议栈）、Python插件系统、相机查看
 
-RustDesk验证了AGPLv3+Pro双许可模式的商业可行性，为AUDEMSP的开源+技术支持商业模式提供了参考案例。
+RustDesk验证了AGPLv3+Pro双许可模式的商业可行性，为MediaServo的开源+技术支持商业模式提供了参考案例。
 
 ## 附录：参考数据来源说明
 本文档分析基于以下数据来源：
@@ -484,18 +484,18 @@ RustDesk验证了AGPLv3+Pro双许可模式的商业可行性，为AUDEMSP的开�
 
 数据时效性：所有技术细节截至2026年7月。RustDesk每月发布稳定版本（当前v1.4.9），GitHub commit持续活跃。
 
-AUDEMSP与RustDesk之间的许可证边界：RustDesk使用AGPLv3，AUDEMSP使用Apache 2.0。本文档中的所有技术分析均基于公开信息（源码阅读、文档分析、社区讨论），不涉及任何AGPLv3代码的复制或衍生。
+MediaServo与RustDesk之间的许可证边界：RustDesk使用AGPLv3，MediaServo使用Apache 2.0。本文档中的所有技术分析均基于公开信息（源码阅读、文档分析、社区讨论），不涉及任何AGPLv3代码的复制或衍生。
 
 ---
 
-> 本文档为AUDEMSP Phase 0架构定义阶段的参考资料。
+> 本文档为MediaServo Phase 0架构定义阶段的参考资料。
 > 随着项目推进，部分分析和建议可能根据实际需求和约束调整。
 > 所有外部产品数据、版本、社区统计信息截至2026年7月。
 > RustDesk是Purslane Ltd的商标。RustDesk源码使用AGPLv3许可。
 > 本文档中的所有技术分析基于公开可用信息，不包含任何专有代码。
 
-> 架构设计借鉴：本文档对RustDesk的技术分析旨在为AUDEMSP架构设计提供参考。
+> 架构设计借鉴：本文档对RustDesk的技术分析旨在为MediaServo架构设计提供参考。
 
 > 技术验证：RustDesk证明了Rust在远程桌面领域（网络I/O、视频编解码桥接、跨平台系统调用）的生产级可行性。
  
-> 最终结论：RustDesk是AUDEMSP架构设计的首选技术参考，但不能直接复用其AGPLv3代码。
+> 最终结论：RustDesk是MediaServo架构设计的首选技术参考，但不能直接复用其AGPLv3代码。

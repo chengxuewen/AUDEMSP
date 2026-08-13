@@ -275,28 +275,28 @@ docker run -d \
 | **编解码器支持有限** | 不支持 AV1 在 RTMP 下的透传（仅 enhanced-rtmp 支持），部分协议组合不支持某些编码转换 |
 | **许可补充条款** | MIT 补充协议要求保留 ZLMediaKit 品牌信息，对白标/OEM 场景有限制 |
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 
 ### 值得采纳 (What to Adopt)
 
-- **EventPoller 多线程模型**：AUDEMSP 的 Host/Server 端可以考虑类似的多线程事件循环架构。每个 CPU 核心一个 EventPoller，TcpSession 绑定到固定线程的无锁模式是经过验证的高并发方案。Rust 中可用 tokio 的 `tokio::spawn` + `Runtime::new()` 模拟类似效果
-- **RTSP + WebRTC 共享 RTP 路径**：AUDEMSP 同时需要支持监控摄像头接入 (RTSP/ONVIF) 和 WebRTC 遥操作，可借鉴 ZLMediaKit 的 RTP 归一化设计，避免 RTSP→WebRTC 转换时重复解封装/封装
-- **先播后推机制**：AUDEMSP 的车端推流场景（车辆摄像头推流到云端）正好需要「播放请求先到、推流后到」的能力。ZLMediaKit 的 play-before-publish 挂起等待机制可直接参考
-- **断连续推**：边缘设备网络不稳定是常态。推流端断开后延迟回收资源并支持无感知重连的能力对 AUDEMSP 的车端/移动端场景至关重要
+- **EventPoller 多线程模型**：MediaServo 的 Host/Server 端可以考虑类似的多线程事件循环架构。每个 CPU 核心一个 EventPoller，TcpSession 绑定到固定线程的无锁模式是经过验证的高并发方案。Rust 中可用 tokio 的 `tokio::spawn` + `Runtime::new()` 模拟类似效果
+- **RTSP + WebRTC 共享 RTP 路径**：MediaServo 同时需要支持监控摄像头接入 (RTSP/ONVIF) 和 WebRTC 遥操作，可借鉴 ZLMediaKit 的 RTP 归一化设计，避免 RTSP→WebRTC 转换时重复解封装/封装
+- **先播后推机制**：MediaServo 的车端推流场景（车辆摄像头推流到云端）正好需要「播放请求先到、推流后到」的能力。ZLMediaKit 的 play-before-publish 挂起等待机制可直接参考
+- **断连续推**：边缘设备网络不稳定是常态。推流端断开后延迟回收资源并支持无感知重连的能力对 MediaServo 的车端/移动端场景至关重要
 - **批量线程切换 + 零拷贝**：媒体数据分发到多个 Peer 时，按线程聚合再批量投递任务 + shared_ptr 共享缓冲区的模式，在 Rust 中可用 Arc<[u8]> + `tokio::spawn` 实现类似效果
 
 ### 需要适配 (What to Adapt)
 
-- **协议归一化层**：ZLMediaKit 内部以 RTP/Frame 为核心归一化格式。AUDEMSP 可根据自身需求选择归一化格式（建议以 RTP 为核心，因为 AUDEMSP 的 WebRTC 遥操作和 RTSP 摄像机接入都基于 RTP）
-- **录制与回放**：AUDEMSP 的远程桌面录制可以借鉴 ZLMediaKit 的多格式录制 (FLV/MP4/HLS) 设计，结合 AUDEMSP 自身的 GPU 编码能力
-- **WebRTC 单端口多线程**：如果 AUDEMSP 的 WebRTC 服务需要承载大量客户端，ZLMediaKit 的单端口多线程方案是最好的参考实现。Rust 端可使用 `SO_REUSEPORT` + `connect` 绑定实现类似效果
-- **集群溯源模式**：AUDEMSP Server 作为信令+relay 中心，可参考 ZLMediaKit 的溯源集群模式设计边沿-源站架构。溯源协议可扩展为 AUDEMSP 的内部协议
+- **协议归一化层**：ZLMediaKit 内部以 RTP/Frame 为核心归一化格式。MediaServo 可根据自身需求选择归一化格式（建议以 RTP 为核心，因为 MediaServo 的 WebRTC 遥操作和 RTSP 摄像机接入都基于 RTP）
+- **录制与回放**：MediaServo 的远程桌面录制可以借鉴 ZLMediaKit 的多格式录制 (FLV/MP4/HLS) 设计，结合 MediaServo 自身的 GPU 编码能力
+- **WebRTC 单端口多线程**：如果 MediaServo 的 WebRTC 服务需要承载大量客户端，ZLMediaKit 的单端口多线程方案是最好的参考实现。Rust 端可使用 `SO_REUSEPORT` + `connect` 绑定实现类似效果
+- **集群溯源模式**：MediaServo Server 作为信令+relay 中心，可参考 ZLMediaKit 的溯源集群模式设计边沿-源站架构。溯源协议可扩展为 MediaServo 的内部协议
 
 ### 应该避免 (What to Avoid)
 
-- **裸 C++ 开发**：AUDEMSP 选用 Rust 是合理决策。ZLMediaKit 虽然是 C++ 中代码质量极高的项目（智能指针、无裸指针），但 C++ 的内存安全仍需开发者高度自律。Rust 的编译期内存安全保证适合 AUDEMSP 的安全敏感场景（远程桌面、车辆控制）
-- **单一 INI 配置文件**：ZLMediaKit 的百项 INI 配置文件在新手部署和自动化管理时体验不佳。AUDEMSP 应考虑结构化配置（YAML/TOML）配合环境变量覆盖，并通过 OMO 管理面统一配置
-- **无官方管理 UI**：AUDEMSP 作为 AUDE 生态组件，应从 Phase 1 就提供管理接口（gRPC API + Web UI），避免依赖第三方管理工具
-- **无内置转码**：AUDEMSP 应评估是否需要服务端转码能力。对于远程桌面场景，终端能力差异大（不同分辨率、不同解码器支持），转码可能是刚需。可考虑 GPU 硬件编码的转码路径
-- **C++ 依赖链**：ZLMediaKit 深度依赖 C++ 工具链（CMake、GCC/Clang），交叉编译到 ARM/MIPS 需要完整工具链。AUDEMSP 的 Rust + cargo 工具链在交叉编译和依赖管理上更加现代化
+- **裸 C++ 开发**：MediaServo 选用 Rust 是合理决策。ZLMediaKit 虽然是 C++ 中代码质量极高的项目（智能指针、无裸指针），但 C++ 的内存安全仍需开发者高度自律。Rust 的编译期内存安全保证适合 MediaServo 的安全敏感场景（远程桌面、车辆控制）
+- **单一 INI 配置文件**：ZLMediaKit 的百项 INI 配置文件在新手部署和自动化管理时体验不佳。MediaServo 应考虑结构化配置（YAML/TOML）配合环境变量覆盖，并通过 OMO 管理面统一配置
+- **无官方管理 UI**：MediaServo 作为 AUDE 生态组件，应从 Phase 1 就提供管理接口（gRPC API + Web UI），避免依赖第三方管理工具
+- **无内置转码**：MediaServo 应评估是否需要服务端转码能力。对于远程桌面场景，终端能力差异大（不同分辨率、不同解码器支持），转码可能是刚需。可考虑 GPU 硬件编码的转码路径
+- **C++ 依赖链**：ZLMediaKit 深度依赖 C++ 工具链（CMake、GCC/Clang），交叉编译到 ARM/MIPS 需要完整工具链。MediaServo 的 Rust + cargo 工具链在交叉编译和依赖管理上更加现代化
 **相关决策**: D-STREAM-TOPOLOGY, D-GOP-CACHE

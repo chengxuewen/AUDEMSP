@@ -202,7 +202,7 @@ mediasoup 的核心抽象是四个实体：Worker → Router → Transport → P
 3. **大房间分区级联**：单一 Router 保守限制约 16 人全互动。超出限制时创建新 Router 并 pipeToRouter 级联。每个分区内 Consumer 数 = N_partition × (N_partition-1) × 2，级联链路 Consumer = N_partition × N_other_partitions × 2。有效降低单 Router 负载
 
 **信令不可知的代价与收益**：
-- 收益：完全自由选择信令协议（WebSocket/gRPC/HTTP REST/MQTT/XMPP）；深度集成现有系统（如 AUDESYS C-FFI、AUDEBase napi-rs）；不受任何协议厂商锁定
+- 收益：完全自由选择信令协议（WebSocket/gRPC/HTTP REST/MQTT/XMPP）；深度集成现有系统（如 MediaServo C-FFI、AUDEBase napi-rs）；不受任何协议厂商锁定
 - 代价：生产级信令层至少 2-3 人月开发量（房间管理、ICE 协商、参与者状态机、重连逻辑、认证鉴权、监控指标）；信令层的任何 bug 都是全栈 bug——需要同时理解 WebRTC 协议和 mediasoup API
 
 ## 4. 现状与生态
@@ -283,32 +283,32 @@ mediasoup 的核心抽象是四个实体：Worker → Router → Transport → P
 
 ## 6. 产品特色
 
-1. **信令不可知提供最大灵活性**——同类产品中唯一不绑定任何信令协议的设计。开发者可用 WebSocket/gRPC/HTTP/MQTT/XMPP 中任意一种或多种。AUDEMSP 可用 Rust 实现专属信令，通过 napi-rs 或 C-FFI 与 AUDESYS 和 AUDEBase 深度原生集成。这是 LiveKit（绑定私有二进制协议）或 Jitsi（绑定 XMPP）无法提供的灵活度
+1. **信令不可知提供最大灵活性**——同类产品中唯一不绑定任何信令协议的设计。开发者可用 WebSocket/gRPC/HTTP/MQTT/XMPP 中任意一种或多种。MediaServo 可用 Rust 实现专属信令，通过 napi-rs 或 C-FFI 与 MediaServo 和 AUDEBase 深度原生集成。这是 LiveKit（绑定私有二进制协议）或 Jitsi（绑定 XMPP）无法提供的灵活度
 
 2. **极致性能来自 C++ Worker + libuv 事件循环**——单线程无锁设计 + 独立进程隔离。Worker 内部零上下文切换——所有 RTP 包的接收、路由、转发在同一个 libuv 事件循环中完成。CPU 效率远超 JVM（Jitsi JVB，GC 停顿）和 Go（LiveKit，goroutine 调度开销）。单个 Worker 崩溃不影响其他 Worker（进程隔离 > 线程隔离）
 
 3. **pipeToRouter() 的 Unix 管道哲学**——`routerA.pipeToRouter({ producerId, router: routerB })` ——这是 Unix 设计哲学（每个工具做好一件事，通过管道连接）在 WebRTC 世界的完美体现。一个 API 调用实现跨 CPU 核/跨主机/跨数据中心级联。支持树形/星形/链式三种拓扑任意组合。应用层完全控制级联拓扑——没有黑盒路由，没有供应商锁定
 
-4. **Rust crate 路径与 AUDEMSP 战略完全一致**——mediasoup 的 Rust crate（2023 年启动）验证了「C++ 核心 + Rust 安全绑定 + 上层语言封装」的技术路径。AUDEMSP 的 native-core（Rust → napi-rs → Node.js、Rust → FFI → C）可以直接复用这套模式。mediasoup-rust 证明了这个三层架构的可行性和性能优势
+4. **Rust crate 路径与 MediaServo 战略完全一致**——mediasoup 的 Rust crate（2023 年启动）验证了「C++ 核心 + Rust 安全绑定 + 上层语言封装」的技术路径。MediaServo 的 native-core（Rust → napi-rs → Node.js、Rust → FFI → C）可以直接复用这套模式。mediasoup-rust 证明了这个三层架构的可行性和性能优势
 
 5. **PLI/FIR 智能聚合——生产级 SFU 的必需品**——这是一个看似微小但实际至关重要的特性。100 个参与者同时在 500ms 内请求关键帧 = 编码器要在极短时间内产出 100 个 I-frame = 编码器瞬间 CPU 过载 + 网络拥塞。mediasoup 的聚合器自动合并 + debounce = 只发一个 PLI/FIR = 编码器只产出一个 I-frame。任何自研 SFU（无论用哪种语言或框架）都必须实现等价逻辑——这是生产经验，不是可选优化
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 
 ### [Adopt] 可直接借鉴
 
-1. **Worker 进程隔离模式**：AUDEMSP 的 SFU Worker 应采用类似设计——每个 CPU 核一个独立 Rust 进程（通过 `std::process::Command` spawn），IPC 通信使用 Unix Domain Socket。这比单进程多线程方案的稳定性和可运维性高一个量级
-2. **Router → Transport → Producer/Consumer 三层领域模型**：直接作为 `audemsp-conference` crate 的 domain model 设计蓝图。Producer = 源、Consumer = 订阅、Transport = 连接类型——这个抽象的简洁性已被 mediasoup 多年验证
+1. **Worker 进程隔离模式**：MediaServo 的 SFU Worker 应采用类似设计——每个 CPU 核一个独立 Rust 进程（通过 `std::process::Command` spawn），IPC 通信使用 Unix Domain Socket。这比单进程多线程方案的稳定性和可运维性高一个量级
+2. **Router → Transport → Producer/Consumer 三层领域模型**：直接作为 `mediaservo-conference` crate 的 domain model 设计蓝图。Producer = 源、Consumer = 订阅、Transport = 连接类型——这个抽象的简洁性已被 mediasoup 多年验证
 3. **PLI/FIR 聚合 + 500ms-1s debounce**：`SfuRouter` 内置此逻辑。这是生产级 SFU 的第一道防线——没有这个，100 人会议在任何一个参与者网络抖动时都会触发级联关键帧请求风暴
-4. **信令与媒体彻底分离的设计哲学**：AUDEMSP 的 architecture.md 已有此设计——mediasoup 以完整项目证明了「分离可以在极限性能下工作」这一前提
-5. **Rust crate 绑定模式**：mediasoup-rust 验证了双语言服务端绑定的可行性。AUDEMSP 的 napi-rs（Node.js）和 C-FFI（AUDESYS）两条路径可以直接参照这套 API 映射规则
+4. **信令与媒体彻底分离的设计哲学**：MediaServo 的 architecture.md 已有此设计——mediasoup 以完整项目证明了「分离可以在极限性能下工作」这一前提
+5. **Rust crate 绑定模式**：mediasoup-rust 验证了双语言服务端绑定的可行性。MediaServo 的 napi-rs（Node.js）和 C-FFI（MediaServo）两条路径可以直接参照这套 API 映射规则
 
 ### [Adapt] 需修改后采用
 
-1. **Simulcast 层选择算法**：mediasoup 的 REMB/TWCC 基础带宽估计可适配到 AUDEMSP PipelineEngine。但需要增加场景感知——远程桌面（稳定高带宽）vs 视频会议（波动中带宽）vs 车端推流（极不稳定带宽）vs 遥操作（延迟敏感带宽）——不同场景使用不同的层选择策略
-2. **pipeToRouter() 级联协议**：mediasoup 用简单的 TCP/UDP Socket 连接实现级联。AUDEMSP 的级联信令需要在传输层之上增加控制面——拓扑管理、路由表同步、健康检查、断路器、熔断恢复。gRPC 比纯 Socket 更适合做控制面通信
-3. **WebRtcServer 单端口复用**：这个 v3.20 新增的特性对 AUDEMSP 的网络策略设计有直接参考价值。大规模部署时防火墙只需开放极少端口。但适配到 Rust 生态需要自研等价设计（str0m 或 webrtc-rs 目前不内置单端口复用）
-4. **RTCDataChannel → audemsp-teleop 控制链路**：mediasoup 的 DataProducer/DataConsumer 是通用 SCTP 数据通道。AUDEMSP 的 teleop 模块需要在此之上封装控制协议——unordered、maxRetransmits=0 的低延迟模式 + 有序可靠模式双通道
+1. **Simulcast 层选择算法**：mediasoup 的 REMB/TWCC 基础带宽估计可适配到 MediaServo PipelineEngine。但需要增加场景感知——远程桌面（稳定高带宽）vs 视频会议（波动中带宽）vs 车端推流（极不稳定带宽）vs 遥操作（延迟敏感带宽）——不同场景使用不同的层选择策略
+2. **pipeToRouter() 级联协议**：mediasoup 用简单的 TCP/UDP Socket 连接实现级联。MediaServo 的级联信令需要在传输层之上增加控制面——拓扑管理、路由表同步、健康检查、断路器、熔断恢复。gRPC 比纯 Socket 更适合做控制面通信
+3. **WebRtcServer 单端口复用**：这个 v3.20 新增的特性对 MediaServo 的网络策略设计有直接参考价值。大规模部署时防火墙只需开放极少端口。但适配到 Rust 生态需要自研等价设计（str0m 或 webrtc-rs 目前不内置单端口复用）
+4. **RTCDataChannel → mediaservo-teleop 控制链路**：mediasoup 的 DataProducer/DataConsumer 是通用 SCTP 数据通道。MediaServo 的 teleop 模块需要在此之上封装控制协议——unordered、maxRetransmits=0 的低延迟模式 + 有序可靠模式双通道
 
 ### [Avoid] 已知坑与不适用场景
 
@@ -316,11 +316,11 @@ mediasoup 的核心抽象是四个实体：Worker → Router → Transport → P
 2. **全互动大房间（>50 人全视频）不可行**——Consumer 二次增长是 SFU 架构的数学约束，不是实现问题。解决方案：限制同时发言人数（类似 Jitsi Last-N）+ Webinar 模式（类似 Zoom CDN 分流）
 3. **全连接 Router mesh 不可扩展**——Jitsi 2020 年的教训同样适用于 mediasoup 部署。多节点 Router 互联必须使用 Pools 星型拓扑，永远不要全互联
 4. **Node.js FFI 开销需量化评估**——在高负载场景（数千 Consumer 同时状态变化）下，Node.js 主进程与 C++ Worker 之间的 Channel 通信可能成为瓶颈。优先使用 Rust crate 路径（零 FFI 开销）
-5. **无 MCU 混流 = 需独立服务**——PSTN 电话桥接、录制合成、多流融合混屏——这些都需要 MCU 能力。AUDEMSP 需要独立的混流/合成服务（基于 GStreamer 或自定义渲染管线）
+5. **无 MCU 混流 = 需独立服务**——PSTN 电话桥接、录制合成、多流融合混屏——这些都需要 MCU 能力。MediaServo 需要独立的混流/合成服务（基于 GStreamer 或自定义渲染管线）
 
 **总体评分**：★★★★☆ (4/5)
 
-> 评价：mediasoup 是 AUDEMSP 选定的核心 SFU 参考引擎。其在性能、灵活性、代码质量上的优势无可替代。但「信令不可知」既是最强大的武器也是最陡峭的门槛——它要求 AUDEMSP 团队在 WebRTC 工程能力上达到能独立设计完整控制面的水平。只要这个前提成立，mediasoup 的参考价值在四个选项中是最高的。
+> 评价：mediasoup 是 MediaServo 选定的核心 SFU 参考引擎。其在性能、灵活性、代码质量上的优势无可替代。但「信令不可知」既是最强大的武器也是最陡峭的门槛——它要求 MediaServo 团队在 WebRTC 工程能力上达到能独立设计完整控制面的水平。只要这个前提成立，mediasoup 的参考价值在四个选项中是最高的。
 
 ---
 
@@ -332,7 +332,7 @@ mediasoup 的核心抽象是四个实体：Worker → Router → Transport → P
 > Bluesky: @mediasoup-sfu.bsky.social
 > CHANGELOG.md: v3.1 到 v3.21 共 830+ 行记录
 > mediasoup-rust crate: github.com/versatica/mediasoup-rust
-> AUDEMSP: docs/research/video-conference.md
+> MediaServo: docs/research/video-conference.md
 
 ---
 **相关决策**: D97, D138, D-SFU-WORKER, D-SIMULCAST, D50
@@ -361,7 +361,7 @@ cd server && node server.js
 cd ../app && npm start  # 开发模式，默认 http://localhost:3000
 ```
 
-Demo 的核心价值是提供了一个可工作的信令层参考实现——信令基于 WebSocket + JSON 消息格式，房间管理、ICE 协商、Producer/Consumer 创建流程完整可追踪。AUDEMSP 的信令层可从 demo 的信令消息格式和状态机设计中获取灵感。
+Demo 的核心价值是提供了一个可工作的信令层参考实现——信令基于 WebSocket + JSON 消息格式，房间管理、ICE 协商、Producer/Consumer 创建流程完整可追踪。MediaServo 的信令层可从 demo 的信令消息格式和状态机设计中获取灵感。
 
 关键信令消息类型：
 - `getRouterRtpCapabilities` → 获取 Router 能处理的所有 RTP 能力
@@ -430,7 +430,7 @@ let pipe = router_a.pipe_to_router(
 )?;
 ```
 
-AUDEMSP 的 native-core 应参考此 API 设计——Rust crate 中的 Worker/Router/Transport/Producer/Consumer 类型系统直接映射到 AUDEMSP 的 domain model。
+MediaServo 的 native-core 应参考此 API 设计——Rust crate 中的 Worker/Router/Transport/Producer/Consumer 类型系统直接映射到 MediaServo 的 domain model。
 
 ---
 
@@ -440,7 +440,7 @@ AUDEMSP 的 native-core 应参考此 API 设计——Rust crate 中的 Worker/Ro
 - 需要完全自定义信令协议（可选 WebSocket/gRPC/MQTT/XMPP 任一）
 - 团队有深厚的 WebRTC 工程能力（SDP/ICE/DTLS/SRTP 协议栈经验）
 - 对性能有极致要求（C++ 核心 + Worker 进程隔离）
-- 需要 Rust 绑定（与 AUDESYS napi-rs 集成）
+- 需要 Rust 绑定（与 MediaServo napi-rs 集成）
 - 坚持「媒体层与控制层完全分离」的架构哲学
 
 **不选择 mediasoup 的场景**：
@@ -449,8 +449,8 @@ AUDEMSP 的 native-core 应参考此 API 设计——Rust crate 中的 Worker/Ro
 - 需要 MCU 混流能力 → 选 Janus + AudioBridge 插件
 - 需要全托管 → 选 Agora / LiveKit Cloud
 
-**混合策略**（AUDEMSP 推荐）：
-mediasoup 作为核心 SFU 引擎 + 自研信令（借鉴 Colibri2 RESTful 设计 + LiveKit PSRPC + Zoom MMR 三层调度）+ Rust 绑定（napi-rs → AUDEBase + C-FFI → AUDESYS）。取每个参考项目中最好的部分，避免任何单一项目的全套依赖。
+**混合策略**（MediaServo 推荐）：
+mediasoup 作为核心 SFU 引擎 + 自研信令（借鉴 Colibri2 RESTful 设计 + LiveKit PSRPC + Zoom MMR 三层调度）+ Rust 绑定（napi-rs → AUDEBase + C-FFI → MediaServo）。取每个参考项目中最好的部分，避免任何单一项目的全套依赖。
 
 
 ---
@@ -498,21 +498,21 @@ mediasoup 作为核心 SFU 引擎 + 自研信令（借鉴 Colibri2 RESTful 设�
 
 ---
 
-## 附录 E：mediasoup 与 AUDEMSP WebRTC 栈集成路径
+## 附录 E：mediasoup 与 MediaServo WebRTC 栈集成路径
 
-AUDEMSP 有两种技术路径集成 mediasoup 的媒体处理能力：
+MediaServo 有两种技术路径集成 mediasoup 的媒体处理能力：
 
 **路径 A：直接使用 mediasoup**
 - Node.js 调用 mediasoup npm 包 → C++ Worker 子进程
 - 优势：零研发成本获取完整的 SFU 能力。BigBlueButton 验证的生产级方案
-- 劣势：Node.js FFI 开销；信令层（Node.js）与 AUDEMSP 后台（Rust/Golang）不在同一运行时
+- 劣势：Node.js FFI 开销；信令层（Node.js）与 MediaServo 后台（Rust/Golang）不在同一运行时
 - 适用：AUDEBase 通过 napi-rs 调用 Node.js 版本的 mediasoup
 
 **路径 B：Rust 二次封装（推荐）**
-- mediasoup-rust crate → Rust Worker 封装 → AUDEMSP native-core
-- 优势：与 AUDEMSP Rust 技术栈一致。零 FFI 开销。信令层（Rust）与媒体层在同一运行时
+- mediasoup-rust crate → Rust Worker 封装 → MediaServo native-core
+- 优势：与 MediaServo Rust 技术栈一致。零 FFI 开销。信令层（Rust）与媒体层在同一运行时
 - 劣势：mediasoup-rust crate 成熟度不如 Node.js 版本（2023 年启动）
-- 适用：AUDESYS 通过 C-FFI 静态链接 + AUDEBase 通过 napi-rs 调用
+- 适用：MediaServo 通过 C-FFI 静态链接 + AUDEBase 通过 napi-rs 调用
 
 **路径 C：借鉴设计，自研实现**
 - 借鉴 mediasoup 的 Worker/Router/Transport/Producer/Consumer 领域模型

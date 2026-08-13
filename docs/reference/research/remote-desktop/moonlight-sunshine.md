@@ -328,45 +328,45 @@
   - 两者均无订阅、无付费功能、无数据收集
 
 ## 6. 产品特色
-1. **六协议分离的架构范式**：GameStream 的配对（HTTPS）、流控制（RTSP-SDP）、视频（RTP）、音频（RTP）、输入（ENet）五个独立协议各司其职，实现控制平面（TCP）和数据平面（UDP）的彻底分离。这种设计避免了单一协议的复杂性膨胀，每个子协议使用业界标准（RTSP/RTP/ENet 都是公开发表的 RFC 或协议规范），独立演进互不影响。对 AUDEMSP 的协议模块化设计（信令/媒体/控制通道分离）有直接参考价值。
+1. **六协议分离的架构范式**：GameStream 的配对（HTTPS）、流控制（RTSP-SDP）、视频（RTP）、音频（RTP）、输入（ENet）五个独立协议各司其职，实现控制平面（TCP）和数据平面（UDP）的彻底分离。这种设计避免了单一协议的复杂性膨胀，每个子协议使用业界标准（RTSP/RTP/ENet 都是公开发表的 RFC 或协议规范），独立演进互不影响。对 MediaServo 的协议模块化设计（信令/媒体/控制通道分离）有直接参考价值。
 2. **全 GPU 厂商的无锁兼容**：Sunshine 是唯一能同时通过 FFmpeg 类抽象层桥接 NVENC/AMF/QSV/VAAPI/VideoToolbox/Media Foundation/Vulkan Video 七个编码后端的开源方案。不绑定任何 GPU 厂商，不依赖任何专有驱动接口（NvFBC 是可选的增强通道而非必需路径）。这种"不锁定"的设计哲学来自于 Moonlight 被 NVIDIA GameStream 锁定的惨痛教训。
-3. **从危机中诞生的架构韧性**：2023 年 NVIDIA 停止 GameStream，Moonlight 社区面临"协议黑洞"。Sunshine 用 3 年时间从一个堆叠补丁的项目成长为比原 NVIDIA GameStream 更强大的替代品（支持更多 GPU 厂商、更多编解码器、更多操作系统）。这段历史是"不要绑定单一厂商"的最佳案例——也是 AUDEMSP 在设计之初就坚持全 GPU 兼容和全协议开放性（RFC 标准）的直接理由。
-4. **客户端覆盖矩阵无出其右**：从桌面到移动、从游戏主机（Switch/Vita）到机顶盒（Apple TV/Steam Link）、从 Web 到嵌入式（Raspberry Pi），Moonlight 的覆盖范围证明了一个理念：**当协议是开放标准时，社区能实现任何商业产品都无法企及的跨平台覆盖**。这对 AUDEMSP 的 WebRTC 标准协议选择提供了强有力的证据支撑。
+3. **从危机中诞生的架构韧性**：2023 年 NVIDIA 停止 GameStream，Moonlight 社区面临"协议黑洞"。Sunshine 用 3 年时间从一个堆叠补丁的项目成长为比原 NVIDIA GameStream 更强大的替代品（支持更多 GPU 厂商、更多编解码器、更多操作系统）。这段历史是"不要绑定单一厂商"的最佳案例——也是 MediaServo 在设计之初就坚持全 GPU 兼容和全协议开放性（RFC 标准）的直接理由。
+4. **客户端覆盖矩阵无出其右**：从桌面到移动、从游戏主机（Switch/Vita）到机顶盒（Apple TV/Steam Link）、从 Web 到嵌入式（Raspberry Pi），Moonlight 的覆盖范围证明了一个理念：**当协议是开放标准时，社区能实现任何商业产品都无法企及的跨平台覆盖**。这对 MediaServo 的 WebRTC 标准协议选择提供了强有力的证据支撑。
 5. **AV1 编码的前瞻布局**：Sunshine 在 AV1 编解码器上的支持（AV1 是新一代免版税编解码器，压缩效率比 HEVC 高 30%）体现了其技术前瞻性。在 NVIDIA RTX 4000 系列+ 和 Intel Arc GPU 上支持 AV1 硬件编码，在整个 H.264/H.265 专利困局中提供了一条清晰的未来路径。
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 ### [Adopt] 可直接借鉴
-- **控制平面与数据平面的协议分离**：信令走 TCP（可靠性），媒体和输入走 UDP（低延迟），每条数据流独立通道。AUDEMSP 的 ProtocolBroker 应继承这一设计原则
-- **多 GPU 厂商编码 API 的统一抽象层设计**：Sunshine 的 FFmpeg 类工厂模式（每个编码后端实现统一接口）可直接移植到 AUDEMSP 的 HardwareEncoder 插件的 trait 设计
+- **控制平面与数据平面的协议分离**：信令走 TCP（可靠性），媒体和输入走 UDP（低延迟），每条数据流独立通道。MediaServo 的 ProtocolBroker 应继承这一设计原则
+- **多 GPU 厂商编码 API 的统一抽象层设计**：Sunshine 的 FFmpeg 类工厂模式（每个编码后端实现统一接口）可直接移植到 MediaServo 的 HardwareEncoder 插件的 trait 设计
 - **编解码能力协商机制**（Capabilities Negotiation）：客户端声明解码矩阵（支持的编解码器/分辨率/色度/HDR），服务端选择最优编码组合。这是 WebRTC SDP 协商的核心思想
 - **延迟分解可视化**：在开发阶段作为性能诊断工具，分别展示编码/网络/解码/渲染各环节的延迟数据。帮助精确识别和定位性能瓶颈
 - **使用业界标准协议（RTP/RTSP/ENet）而非自研协议**：每个子协议都是公开发表的 RFC 或协议规范，第三方可独立实现
 
 ### [Adapt] 需修改后采用
-- **GameStream 固定六端口 → AUDEMSP 多路复用为 1-2 个端口**：
+- **GameStream 固定六端口 → MediaServo 多路复用为 1-2 个端口**：
   - 信令 + 配对 + 流控制合并为一个 WebSocket 连接（SDP/ICE 协商复用）
   - 视频 RTP + 音频 RTP 改为 WebRTC 的媒体轨道（同端口多路复用）
   - 输入控制 ENet 改为 WebRTC RTCDataChannel（无序模式 + maxRetransmits=0 等效于低延迟可靠通道）
 - **RTSP + SDP 固定消息格式 → WebRTC SDP 协商**：更灵活、可扩展性更强、支持更多动态参数（simulcast/SVC 等）
 - **LAN-only 设计（无 NAT 穿透）→ ICE/STUN/TURN 标准协议族**：
-  - AUDEMSP 需要支持 WAN 场景（远程办公、车端→云端）
+  - MediaServo 需要支持 WAN 场景（远程办公、车端→云端）
   - WebRTC ICE 框架天然支持 STUN/TURN/中继 fallback
 - **HTTPS 配对 + 证书认证 → SRP/PAKE + OIDC**：扩展认证方式，支持企业 SSO 和自托管场景
 - **端口号硬编码 → IANA 注册或动态端口**：避免与防火墙规则冲突
 
 ### [Avoid] 已知坑 / 不适用场景
-- **依赖单一厂商专有协议**：Moonlight 的历史教训是血淋淋的。AUDEMSP 的核心协议从设计之初就必须标准化、文档化、可被第三方独立实现。如果一个厂商停止支持，整个社区不会随之消亡
+- **依赖单一厂商专有协议**：Moonlight 的历史教训是血淋淋的。MediaServo 的核心协议从设计之初就必须标准化、文档化、可被第三方独立实现。如果一个厂商停止支持，整个社区不会随之消亡
 - **RTSP 在远程桌面的局限性**：RTSP 是"推流"模式，而远程桌面需要频繁的动态协商（分辨率切换、编码器切换、多用户接入/退出）。WebRTC SDP 协商更适合这一场景
-- **逆向工程的法律和可持续性风险**：AUDEMSP 的协议必须从 Phase 0 就开始公开文档化，不存在任何"先对标再公开"的灰色地带
-- **LAN-only 设计的连接限制**：AUDEMSP 从 Phase 0 就需要设计 WAN 连接方案（ICE 穿透 + TURN 中继 + 信令服务），不能像 Sunshine 那样"先做 LAN，WAN 靠 VPN 凑合"
-- **多端口在企业防火墙中的死亡**：6 个端口在严格防火墙环境中几乎全部被封锁。AUDEMSP 应使用单一端口（或 1-2 个端口）多路复用所有业务流量
-- **GPLv3 许可证边界**：不能直接复用 Sunshine/Moonlight 代码到 AUDEMSP 的 Apache 2.0 项目。架构设计思想可借鉴，代码实现需独立
+- **逆向工程的法律和可持续性风险**：MediaServo 的协议必须从 Phase 0 就开始公开文档化，不存在任何"先对标再公开"的灰色地带
+- **LAN-only 设计的连接限制**：MediaServo 从 Phase 0 就需要设计 WAN 连接方案（ICE 穿透 + TURN 中继 + 信令服务），不能像 Sunshine 那样"先做 LAN，WAN 靠 VPN 凑合"
+- **多端口在企业防火墙中的死亡**：6 个端口在严格防火墙环境中几乎全部被封锁。MediaServo 应使用单一端口（或 1-2 个端口）多路复用所有业务流量
+- **GPLv3 许可证边界**：不能直接复用 Sunshine/Moonlight 代码到 MediaServo 的 Apache 2.0 项目。架构设计思想可借鉴，代码实现需独立
 
 **总体评分**：★★★★☆ (4/5)
-**评语**：六协议分离架构和全 GPU 厂商统一抽象的最佳参考。对 AUDEMSP 的协议模块化结构设计和编码器插件体系有重要启发。但依赖专有协议的历史教训（NVIDIA GameStream 停止支持）和 LAN-only 设计是 AUDEMSP 必须避免的陷阱。协议开放性、全平台兼容性和 WAN 场景支持是 AUDEMSP 从 Phase 0 就应该坚持的设计原则。
+**评语**：六协议分离架构和全 GPU 厂商统一抽象的最佳参考。对 MediaServo 的协议模块化结构设计和编码器插件体系有重要启发。但依赖专有协议的历史教训（NVIDIA GameStream 停止支持）和 LAN-only 设计是 MediaServo 必须避免的陷阱。协议开放性、全平台兼容性和 WAN 场景支持是 MediaServo 从 Phase 0 就应该坚持的设计原则。
 
 ### GameStream六协议至WebRTC的迁移映射
-如果AUDEMSP采用WebRTC标准协议栈替代GameStream的六个独立协议，迁移映射如下：
+如果MediaServo采用WebRTC标准协议栈替代GameStream的六个独立协议，迁移映射如下：
 | GameStream协议 | WebRTC等效 | 差异 |
 |----------------|------------|------|
 | HTTP (服务发现) | ICE Candidate交换 | WebRTC通过信令服务交换ICE candidates，无独立HTTP发现 |
@@ -389,7 +389,7 @@ WebRTC的优势：
 **相关决策**: D47 (渲染), D-SIMULCAST, C5 (&[u8] boundary)
 
 ## 附录：Sunshine编码器工厂模式分析
-Sunshine的FFmpeg类编码器工厂是AUDEMSP HardwareEncoder插件设计的直接参考：
+Sunshine的FFmpeg类编码器工厂是MediaServo HardwareEncoder插件设计的直接参考：
 ```cpp
 // Sunshine编码器工厂模式（概念抽象，非精确源代码）
 class EncoderFactory {
@@ -437,22 +437,22 @@ struct EncoderCapabilities {
 - capabilities()查询：让信令协商知道每个编码器的能力矩阵
 
 ## 附录：从GameStream危机看协议开放性的必要性
-NVIDIA停止GameStream的历史是AUDEMSP协议设计哲学的最强案例支撑：
-| 如果Moonlight... | 结果 | AUDEMSP的教训 |
+NVIDIA停止GameStream的历史是MediaServo协议设计哲学的最强案例支撑：
+| 如果Moonlight... | 结果 | MediaServo的教训 |
 |-----------------|------|----------------|
 | 继续依赖NVIDIA GameStream | 2023年社区消亡 | 不要依赖任何单一厂商的专有协议 |
 | 只有Android客户端开源 | iOS/tvOS/Switch/PSVita用户被抛弃 | 协议的开放性超越客户端实现 |
 | 协议基于逆向工程（不易独立实现） | Sunshine需要3年追赶 | 从Phase 0公开文档化核心协议 |
 | 没有Sunshine社区 | 整个GameStream生态消亡 | 社区是协议生命力的最终保障 |
 
-AUDEMSP应从中吸取的最核心教训：**协议的开放性（RFC标准+公开文档+可被第三方独立实现）不是nice-to-have，而是生存的必需条件。** 如果AUDEMSP依赖任何专有技术，它可能在三五年后成为下一个GameStream——被厂商抛弃、社区消亡、遗产代码。WebRTC标准协议栈的选择不是技术偏好，而是架构生存的战略决策。
+MediaServo应从中吸取的最核心教训：**协议的开放性（RFC标准+公开文档+可被第三方独立实现）不是nice-to-have，而是生存的必需条件。** 如果MediaServo依赖任何专有技术，它可能在三五年后成为下一个GameStream——被厂商抛弃、社区消亡、遗产代码。WebRTC标准协议栈的选择不是技术偏好，而是架构生存的战略决策。
 
 ## 附录：Moonlight客户端覆盖启示
 Moonlight的11个平台覆盖来自于：
 1. GameStream协议基于标准化子协议——每个子协议都有开源实现
 2. 开源社区的分布式贡献——每个平台由不同开发者独立维护
 
-对AUDEMSP：WebRTC的标准化程度更高（所有子组件都是RFC标准），理论上客户端覆盖可超越Moonlight。关键挑战是屏幕捕获和输入注入的各平台适配。
+对MediaServo：WebRTC的标准化程度更高（所有子组件都是RFC标准），理论上客户端覆盖可超越Moonlight。关键挑战是屏幕捕获和输入注入的各平台适配。
 
 ## 附录：Sunshine架构韧性分析
 Sunshine在3年内发展为功能超越NVIDIA GameStream的服务端，其架构韧性来自于：
@@ -462,7 +462,7 @@ Sunshine在3年内发展为功能超越NVIDIA GameStream的服务端，其架构
 3. GitHub社区驱动：多子项目结构使贡献者可独立负责各自模块
 4. 版本号灵活演进：从v0.1到v2026.516，适应发布节奏变化
 
-这些直接映射到AUDEMSP：
+这些直接映射到MediaServo：
 - HardwareEncoder Plugin trait = 编码器工厂模式
 - ScreenCapture Plugin trait = 屏幕捕获多后端
 - crates工作空间 = 多子项目模块化
@@ -473,7 +473,7 @@ Sunshine的AV1支持是编解码器演进的前瞻方向：
 AV1优势：免版税、比HEVC压缩率高30%、支持4:4:4和HDR、新GPU硬件编码
 AV1限制：仅新GPU支持硬件编码、软件编码比VP9慢2-3x、客户端解码要求高于H.264/HEVC
 
-AUDEMSP AV1策略：Phase 1用VP8/VP9+H.264/H.265；Phase 2+当RTX 4000+/Arc GPU普及后启用AV1硬件编码；通过Encoder Capabilities协商自动选择最佳编码器。
+MediaServo AV1策略：Phase 1用VP8/VP9+H.264/H.265；Phase 2+当RTX 4000+/Arc GPU普及后启用AV1硬件编码；通过Encoder Capabilities协商自动选择最佳编码器。
 
 ### Moonlight+Sunshine技术债务清单
 1. 依赖单一厂商专有协议（已由Sunshine修复，但教训永久）
@@ -485,16 +485,16 @@ AUDEMSP AV1策略：Phase 1用VP8/VP9+H.264/H.265；Phase 2+当RTX 4000+/Arc GPU
 7. HDR与非HDR客户端的色调映射复杂性
 8. 多手柄蓝牙干扰（建议USB有线连接）
 
-### 总结：Moonlight+Sunshine对AUDEMSP的核心价值
-Moonlight+Sunshine贡献了三个对AUDEMSP至关重要的设计遗产：
+### 总结：Moonlight+Sunshine对MediaServo的核心价值
+Moonlight+Sunshine贡献了三个对MediaServo至关重要的设计遗产：
 1. 六协议分离架构——证明控制平面与数据平面的严格分离是高性能远程传输的正确范式
 2. 全GPU厂商兼容——证明不绑定单一厂商不仅是技术正确性，更是生态生存的必需条件
 3. 从危机中重生——证明协议的开放性（RFC标准+公开文档）是生态长期生命力的唯一保障
 
-AUDEMSP从Moonlight+Sunshine学到的最重要一课：NVIDIA停止GameStream不是意外，而是厂商控制协议的必然结果。AUDEMSP必须从Phase 0就以RFC标准为基础、以公开文档为规范、以社区生态为目标——这不是技术偏好，而是架构生存的战略决策。
+MediaServo从Moonlight+Sunshine学到的最重要一课：NVIDIA停止GameStream不是意外，而是厂商控制协议的必然结果。MediaServo必须从Phase 0就以RFC标准为基础、以公开文档为规范、以社区生态为目标——这不是技术偏好，而是架构生存的战略决策。
 
-## 附录：Moonlight+Sunshine对AUDEMSP功能优先级的影响
-基于Moonlight+Sunshine的协议分离和编码器抽象经验，AUDEMSP架构建议：
+## 附录：Moonlight+Sunshine对MediaServo功能优先级的影响
+基于Moonlight+Sunshine的协议分离和编码器抽象经验，MediaServo架构建议：
 
 Phase 0：WebRTC协议栈选型（替代GameStream六协议）、编码器Plugin trait定义（参考编码器工厂模式）
 Phase 1：控制/数据平面分离实现、VP8/VP9+H.264/H.265多编码器支持、编解码能力协商机制

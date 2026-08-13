@@ -288,42 +288,42 @@ HTTP 隧道 (~5%):
 1. **全球最大规模的商业化远程桌面平台**：月活设备 3 亿+、1000+ 全球中继节点、127 个操作系统变体覆盖、632,000+ 付费客户。团队规模（2,500+ 员工）和基础设施投入是任何其他远程桌面产品难以企及的。这种规模带来的网络效应（更多中继节点 → 更低延迟 → 更多用户）形成了极强的商业护城河。
 2. **4 层连接策略金字塔的可达性工程**：UDP 打洞（~70%）→ TCP P2P（~15%）→ 中继（~10%）→ HTTP 隧道（~5%）。这种层层 fallback 设计确保了年连接完成率 >99%。对企业防火墙环境（通常封锁非标准端口和 UDP）的 HTTP 443 隧道 fallback 尤为关键。
 3. **SRP 密码认证协议**：Secure Remote Password 协议确保密码从不离开客户端内存，不通过网络传输。即使 TeamViewer 服务器被攻破，攻击者也无法获取用户密码或解密历史会话。这是远程桌面认证安全的黄金标准。2016 年安全事件中，即使攻击者获取了用户凭证，SRP 机制确保了他们无法通过协议层面窃取更多密码。
-4. **从远程桌面到工业数字化的演进路径**：IoT 远程管理和 AR 辅助维修展示了远程桌面技术的天花板远不止"远程控制电脑"。TeamViewer 的战略是将远程连接能力从桌面扩展到任何带芯片的设备。AUDEMSP 的 WebRTC 遥操作和车端推流场景可借鉴这一演进思路。
-5. **企业级管理体系的完整性**：Management Console + Conditional Access + AD/Azure AD 同步 + SIEM 导出 + MSP 多租户 + Servicecamp 工单 —— 构成最完整的企业远程桌面管理闭环。这种"控制面"的完整性是 AUDEMSP 功能规划的重要参考。
+4. **从远程桌面到工业数字化的演进路径**：IoT 远程管理和 AR 辅助维修展示了远程桌面技术的天花板远不止"远程控制电脑"。TeamViewer 的战略是将远程连接能力从桌面扩展到任何带芯片的设备。MediaServo 的 WebRTC 遥操作和车端推流场景可借鉴这一演进思路。
+5. **企业级管理体系的完整性**：Management Console + Conditional Access + AD/Azure AD 同步 + SIEM 导出 + MSP 多租户 + Servicecamp 工单 —— 构成最完整的企业远程桌面管理闭环。这种"控制面"的完整性是 MediaServo 功能规划的重要参考。
 
-## 7. 对 AUDEMSP 的参考价值
+## 7. 对 MediaServo 的参考价值
 ### [Adopt] 可直接借鉴
-- **SRP 或 PAKE 类密码认证协议**：避免密码传输，确保即使信令服务器沦陷也无法获取用户密码。对 AUDEMSP AuthProvider trait 的密码认证实现有直接参考价值
-- **4 层连接策略金字塔的分层 fallback 模式**：P2P 优先 + 中继 fallback + HTTP 隧道最终兜底。AUDEMSP 应该设计类似的网络策略分层
+- **SRP 或 PAKE 类密码认证协议**：避免密码传输，确保即使信令服务器沦陷也无法获取用户密码。对 MediaServo AuthProvider trait 的密码认证实现有直接参考价值
+- **4 层连接策略金字塔的分层 fallback 模式**：P2P 优先 + 中继 fallback + HTTP 隧道最终兜底。MediaServo 应该设计类似的网络策略分层
 - **TLS 1.3 + PFS 的会话加密模型**：确保每次会话使用独立的会话密钥，历史会话安全
-- **Conditional Access 条件访问策略**：基于设备健康/位置/网络的条件连接审批，可作为 AUDEMSP LicenseManager 的前置校验参考
+- **Conditional Access 条件访问策略**：基于设备健康/位置/网络的条件连接审批，可作为 MediaServo LicenseManager 的前置校验参考
 - **API/SDK 商业化模式**：将远程控制能力以 SDK 形式提供给第三方嵌入，打开 B2B2B 的商业化路径
 
 ### [Adapt] 需修改后采用
-- **中心化 Master Server 模型** → 分布式/联邦化信令服务：AUDEMSP 的信令支持自托管 + 多实例部署，避免单点故障
+- **中心化 Master Server 模型** → 分布式/联邦化信令服务：MediaServo 的信令支持自托管 + 多实例部署，避免单点故障
 - **专有封闭协议** → 基于 WebRTC 标准协议族（ICE/STUN/TURN + DTLS-SRTP + RTP/RTCP），协议公开文档化
 - **全球中继节点部署** → 渐进式部署：Phase 1 支持单节点/少量节点中继，Phase 2+ 逐步扩展到多区域
-- **Management Console** → AUDEMSP 权限驱动 UI：通过后台返回的 Permission 对象动态加载功能模块，而非独立的管理控制台
+- **Management Console** → MediaServo 权限驱动 UI：通过后台返回的 Permission 对象动态加载功能模块，而非独立的管理控制台
 - **IoT 和 AR** → 不属于 Phase 0 远程桌面范围，可在 Phase 2+ 的 WebRTC 遥操作和监控相机场景中扩展
 
 ### [Avoid] 已知坑 / 不适用场景
-- **中心化单点故障**：信令服务必须是分布式的。AUDEMSP 在设计上支持自托管信令和联邦化部署，任何时候不依赖单一节点或单一厂商
-- **协议不透明**：AUDEMSP 核心协议必须基于 RFC 标准并公开文档化。确保第三方可独立审计安全性和实现兼容客户端
-- **过度激进的商业用途检测**：AUDEMSP License 检测逻辑应透明、可预测、有明确的申诉机制。不应出现类似 TeamViewer 的"误标记个人用户为商业使用"的用户体验问题
-- **高昂的企业定价**：AUDEMSP 作为基础设施组件而非独立 SaaS 产品，成本结构应参照技术栈实际成本而非市场对标定价
+- **中心化单点故障**：信令服务必须是分布式的。MediaServo 在设计上支持自托管信令和联邦化部署，任何时候不依赖单一节点或单一厂商
+- **协议不透明**：MediaServo 核心协议必须基于 RFC 标准并公开文档化。确保第三方可独立审计安全性和实现兼容客户端
+- **过度激进的商业用途检测**：MediaServo License 检测逻辑应透明、可预测、有明确的申诉机制。不应出现类似 TeamViewer 的"误标记个人用户为商业使用"的用户体验问题
+- **高昂的企业定价**：MediaServo 作为基础设施组件而非独立 SaaS 产品，成本结构应参照技术栈实际成本而非市场对标定价
 
-- **定价模型的启示**：TeamViewer 的高定价是其最大弱点——企业用户年费可达数十万美元。AUDEMSP 作为基础设施组件，定价模型应参照技术栈实际成本而非市场对标。开源 + 技术支持服务的商业模式可能是更可持续的路径。但 TeamViewer 的高定价也验证了远程桌面技术的商业价值——如果提供足够的差异化价值（IoT/AR/全球覆盖），用户愿意支付高溢价
-- **IoT 和 AR 的演进路径**：TeamViewer 从远程桌面到 IoT 远程管理再到 AR 辅助维修的产品演进，展示了远程连接技术的全方位可能性。AUDEMSP 当前聚焦 Phase 0 远程桌面，但 WebRTC 遥操作和车端推流场景天然适合发展为 AUDEMSP 的 IoT/AR 扩展方向
-- **企业功能完整性的参考模板**：虽然不照搬 TeamViewer 的中心化管理模式，但其企业功能的完整性（Conditional Access/AD 集成/SIEM/SSO/MSP 多租户）是 AUDEMSP Phase 2+ 企业功能规划的功能清单参考
+- **定价模型的启示**：TeamViewer 的高定价是其最大弱点——企业用户年费可达数十万美元。MediaServo 作为基础设施组件，定价模型应参照技术栈实际成本而非市场对标。开源 + 技术支持服务的商业模式可能是更可持续的路径。但 TeamViewer 的高定价也验证了远程桌面技术的商业价值——如果提供足够的差异化价值（IoT/AR/全球覆盖），用户愿意支付高溢价
+- **IoT 和 AR 的演进路径**：TeamViewer 从远程桌面到 IoT 远程管理再到 AR 辅助维修的产品演进，展示了远程连接技术的全方位可能性。MediaServo 当前聚焦 Phase 0 远程桌面，但 WebRTC 遥操作和车端推流场景天然适合发展为 MediaServo 的 IoT/AR 扩展方向
+- **企业功能完整性的参考模板**：虽然不照搬 TeamViewer 的中心化管理模式，但其企业功能的完整性（Conditional Access/AD 集成/SIEM/SSO/MSP 多租户）是 MediaServo Phase 2+ 企业功能规划的功能清单参考
 
-### 对 AUDEMSP 编码策略的额外启示
-TeamViewer 的编码自适应机制揭示了一个关键点：**编码策略不应硬编码，而应是网络条件的函数**。AUDEMSP 的 Encoder Plugin 应实现：
+### 对 MediaServo 编码策略的额外启示
+TeamViewer 的编码自适应机制揭示了一个关键点：**编码策略不应硬编码，而应是网络条件的函数**。MediaServo 的 Encoder Plugin 应实现：
 1. 实时网络探测（RTT/丢包率/带宽/抖动）→ 定期反馈到编码参数
 2. 编码参数可调：分辨率（多档缩放）、帧率（1-60fps 连续可调）、画质（QP 参数/色深）、编码器选择（硬/软切换）
 3. 内容自适应：文本页→高画质低帧率；视频页→低画质高帧率；静态页→停止发送
 4. 这些不是 Phase 0 的必须项，但应在 Encoder Plugin trait 设计中预留扩展点
 **总体评分**：★★★★☆ (4/5)
-**评语**：全球远程桌面商业化的灯塔和行业天花板。其 SRP 安全认证、连接策略金字塔、企业功能完整性和从桌面到 IoT/AR 的产品演进思路是最值得借鉴的地方。但中心化架构和闭源协议与 AUDEMSP 的分布式/自托管/开放协议理念有根本冲突，需要取其精华、走不同路径。
+**评语**：全球远程桌面商业化的灯塔和行业天花板。其 SRP 安全认证、连接策略金字塔、企业功能完整性和从桌面到 IoT/AR 的产品演进思路是最值得借鉴的地方。但中心化架构和闭源协议与 MediaServo 的分布式/自托管/开放协议理念有根本冲突，需要取其精华、走不同路径。
 <!-- -->
 **相关决策**: D2 (Client+Host), D8 (四形态)
 ## 附录：TeamViewer 安全架构详细分析
@@ -373,14 +373,14 @@ TeamViewer Tensor (MSP) 管理层次:
 - 策略模板: 连接审批工作流、Conditional Access、会话录制、带宽限制
 - 集成导出: SIEM(Splunk/Sentinel)、API自动化、Python SDK
 
-## 附录：对 AUDEMSP 企业功能规划的参考
+## 附录：对 MediaServo 企业功能规划的参考
 
-TeamViewer 的企业功能体系是远程桌面商业化最完整的模板，AUDEMSP 可选择性借鉴：
+TeamViewer 的企业功能体系是远程桌面商业化最完整的模板，MediaServo 可选择性借鉴：
 1. Conditional Access（条件访问）→ 可在 LicenseManager 中实现
 2. Multi-Tenant MSP 架构 → 与 AUDEBase 的多租户能力对齐
 3. SIEM 日志导出 → 企业客户合规要求，Phase 2+ 规划
 4. SSO (SAML/OIDC) → AuthProvider trait 的第二实现
-5. Management Console → AUDEMSP 的权限驱动 Web UI
+5. Management Console → MediaServo 的权限驱动 Web UI
 
 ## 附录：TeamViewer 连接策略详细概率模型
 
@@ -428,15 +428,15 @@ TeamViewer的1000+路由节点并非在地理上均匀分布。部署策略遵�
 - Tier 3区域（低密度）：非洲、中亚、太平洋岛国 → 每区域1个节点或依赖邻国节点
 - 选数据中心标准：ISO 27001认证、Ping值<30ms到主要ISP骨干、冗余电力+网络（至少2条独立光纤上行）
 
-### 对AUDEMSP信令服务的启示
-TeamViewer的Master/KeepAlive/Router三类服务器的职责分离是AUDEMSP信令设计的参考模式：
-- Master Server（认证+授权+账户）→ AUDEMSP的AuthProvider trait实现（支持多种实现：本地DB/LDAP/OIDC）
-- KeepAlive Server（在线状态+路由发现）→ AUDEMSP的PresenceService（设备在线/离线/网络坐标跟踪）
-- Router Server（中继转发）→ AUDEMSP的RelayService（TURN服务器或自研中继节点）
-- AUDEMSP的一个改进：三类服务都可水平扩展（多实例部署），而TeamViewer的Master Server在架构上是单点。信令服务从设计上必须是分布式的
+### 对MediaServo信令服务的启示
+TeamViewer的Master/KeepAlive/Router三类服务器的职责分离是MediaServo信令设计的参考模式：
+- Master Server（认证+授权+账户）→ MediaServo的AuthProvider trait实现（支持多种实现：本地DB/LDAP/OIDC）
+- KeepAlive Server（在线状态+路由发现）→ MediaServo的PresenceService（设备在线/离线/网络坐标跟踪）
+- Router Server（中继转发）→ MediaServo的RelayService（TURN服务器或自研中继节点）
+- MediaServo的一个改进：三类服务都可水平扩展（多实例部署），而TeamViewer的Master Server在架构上是单点。信令服务从设计上必须是分布式的
 
-## 附录：TeamViewer 与 AUDEMSP 架构哲学的根本差异
-| 维度 | TeamViewer | AUDEMSP |
+## 附录：TeamViewer 与 MediaServo 架构哲学的根本差异
+| 维度 | TeamViewer | MediaServo |
 |------|-----------|-----------|
 | 架构模式 | 中心化云服务（3亿设备依赖单一基础设施） | 分布式自托管（可独立部署，可委托平台） |
 | 协议开放性 | 专有闭源（2017/2024年两次安全白皮书） | RFC标准+公开文档（WebRTC/Protobuf/RTP） |
@@ -447,33 +447,33 @@ TeamViewer的Master/KeepAlive/Router三类服务器的职责分离是AUDEMSP信�
 | 技术栈 | C++/Qt+专有协议 | Rust核心+WebRTC+插件化 |
 | IoT/AR | 原生支持（Frontline+IoT Agent） | Phase 2+扩展（遥操作+监控相机） |
 
-核心启示：AUDEMSP不走TeamViewer的大而全路线（中心化云服务垄断），而是走小而美路线（开放协议+自托管+插件化）。两者服务不同的市场需求。
+核心启示：MediaServo不走TeamViewer的大而全路线（中心化云服务垄断），而是走小而美路线（开放协议+自托管+插件化）。两者服务不同的市场需求。
 
-### TeamViewer技术债务清单（AUDEMSP应避免）
-1. 中心化架构：Master Server单点故障风险。AUDEMSP已设计分布式信令
-2. 闭源协议：不可审计。AUDEMSP采用RFC标准+公开文档
-3. 高定价模型：$50-$207/月。AUDEMSP开源+技术支持成本模型
+### TeamViewer技术债务清单（MediaServo应避免）
+1. 中心化架构：Master Server单点故障风险。MediaServo已设计分布式信令
+2. 闭源协议：不可审计。MediaServo采用RFC标准+公开文档
+3. 高定价模型：$50-$207/月。MediaServo开源+技术支持成本模型
 4. 更新机制：历史上无独立签名验证路径（已修复但教训不变）
 5. 密码重用导致的2016安全事件：中心化身份系统的脆弱性
 6. 移动端电池消耗：后台连接维护的高电量开销
 7. macOS权限复杂度：Screen Recording权限导致的高支持成本
 8. Web客户端功能阉割：Web版与桌面版功能差距大
 
-### 总结：TeamViewer对AUDEMSP的核心价值
-TeamViewer不是AUDEMSP要复刻的模式，而是AUDEMSP要反省的对象。它的成功不可否认（3亿月活、$6B+营收、2500+员工），但其中心化架构、闭源协议、高昂定价和安全事件也是不可忽视的教训。AUDEMSP应从TeamViewer学习：
+### 总结：TeamViewer对MediaServo的核心价值
+TeamViewer不是MediaServo要复刻的模式，而是MediaServo要反省的对象。它的成功不可否认（3亿月活、$6B+营收、2500+员工），但其中心化架构、闭源协议、高昂定价和安全事件也是不可忽视的教训。MediaServo应从TeamViewer学习：
 - 连接策略金字塔的分层设计（4层fallback）
 - SRP密码认证协议的安全哲学（密码不传输）
 - 企业功能完整性的功能清单（Conditional Access/AD/SIEM/SSO）
 - IoT和AR的产品演进路径（远程连接的全场景扩展）
 
-而AUDEMSP应避免：
+而MediaServo应避免：
 - 中心化架构的单点故障
 - 闭源协议的审计黑箱
 - SaaS定价的封闭商业模式
 - 凭据管理不善导致的安全事件
 
-## 附录：TeamViewer对AUDEMSP功能优先级的影响
-基于TeamViewer的企业功能体系，AUDEMSP功能优先级排序建议：
+## 附录：TeamViewer对MediaServo功能优先级的影响
+基于TeamViewer的企业功能体系，MediaServo功能优先级排序建议：
 
 Phase 0（架构定义）：SRP/PAKE密码认证、连接策略分层设计、P2P+中继fallback模型
 Phase 1（MVP）：基本远程桌面、文件传输、剪贴板同步、无人值守访问
@@ -481,7 +481,7 @@ Phase 2（企业）：Conditional Access条件访问、LDAP/AD集成、会话录
 Phase 3（扩展）：SIEM日志导出、SSO单点登录、MSP多租户管理
 Phase 4（未来）：IoT远程管理、AR辅助、WebRTC遥操作扩展
 
-此优先级排序将TeamViewer用20年构建的功能按AUDEMSP需求重新组织，确保每个Phase交付完整可用产品。
+此优先级排序将TeamViewer用20年构建的功能按MediaServo需求重新组织，确保每个Phase交付完整可用产品。
 
 ## 附录：参考数据来源说明
 本文档分析基于以下数据来源：
@@ -495,7 +495,7 @@ Phase 4（未来）：IoT远程管理、AR辅助、WebRTC遥操作扩展
 
 ---
 
-> 本文档为AUDEMSP Phase 0架构定义阶段的参考资料。
+> 本文档为MediaServo Phase 0架构定义阶段的参考资料。
 > 随着项目推进，部分分析和建议可能根据实际需求和约束调整。
 > 所有外部产品数据、版本、定价信息截至2026年7月。
 > TeamViewer是TeamViewer AG的注册商标。本文档仅供技术参考。

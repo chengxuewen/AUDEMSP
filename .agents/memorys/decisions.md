@@ -328,4 +328,4 @@ C++ 全链路 gcc 10.5；② **Jetson H264/AV1 硬编码器可用**（人工验�
 
 **范围**: T1 机械替换 259 文件/1436 行（env MEDIASERVO_* + 品牌 MediaServo + 小写 mediaservo + audemedia→mediaservo）+ 7 crate 目录/二进制/CLI 文件 git mv；T2 AUDE 生态剥离（README/AGENTS/docs 11 文件 80 处 → 中性平台表述）；T3 基础设施名（compose `name: mediaservo`、service 文件、pixi 名、audemsp_cli.py）；doc-audit 修复 H1-H3/M1-M3（decisions/status/conventions/AGENTS 同步）。
 
-**影响**: ① Cargo.lock 随 T1 同步（7/7 mediaservo, 0 audemsp）；② Docker 层缓存全失效一次性重编译；③ env 改名 `AUDEMSP_*`→`MEDIASERVO_*`（scripts 侧零残留）；④ 保留面: `.agents/memorys/` + `.sisyphus/.omo plans` + `docs 调研存档` 保留历史提及（D209 等史实不可篡改）；⑤ 后续约定/检查命令统一 `mediaservo-*`（conventions C4-C22 同步）。
+**影响**: ① Cargo.lock 随 T1 同步（7/7 mediaservo, 0 audemsp）；② Docker 层缓存全失效一次性重编译；③ env 改名 `AUDEMSP_*`→`MEDIASERVO_*`（scripts 侧零残留）；④ 保留面: **仅 `.agents/`**（decisions/pitfalls/status/conventions 历史提及保留, 史实不可篡改）; `.sisyphus/.omo plans`（另 mediaservo-rename 计划对照记录）与 `docs/research`/`docs/reference/research` 调研存档已随 2026-08-13 政策更新为 MediaServo（用户指令: 仅 .agents 保留）；⑤ 后续约定/检查命令统一 `mediaservo-*`（conventions C4-C22 同步）。

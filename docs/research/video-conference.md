@@ -1,7 +1,7 @@
 # 视频会议产品调研报告
 
 > 生成日期: 2026-07-16
-> 目的: 为 AUDEMSP 会议模块选型 SFU 架构和信令设计提供参考
+> 目的: 为 MediaServo 会议模块选型 SFU 架构和信令设计提供参考
 
 ---
 
@@ -532,7 +532,7 @@ Agora 是全球领先的实时互动 (RTE) PaaS 平台。不直接做视频会�
 | **AI Agent** | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 | **部署复杂度** | 高(需自建信令) | 中 | 中 | 低(单二进制) | 不可自建 | 不可自建 |
 
-## AUDEMSP 技术选型建议
+## MediaServo 技术选型建议
 
 ### SFU 选型
 
@@ -541,9 +541,9 @@ Agora 是全球领先的实时互动 (RTE) PaaS 平台。不直接做视频会�
 理由：
 1. **性能最优**: C++ 实现，Worker 进程隔离，极致 CPU 效率
 2. **最大灵活性**: 信令不可知，可完全自定义控制面
-3. **级联生态**: `pipeToRouter()` 支持同机/跨机级联，适合 AUDEMSP 多场景需求
+3. **级联生态**: `pipeToRouter()` 支持同机/跨机级联，适合 MediaServo 多场景需求
 4. **生产验证**: BigBlueButton 等大规模部署验证
-5. **Rust FFI 友好**: 可通过 napi-rs 或 FFI 封装为 Rust crate，融入 AUDEMSP native-core
+5. **Rust FFI 友好**: 可通过 napi-rs 或 FFI 封装为 Rust crate，融入 MediaServo native-core
 
 ### 信令设计
 
@@ -587,7 +587,7 @@ Agora 是全球领先的实时互动 (RTE) PaaS 平台。不直接做视频会�
 9. **E2EE 与 SFU 转发兼容**: 只需要 RTP header 可读写 (SRTP 解包后重加密)，payload 不碰
 10. **拥塞控制要自适应**: 腾讯会议经验——不同网络类型用不同算法，延迟敏感 vs 丢包敏感
 
-### 架构蓝图: AUDEMSP 会议模块
+### 架构蓝图: MediaServo 会议模块
 
 ```
 ┌─────────────────────────────────────────────────────┐
