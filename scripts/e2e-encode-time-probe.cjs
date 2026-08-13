@@ -1,7 +1,7 @@
 // T4 实证: play → 等 encoder_status → 打开 stats 面板 → 读"平均编码耗时"
 const { chromium } = require('playwright');
 const CHROME = '/home/maxsense/.cache/ms-playwright/chromium_headless_shell-1232/chrome-headless-shell-linux64/chrome-headless-shell';
-const APP = 'http://127.0.0.1:5173';
+const APP = process.env.APP_URL || 'http://127.0.0.1:5173';
 const TOKEN = process.argv[2];
 (async () => {
   const browser = await chromium.launch({ executablePath: CHROME, headless: true,
@@ -12,8 +12,17 @@ const TOKEN = process.argv[2];
   await page.goto(APP, { waitUntil: 'domcontentloaded' });
   await page.evaluate(t => localStorage.setItem('audemsp_admin_token', t), TOKEN);
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.locator('.btn-play').first().waitFor({ timeout: 15000 });
-  await page.locator('.btn-play').first().click();
+  const candidates = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('*')).filter(el => el.children.length === 0 && el.textContent.trim().length > 0)
+      .map(el => ({ tag: el.tagName, cls: String(el.className).slice(0, 30), text: el.textContent.trim().slice(0, 25) }))
+      .filter(x => x.text.includes('Play') || x.text.includes('play') || x.cls.includes('btn'))
+      .slice(0, 8));
+  await page.waitForFunction(() => document.body.innerText.includes('Play'), { timeout: 20000 });
+  await new Promise(r => setTimeout(r, 2000));
+  await page.evaluate(() => {
+    const el = Array.from(document.querySelectorAll('*')).find(e => e.textContent.includes('Play') && e.textContent.trim().length < 30);
+    if (el) el.click();
+  });
   await page.waitForFunction(() => { const v = document.querySelector('video'); return v && v.videoWidth > 0; }, { timeout: 90000 });
   console.log('video ready');
   await new Promise(r => setTimeout(r, 8000)); // 等 ≥4 个 encoder_status 周期

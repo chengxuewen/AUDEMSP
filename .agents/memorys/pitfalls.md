@@ -959,3 +959,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: 三段同步修复 — ① host 自构 offer 补 extmap/rtcp-fb（T1）② produce 参数补 headerExtensions（T2）+ rtcpFeedback transport-cc/nack/pli/fir（T4）③ 浏览器 consume 侧 buildRemoteSdp 补 extmap + rtpCaps 补 headerExtensions（preferredId/preferredEncrypt/direction 三字段，mediasoup-rs RtpHeaderExtension 结构）
 - **验证**: 浏览器接收 1987-2003 kbps（max=2000 命中）+ 1280x720 恢复 + 30fps + 关键帧 2s；e2e_sfu 4/4
 - **教训**: produce 参数必须完整镜像协商能力（headerExtensions + rtcpFeedback 缺一不可）；BWE 是端到端闭环（host offer → produce → mediasoup TCCS → consume rtpCaps → 浏览器 feedback → 转发回 host），任何一段断都表现为"码率停在 min"
+
+## PIT-87: host ICE Failed 无重连 — server 重启后 host 永久挂起 (2026-08-13)
+- **症状**: `restart server`（容器重建, mediasoup WebRtcServer 重启）后, host 进程仍活着但 `SFU ICE state: Failed` / `PC state: Failed`, server 侧 peer 被清理（rooms 空）; web play 显示 "No active devices"; host 无恢复行为
+- **根因**: host SFU 流程是**一次性协商**（create transport → connect → produce → 帧循环），无 ICE Failed 监听/重连/退出逻辑——mediasoup 侧断开后 host 永久挂着
+- **解法**: 当前手动 `pkill audemsp-host` + 重启; 待办: host 增加 `on_ice_connection_state_change(Failed) → 自动重连或退出(exit 非零码由守护进程拉起)`
+- **验证**: `pgrep -x audemsp-host` 后 grep host 日志 "ICE state"; server 重启后 host 应能在 30s 内自愈
+- **教训**: 诊断"web 拉流失败"先查 host 进程/ICE 状态 与 server room（`/api/admin/rooms`）; 9800 入口的 embedded dist 需 `npm run build` + 重启 server 才更新（rust-embed 编译期嵌入）
