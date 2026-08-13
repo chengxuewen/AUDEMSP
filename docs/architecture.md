@@ -6,7 +6,7 @@
 
 ## 1. 概述
 
-MediaServo 是 AUDE 生态的多媒体基础设施，提供远程桌面、视频会议、直播推拉流、监控相机接入等能力。采用微内核 + 插件架构，支持多形态部署。
+MediaServo 是可独立部署的多媒体基础设施，提供远程桌面、视频会议、直播推拉流、监控相机接入等能力。采用微内核 + 插件架构，支持多形态部署。
 
 ### 1.1 七个产品能力
 
@@ -26,19 +26,19 @@ MediaServo 是 AUDE 生态的多媒体基础设施，提供远程桌面、视频
 
 > ⚠️ **D15/D118 范围变更**: Phase 1 原为 Host↔Remote P2P 直连模式，现已变更为 Host→Server→Remote relay 三组件模式。详见 [模块文档](modules/03-client-host.md) 和 §2。
 
-### 1.2 与 AUDE 生态的关系
+### 1.2 与第三方平台的关系
 
 ```
-AUDESYS (工业控制) ──┐              ┌── AUDEBase (企业应用)
+工业控制端         ──┐              ┌── 宿主平台 (企业应用)
                      ├── MediaServo ──┤
    引用 native crate │  多媒体核心   │ Docker 模块
                      │              │
                      └──────────────┘
 ```
 
-- **与 AUDESYS**：可选嵌入，通过 Rust crate 静态链接，仅使用远程桌面和遥操作能力
-- **与 AUDEBase**：零硬依赖。AUDEBase 可运行 MediaServo 作为 Docker 模块（类比群晖 Surveillance Station）。此时用户/权限委托给 AUDEBase RBAC/LDAP
-- **独立部署**：可脱离 AUDE 生态完全独立运行，自带完整后端
+- **与第三方平台**：可选嵌入，通过 Rust crate 静态链接，仅使用远程桌面和遥操作能力
+- **与宿主平台**：零硬依赖。宿主平台可运行 MediaServo 作为 Docker 模块（类比群晖 Surveillance Station）。此时用户/权限委托给平台 RBAC/LDAP
+- **独立部署**：可脱离第三方平台完全独立运行，自带完整后端
 
 ### 1.3 设计原则
 
@@ -63,7 +63,7 @@ MediaServo 采用控制面与数据面分离的三层架构：后台服务集中
 │  │          │ │          │ │ 管理     │ │          │ │ 服务   │ │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └────────┘ │
 │                                                                  │
-│  Auth Provider (trait): Local 模式 | AUDEBase 模式 | 未来 LDAP   │
+│  Auth Provider (trait): Local 模式 | 平台模式      | 未来 LDAP   │
 │                                                                  │
 │  控制面：鉴权 / 授权 / 功能开关 / 流数限制 / 分辨率限制 / 到期     │
 └────────────────────────────┬─────────────────────────────────────┘
@@ -115,7 +115,7 @@ MediaServo 采用控制面与数据面分离的三层架构：后台服务集中
 
 > 📄 详见 [modules/05-auth-permissions.md](/docs/modules/05-auth-permissions.md)
 
-Auth Provider trait 实现双模式认证：Local 模式（内嵌 SQLite + JWT）用于独立部署；AUDEBase 模式委托平台 RBAC/LDAP，适用于 Docker 模块场景。权限模型涵盖功能开关、配额限制（流数/码率/分辨率/时长）和 License 控制（trial/standard/enterprise）。客户端 SDK 启动时从后台拉取权限配置，缓存在本地，License Manager 在每个管线操作前校验。
+Auth Provider trait 实现双模式认证：Local 模式（内嵌 SQLite + JWT）用于独立部署；平台模式委托平台 RBAC/LDAP，适用于 Docker 模块场景。权限模型涵盖功能开关、配额限制（流数/码率/分辨率/时长）和 License 控制（trial/standard/enterprise）。客户端 SDK 启动时从后台拉取权限配置，缓存在本地，License Manager 在每个管线操作前校验。
 
 ### 3.1 Auth Provider 模式
 
@@ -132,7 +132,7 @@ Auth Provider trait 实现双模式认证：Local 模式（内嵌 SQLite + JWT�
                     │            │               │
                     │    ┌───────┴───────┐       │
                     │    ▼               ▼       │
-                    │  Local         AUDEBase     │
+                    │  Local         平台模式     │
                     │  (SQLite+JWT)  (gRPC LDAP)  │
                     └──────────────────────────┘
 ```
@@ -148,13 +148,13 @@ trait AuthProvider: Send + Sync {
 
 ### 3.2 双模式
 
-| | Local（独立模式） | AUDEBase（平台模式） |
+| | Local（独立模式） | 平台模式 |
 |---|---|---|
-| **用户存储** | 内嵌 SQLite | 委托 AUDEBase RBAC |
-| **认证** | 本地 JWT | AUDEBase 签发 token |
-| **权限** | 本地 RBAC 表 | AUDEBase LDAP 组映射 |
+| **用户存储** | 内嵌 SQLite | 委托平台 RBAC |
+| **认证** | 本地 JWT | 宿主平台签发 token |
+| **权限** | 本地 RBAC 表 | 宿主平台 LDAP 组映射 |
 | **配置** | `auth.mode: "local"` | `auth.mode: "aude"` |
-| **场景** | 独立部署 | AUDEBase Docker 模块 |
+| **场景** | 独立部署 | Docker 平台模块 |
 
 ### 3.3 权限模型
 
@@ -190,7 +190,7 @@ interface Permission {
 
 ### 3.4 参考模型
 
-类比群晖 DSM：MediaServo 作为 Docker 模块安装在 AUDEBase 上，使用 AUDEBase 的用户/权限系统（类似 Jira 安装在群晖上使用 DSM 的 LDAP 账户）。
+类比群晖 DSM：MediaServo 作为 Docker 模块安装在宿主平台上，使用宿主平台的用户/权限系统（类似 Jira 安装在群晖上使用 DSM 的 LDAP 账户）。
 
 ## 4. 插件体系
 
@@ -387,22 +387,22 @@ Phase 2+: 支持 Simulcast/SVC 多层编码 — 单一输入源产出多个质�
 
 > 📄 详见 [modules/02-deployment-modes.md](/docs/modules/02-deployment-modes.md)
 
-四种部署形态覆盖从嵌入式链接到独立部署的全场景：Embed（~5 插件，AUDESYS 嵌入）、Sidecar（~12 插件，AUDEBase 容器旁路）、Standalone（全插件 + Web UI）、AUDEBase 模块（Docker 容器，委托平台认证）。
+四种部署形态覆盖从嵌入式链接到独立部署的全场景：Embed（~5 插件，第三方平台嵌入）、Sidecar（~12 插件，宿主平台容器旁路）、Standalone（全插件 + Web UI）、平台模块（Docker 容器，委托平台认证）。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  形态           架构                     适用场景           │
 ├─────────────────────────────────────────────────────────────┤
-│  Embed         Rust crate 静态链接     AUDESYS 嵌入远程     │
+│  Embed         Rust crate 静态链接   第三方平台嵌入远程     │
 │                → 约 5 个插件           桌面 + 遥操作         │
 │                                                             │
-│  Sidecar       容器 + napi-rs 绑定    AUDEBase 企业应用    │
+│  Sidecar       容器 + napi-rs 绑定     宿主平台企业应用    │
 │                → 约 12 个插件                               │
 │                                                             │
 │  Standalone    独立进程 + 完整后端    独立部署场景          │
 │                → 全插件 + Web UI                            │
 │                                                             │
-│  AUDEBase       Docker 容器模块       融入 AUDEBase 平台   │
+│  平台           Docker 容器模块       融入宿主平台         │
 │  模块          → 委托平台认证                               │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -464,13 +464,13 @@ if (permissions.surveillance) modules.push(SurveillanceModule); // 监控 tab
 
 > 📄 详见 [modules/07-protocols.md](/docs/modules/07-protocols.md)
 
-协议栈分五层：内部 IPC（FlatBuffers 零拷贝）、AUDESYS 集成（C FFI 静态链接）、AUDEBase 集成（napi-rs 原生模块）、后台控制面（gRPC + REST）和媒体数据面（RTP/SRT/WebRTC）。信令采用自研 WebSocket（Phase 1）+ MQTT 5.0（Phase 2+ 车端）双轨演进。
+协议栈分五层：内部 IPC（FlatBuffers 零拷贝）、第三方平台集成（C FFI 静态链接）、宿主平台集成（napi-rs 原生模块）、后台控制面（gRPC + REST）和媒体数据面（RTP/SRT/WebRTC）。信令采用自研 WebSocket（Phase 1）+ MQTT 5.0（Phase 2+ 车端）双轨演进。
 
 | 层次 | 协议 | 说明 |
 |------|------|------|
 | **内部 IPC** | FlatBuffers | 插件间零拷贝通信 |
-| **AUDESYS** | C FFI | Rust → C 静态链接 |
-| **AUDEBase** | napi-rs | Rust → Node.js 原生模块 |
+| **第三方平台** | C FFI | Rust → C 静态链接 |
+| **宿主平台** | napi-rs | Rust → Node.js 原生模块 |
 | **后台服务** | gRPC (protobuf) | 控制面 API |
 | **信令** | 自研 WebSocket (Phase 1) / MQTT 5.0 (Phase 2+ 车端) | 房间管理、SDP/ICE 交换，详见 [信令架构文档](modules/10-signaling-architecture.md) |
 | **媒体传输** | RTP/RTCP, SRT, WebRTC | 数据面 |
@@ -508,7 +508,7 @@ Phase 2+ 计划 crates: mediaservo-component, mediaservo-transport, mediaservo-s
 | **桌面 GUI** | Tauri v2 + React | 轻量、Rust 后端、跨平台 |
 | **嵌入式 Web** | axum + 静态 HTML | Host 配置页，无框架依赖 |
 | **构建** | Cargo workspace | 统一依赖管理 |
-| **Web UI** | React 19 + Ant Design 5 | Server 管理面板, AUDEBase 生态复用 (D87) |
+| **Web UI** | React 19 + Ant Design 5 | Server 管理面板, 宿主平台生态复用 (D87) |
 | **数据库** | sqlx + SQLite (D101) | 编译期 SQL 校验, async, 轻量 |
 | **配置** | serde_yaml + 环境变量 (D101) | 敏感值 env 覆盖 (JWT_SECRET 等) |
 | **可观测性** | tracing JSON stdout + prometheus-client (D99) | Docker logs 收集 + /metrics 端点 |

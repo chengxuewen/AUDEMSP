@@ -38,7 +38,7 @@
 
 ### 3.1 MVP v2 中继模型 (D118)
 
-MVP 采用 3 组件中继架构：Host → Server(relay) → Client。Server 负责信令中继和媒体转发，P2P 穿透仅 AUDESYS Studio LAN 场景开启。mediasoup SFU 作为 Phase 2 多方会议后端（D118 附录），MVP Phase 1 优先完成 1:1 relay。
+MVP 采用 3 组件中继架构：Host → Server(relay) → Client。Server 负责信令中继和媒体转发，P2P 穿透仅 第三方平台 Studio LAN 场景开启。mediasoup SFU 作为 Phase 2 多方会议后端（D118 附录），MVP Phase 1 优先完成 1:1 relay。
 
 行业共识，所有产品均采用此连接策略。默认走 SFU/TURN 中继 (D118 relay-default)。
 

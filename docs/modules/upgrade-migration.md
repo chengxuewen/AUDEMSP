@@ -16,7 +16,7 @@ Remote (Client): MAJOR.minor.patch
 
 ## Crate 版本策略 (doc-audit L7)
 
-> 7-crate workspace 被 AUDESYS（Rust 静态链接）与 AUDEBase（napi 绑定）消费，需独立于二进制矩阵的 crate 级版本策略。
+> 7-crate workspace 被 Rust 静态链接消费方与 napi 绑定消费方（第三方平台/宿主平台）使用，需独立于二进制矩阵的 crate 级版本策略。
 
 ### 分级 API 面
 
@@ -31,7 +31,7 @@ Remote (Client): MAJOR.minor.patch
 1. **独立 semver**：7 crate 各自版本，0.1.x 阶段允许 breaking（minor 递增）；进入 1.0 后严格 semver。`version.workspace = true` 仅用于同步发布节奏的 crate（当前 media/codec），不强制全 workspace 同步——mediaservo-common 0.2 不必拖带 server 0.2。
 2. **mediaservo-webrtc 三后端 feature 矩阵**（C12）：stub/webrtc-rs/webrtc-sys 属 feature 级兼容；新增后端 = minor，后端行为变更 = major。
 3. **MSRV**：rust-toolchain.toml 固定；[规划] CI 加 `cargo-semver-checks` 门禁（PR 检测公共 API breaking）。
-4. **消费方锁定**：AUDESYS pin `=x.y.z` 或 commit 引用；AUDEBase（napi）由 mediaservo-common 版本决定 ABI 面，发布时同版本记录。
+4. **消费方锁定**：第三方平台 pin `=x.y.z` 或 commit 引用；宿主平台（napi）由 mediaservo-common 版本决定 ABI 面，发布时同版本记录。
 5. **变更通知**：breaking 变更在 decisions.md + CHANGELOG 双记录（[规划] cargo release 或 per-crate changelog 生成）。
 ## 配置迁移
 

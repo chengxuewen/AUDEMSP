@@ -9,8 +9,8 @@
 | 层次 | 协议 | 说明 |
 |------|------|------|
 | **内部 IPC** | FlatBuffers | 插件间零拷贝通信 |
-| **AUDESYS** | C FFI | Rust → C 静态链接 |
-| **AUDEBase** | napi-rs | Rust → Node.js 原生模块 |
+| **第三方平台** | C FFI | Rust → C 静态链接 |
+| **宿主平台** | napi-rs | Rust → Node.js 原生模块 |
 | **后台服务** | gRPC (protobuf) | 控制面 API |
 | **信令** | WebSocket | SDP 协商、ICE 交换 |
 | **媒体传输** | RTP/RTCP, SRT, WebRTC | 数据面 |

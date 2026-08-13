@@ -1,6 +1,6 @@
 # 权限认证参考
 
-> MediaServo 提供双模式认证：Local（独立部署）和 AUDEBase（平台模式）。
+> MediaServo 提供双模式认证：Local（独立部署）和平台模式。
 
 ---
 
@@ -16,19 +16,19 @@ trait AuthProvider: Send + Sync {
 
 两种实现：
 - **Local**：SQLite + JWT，独立部署使用
-- **AUDEBase**：gRPC LDAP，AUDEBase Docker 模块使用
+- **平台模式**：gRPC LDAP，Docker 平台模块使用
 
 ---
 
 ## 二、双模式对比
 
-| 维度 | Local（独立模式） | AUDEBase（平台模式） |
+| 维度 | Local（独立模式） | 平台模式 |
 |------|------------------|---------------------|
-| **用户存储** | 内嵌 SQLite | 委托 AUDEBase RBAC |
-| **认证** | 本地 JWT | AUDEBase 签发 token |
-| **权限** | 本地 RBAC 表 | AUDEBase LDAP 组映射 |
+| **用户存储** | 内嵌 SQLite | 委托平台 RBAC |
+| **认证** | 本地 JWT | 宿主平台签发 token |
+| **权限** | 本地 RBAC 表 | 宿主平台 LDAP 组映射 |
 | **配置** | `auth.mode: "local"` | `auth.mode: "aude"` |
-| **场景** | 独立部署 | AUDEBase Docker 模块 |
+| **场景** | 独立部署 | Docker 平台模块 |
 
 ---
 
@@ -80,12 +80,12 @@ License Manager 在每个管线操作前校验
 
 ## 五、参考模型
 
-类比群晖 DSM：MediaServo 作为 Docker 模块安装在 AUDEBase 上，使用 AUDEBase 的用户/权限系统（类似 Jira 安装在群晖上使用 DSM 的 LDAP 账户）。
+类比群晖 DSM：MediaServo 作为 Docker 模块安装在宿主平台上，使用宿主平台的用户/权限系统（类似 Jira 安装在群晖上使用 DSM 的 LDAP 账户）。
 
 
 ## 六、gRPC Auth 合约 (D57)
 
-当 MediaServo 运行在 AUDEBase 模块模式下，AuthProvider 通过 gRPC 调用 AUDEBase：
+当 MediaServo 运行在平台模块模式下，AuthProvider 通过 gRPC 调用宿主平台：
 
 ### Proto
 
@@ -107,7 +107,7 @@ message ValidateTokenResponse {
   string user_id = 2;
   string user_name = 3;
   repeated string roles = 4;
-  repeated string permissions = 5;   // AUDEBase 预解析权限列表
+  repeated string permissions = 5;   // 宿主平台预解析权限列表
   int64 expires_at = 6;              // Unix timestamp
   string error = 7;
 }
@@ -131,8 +131,8 @@ message CheckPermissionResponse {
                            ▼
               AuthProvider.authenticate(token)
                            │
-              AUDEBase 模式  ▼
-              gRPC ValidateToken(token) → AUDEBase
+              平台模式       ▼
+              gRPC ValidateToken(token) → 宿主平台
                            │
                            ▼
               返回 user_id + permissions[]
@@ -146,11 +146,11 @@ message CheckPermissionResponse {
 
 - `validateToken`: 结果缓存在内存 5 分钟（JWT 过期时间以下）
 - `checkPermission`: 优先查 `validateToken` 返回的 permissions[] 列表
-- 权限变更: AUDEBase 需要通知 MediaServo 清除缓存 → Phase 2 Channel
+- 权限变更: 宿主平台需要通知 MediaServo 清除缓存 → Phase 2 Channel
 
 ### MediaServo Permission 枚举
 
-MediaServo 自维护权限字符串，AUDEBase RBAC 做字符串→角色映射：
+MediaServo 自维护权限字符串，宿主平台 RBAC 做字符串→角色映射：
 
 | 权限 | 说明 |
 |------|------|

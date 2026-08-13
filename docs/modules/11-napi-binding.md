@@ -12,7 +12,7 @@
 ## 11.2 架构
 
 ```
-AUDEBase (Node.js)
+宿主平台 (Node.js)
 │
 ├─ @mediaservo/napi
 │   ├─ Session          ← napi-rs 导出类
@@ -261,10 +261,10 @@ Phase 2 优化：DMA-BUF 共享（Linux only）
 Phase 1 遥控座舱场景 15fps，55MB/s 拷贝开销可接受。
 `memcpy` 在现代 CPU 上 8MB RGBA 帧约 2-4ms（DDR4 带宽 ~20GB/s）。
 
-## 11.7 与 AUDEBase 集成
+## 11.7 与宿主平台集成
 
 ```typescript
-// AUDEBase 插件内部使用 MediaServo Session
+// 宿主平台插件内部使用 MediaServo Session
 
 // plugins/teleop-cockpit/src/index.ts
 import { createSession } from '@mediaservo/napi';
@@ -295,7 +295,7 @@ export class TeleopCockpitPlugin implements Plugin {
     await this.session.connect();
   }
 
-  // AUDEBase UI 可通过 PluginHost 调用
+  // 宿主平台 UI 可通过 PluginHost 调用
   sendControl(steering: number, throttle: number) {
     this.session.control.send(Buffer.from(JSON.stringify({ steering, throttle })));
   }

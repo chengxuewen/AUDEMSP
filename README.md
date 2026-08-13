@@ -1,6 +1,6 @@
 # MediaServo
 
-MediaServo — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入、WebRTC 遥操作等能力。
+MediaServo — 实时媒体伺服平台（MediaServo Platform）。独立部署的视频/媒体服务平台，以"精确、低延迟、响应式"的伺服驱动为核心，涵盖监控相机接入与录制回放（NVR）、视频会议、远程桌面、遥操作、直播推拉流等能力。可单独部署，也可作为 Docker 模块嵌入第三方平台。
 
 ## 功能范围
 
@@ -23,7 +23,7 @@ MediaServo — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统�
     ▼              ▼              ▼
 ┌──────────┐ ┌──────────┐ ┌──────────────┐
 │  Client  │ │   Host   │ │ 嵌入/模块     │
-│ (GUI)    │ │(headless)│ │ AUDESYS/Base │
+│ (GUI)    │ │(headless)│ │ 嵌入/平台模块 │
 │ 操作端   │ │ 远端     │ │              │
 └──────────┘ └──────────┘ └──────────────┘
 ```
@@ -31,14 +31,14 @@ MediaServo — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统�
 - **Client**：桌面 GUI 全功能应用（Tauri v2），可控制他人也可被控制
 - **Host**：无 GUI 守护进程，适合边缘设备/服务器/车端，纯产出媒体流
 - **微内核 + 插件**：mediaservo-common 微内核，领域功能以插件形式加载
-- **Auth 双模式**：独立部署自带账户系统；作为 AUDEBase 模块时委托平台 RBAC/LDAP
+- **Auth 双模式**：独立部署自带账户系统；作为第三方平台模块时委托平台 RBAC/LDAP
 
 详见 [`docs/architecture.md`](docs/architecture.md)。
 
 ## 技术栈
 
 - **Native 层**：Rust (edition 2024)，libwebrtc (主) / str0m / webrtc-rs 三后端
-- **绑定层**：napi-rs（Node.js）、C FFI（AUDESYS 静态链接）
+- **绑定层**：napi-rs（Node.js）、C FFI（静态链接到宿主）
 - **信令**：WebSocket (Phase 1) + MQTT 5.0 (Phase 2+)
 - **传输**：RTP/RTCP、SRT、WebRTC DataChannel
 - **内部协议**：FlatBuffers（零拷贝，多语言）

@@ -32,7 +32,7 @@
 | libwebrtc | `backend-webrtc-sys` (默认) | 公网遥控, 弱网穿透 | Phase 0 |
 | webrtc-rs | `backend-webrtc-rs` | 未来 Embed 升级 | Phase 0 (struct 骨架) |
 | stub | 无 feature 时 | 开发/测试/编译检查 | Phase 0 |
-| str0m | `backend-str0m` | AUDESYS Embed, 局域网 P2P | Phase 2+ |
+| str0m | `backend-str0m` | 嵌入式集成, 局域网 P2P | Phase 2+ |
 
 ---
 
@@ -250,7 +250,7 @@ compile_error!("Only one WebRTC backend can be enabled at a time");
 | 二进制大小 | ~100KB | ~30MB (.so) | ~2MB |
 | GCC 拥塞控制 | ❌ 自建 | ✅ 完整的 Google GCC | ❌ 自建 |
 | FEC + NetEQ | ❌ 自建 | ✅ 完整的 | ❌ 自建 |
-| 适用场景 | LAN P2P, AUDESYS Embed | 公网, 弱网, 遥控 (默认) | 未来 AUDESYS Embed |
+| 适用场景 | LAN P2P, 嵌入式集成 | 公网, 弱网, 遥控 (默认) | 未来 嵌入式集成 |
 
 ---
 
@@ -374,9 +374,9 @@ pub struct CodecConfig {
 
 | 场景 | 后端 | 传输模式 | TURN | 运行时 |
 |------|------|---------|------|--------|
-| AUDESYS Embed (LAN) | str0m | P2P | 无需 | 无 (sans-I/O) |
-| AUDESYS Embed (WAN) | libwebrtc (Phase 2) | P2P + relay | coturn | libwebrtc.so |
-| AUDEBase Sidecar | libwebrtc (默认) | P2P + relay | coturn | libwebrtc.so + gstreamer |
+| 嵌入式集成 (LAN) | str0m | P2P | 无需 | 无 (sans-I/O) |
+| 嵌入式集成 (WAN) | libwebrtc (Phase 2) | P2P + relay | coturn | libwebrtc.so |
+| 宿主平台 Sidecar | libwebrtc (默认) | P2P + relay | coturn | libwebrtc.so + gstreamer |
 | Standalone 服务器 | libwebrtc + mediasoup SFU | SFU | coturn/srt | libwebrtc.so + tokio |
 | Web Viewer | 浏览器 RTCPeerConnection | P2P/SFU (native) | coturn | 浏览器内置 |
 

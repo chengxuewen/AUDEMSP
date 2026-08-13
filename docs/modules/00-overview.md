@@ -32,14 +32,14 @@
 
 ## 概述
 
-MediaServo 是 AUDE 生态的多媒体基础设施，提供七大产品能力。核心 crate：mediaservo-host（采集+编码+推流）、mediaservo-client（拉流+解码+控制）、mediaservo-server（信令+relay+监控）。Phase 1-2 采用 Host 单进程 (D155)，Phase 0-5 整体规划见架构文档。
+MediaServo 是可独立部署的多媒体基础设施，提供七大产品能力。核心 crate：mediaservo-host（采集+编码+推流）、mediaservo-client（拉流+解码+控制）、mediaservo-server（信令+relay+监控）。Phase 1-2 采用 Host 单进程 (D155)，Phase 0-5 整体规划见架构文档。
 
 ```
-AUDESYS (工业控制) ──┐              ┌── AUDEBase (企业应用)
+工业控制端         ──┐              ┌── 宿主平台 (企业应用)
                      ├── MediaServo ──┤
    引用 native crate │  多媒体核心   │ Docker 模块
 ```
 
 - **独立部署**：完整后端，自带用户/权限系统
-- **AUDEBase 模块**：Docker 容器，委托平台 RBAC/LDAP
-- **AUDESYS 嵌入**：Rust crate 静态链接，仅远程桌面 + 遥操作
+- **平台模块**：Docker 容器，委托平台 RBAC/LDAP
+- **第三方平台嵌入**：Rust crate 静态链接，仅远程桌面 + 遥操作

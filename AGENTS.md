@@ -2,7 +2,7 @@
 
 **Generated:** 2026-07-23
 
-MediaServo — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入等能力。当前状态: Phase 3 完成，7 crate workspace，webrtc triple-backend (webrtc-rs 视频管线完整对齐)，mediaservo-codec 三后端 (stub+FFmpeg+GStreamer)，217 commits on main。
+MediaServo — 实时媒体伺服平台。独立部署的视频/媒体服务平台，涵盖监控相机接入与录制回放（NVR）、视频会议、远程桌面、遥操作、直播推拉流等能力。当前状态: Phase 3 完成，7 crate workspace，webrtc triple-backend (webrtc-rs 视频管线完整对齐)，mediaservo-codec 三后端 (stub+FFmpeg+GStreamer)，217 commits on main。
 
 ## STRUCTURE
 
@@ -146,4 +146,4 @@ _项目已进入代码实施阶段。以下为当前状态：_
 
 - **Phase 3 完成** — Docker/CI/DevContainer 就位，SFU connect_transport 已实现，217 commits on main
 - **骨架代码已创建** — `crates/mediaservo-{host,client,server}` 三个 crate 含模块骨架
-- **AUDE 生态共享依赖** — AUDESYS 引用 Rust crate，AUDEBase 通过 napi 绑定
+- **生态共享依赖** — 第三方平台通过 Rust crate 静态链接或 napi 绑定消费本仓库

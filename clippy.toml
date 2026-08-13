@@ -1,4 +1,4 @@
-# clippy.toml — AUDESYS lint rules
+# clippy.toml — MediaServo lint rules
 #
 # Phase 0: deny unwrap/expect/println in production code
 # Phase 1: add more pedantic lints as codebase grows

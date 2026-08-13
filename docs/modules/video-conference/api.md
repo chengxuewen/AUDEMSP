@@ -7,10 +7,10 @@ Conference SDK 提供创建和管理视频会议的完整 API。通过 napi-rs �
 ### 安装
 
 ```bash
-# npm (through AUDEBase)
+# npm (through 宿主平台)
 npm install @mediaservo/conference-sdk
 
-# Rust (through AUDESYS)
+# Rust (through 第三方平台)
 cargo add mediaservo-conference
 ```
 

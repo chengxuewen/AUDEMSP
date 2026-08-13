@@ -1,4 +1,4 @@
-# deny.toml — AUDESYS dependency audit (cargo-deny 0.20+)
+# deny.toml — MediaServo dependency audit (cargo-deny 0.20+)
 
 [advisories]
 version = 2

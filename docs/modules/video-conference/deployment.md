@@ -6,11 +6,11 @@
 
 ### 1.1 Embed (Rust crate)
 
-**场景**: AUDESYS 嵌入式场景
+**场景**: 第三方平台嵌入式场景
 **特点**: 静态链接，约 5 个插件，轻量级
 
 ```
-AUDESYS binary
+第三方平台 binary
   └── mediaservo-core
       └── mediaservo-conference (crate)
           └── mediasoup (静态链接)
@@ -21,11 +21,11 @@ AUDESYS binary
 
 ### 1.2 Sidecar (napi-rs 绑定)
 
-**场景**: AUDEBase 企业应用
+**场景**: 宿主平台企业应用
 **特点**: 容器 + napi-rs 绑定，约 12 个插件
 
 ```
-AUDEBase Docker
+宿主平台 Docker
   └── mediaservo-service
       ├── napi-rs binding
       └── mediaservo-conference
@@ -52,19 +52,19 @@ mediaservo-server
 容量: <1000 会话/节点 (视 Worker 数)
 ```
 
-### 1.4 AUDEBase 模块
+### 1.4 平台模块
 
-**场景**: AUDEBase 平台集成
+**场景**: 宿主平台集成
 **特点**: Docker 容器模块，委托平台认证
 
 ```
-AUDEBase Platform
+宿主平台
   └── Container: mediaservo-conference
-      ├── 委托 AUDEBase RBAC/LDAP
+      ├── 委托平台 RBAC/LDAP
       └── 独立 SFU Worker 池
 
-部署: AUDEBase 容器编排
-容量: 取决于 AUDEBase 资源分配
+部署: 宿主平台容器编排
+容量: 取决于宿主平台资源分配
 ```
 
 ## 2. 配置参考
