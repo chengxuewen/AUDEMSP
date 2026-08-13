@@ -181,3 +181,12 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - 定位: 独立部署实时媒体伺服平台（监控/NVR + 会议 + 桌面 + 遥操作），脱离 AUDE 生态（D221 修订 D209）
 - 命名冲突实证 0/0/0（crates.io/npm/GitHub）; 保留面: 仅 .agents/（历史提及）; docs 调研存档/vendor 已统一 MediaServo
 - T4 构建测试: 部分阻塞（webrtc-sys workspace 级构建失败, 疑磁盘/并行竞态, 与重命名无关已取证）; T5 运行时验证待完成
+
+## 2026-08-13 长会话总览（重命名 MediaServo 全链完成）
+
+- **重命名执行**（T1 eb7c0f7 / T2 dc46fbb / T3 480327d）: 259 文件机械替换 + 7 crate 目录/CLI mv + AUDE 生态剥离 + compose name/service/pixi 名
+- **保留面收窄**（01a1f92）: 用户指令"仅 .agents 保留"——docs 调研存档/vendor/.sisyphus/.omo 统一 MediaServo（47 文件 1118 处）; 全仓 audemsp 仅剩 .agents 82 处
+- **计划清除**（8bb8d19）: .sisyphus/plans 8 个 + .omo/plans 3 个全部清除（备份 /tmp/plans-backup-20260813）; git 跟踪残留 audemsp-codec acceptance-criteria 同步移除
+- **doc-audit 三轮**: ① 9 项发现全修复（D221/conventions/status/AGENTS/技能）② 外部 16:10:58 批量替换污染 33 文件 → 恢复保留面（PIT-89）③ 回归闭环（仅 commits 漂移同步）
+- **D221 修订**: 保留面 memorys/plans/research → 仅 .agents/; .sisyphus/.omo plans 已清除
+- 遗留: gitee 仓库改名（外部）、T4/T5 待完成（webrtc-sys workspace build + 运行时验证）

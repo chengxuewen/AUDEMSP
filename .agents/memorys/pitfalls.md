@@ -973,3 +973,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: `git checkout -- .` 全量恢复（本次无数据损失）; 需要单文件格式化时用 `rustfmt --edition 2024 <file>`（若可用）或**手动保持格式**（不跑 cargo fmt）
 - **验证**: 格式化后 `git diff --stat | wc -l` 必须 == 目标文件数; `git status --short | wc -l` 控制在目标范围
 - **禁止**: 任何 `pixi run cargo fmt` / `cargo fmt` 无差别运行（含 `-- <path>` 形式）— workspace 存在 rustfmt 版本漂移, 单文件需 rustfmt 直接调用
+
+## PIT-89: 外部无差别全局替换破坏保留面 (2026-08-13)
+- **症状**: 用户终端 16:10:58 执行批量 audemsp→mediaservo 替换, 污染 33 文件（5 memorys + 28 docs/research + 2 vendor 源）——D209 历史改名记录被改写为 "OMSPBase → MediaServo"（失去 AUDEMSP 中间态）、D221 变 "MediaServo → MediaServo"（自指荒谬）、调研存档 "对 AUDEMSP 的启示" 语义失实
+- **根因**: 全局 sed/python 替换不区分保留面边界; 约定（D221 条款）无法强制外部脚本行为
+- **解法**: git checkout 恢复全部污染文件; 保留面边界需**工具链强制**而非约定——建议: memorys/下文件加入 git hook 保护或文档标注 "禁止全局替换"
+- **验证**: `grep -rn "AUDEMSP" .agents/memorys/decisions.md` — D209 应为 "OMSPBase → AUDEMSP", D221 应为 "AUDEMSP → MediaServo"（非自指）
+- **教训**: 全仓替换类操作必须排除保留面目录（.agents/memorys/ + research 存档）; 发现历史记录语义反转（X→Y 变 X→Z）立即 git checkout 恢复
