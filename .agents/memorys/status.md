@@ -176,3 +176,7 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - 实证: 9.0ms/帧 (AV1 软编 1920x1080); libaom 软编白名单修复
 - T0 顺手修: admin 路由 /admin/ 尾斜杠 + SPA fallback（axum 路由语法必须统一 *path, Arc 共享 html）
 - commits 2fde281/a814ae5/059abc0
+
+## ICE Failed 自愈 (2026-08-13, PIT-87)
+- host `on_ice_connection_state_change(Failed) → exit(1)`, systemd Restart=always 拉起（05d89db）
+- 验证: restart server → Disconnected → Failed → 进程退出; 重新拉起全链路恢复
