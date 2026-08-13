@@ -272,6 +272,13 @@ let app = axum::Router::new()
             pc.on_ice_connection_state_change(move |state| {
                 let _ = &_pc;
                 tracing::info!("SFU ICE state: {:?}", state);
+                // PIT-87: ICE Failed = 连接终结（mediasoup/server 重启等）— 无自愈可能,
+                // 退出由守护拉起（systemd Restart=always / audemsp.sh start host）。
+                // 之前的行为: 永久挂起 → web 拉流无 producer。
+                if state == audemsp_webrtc::peer_connection::RTCIceConnectionState::Failed {
+                    tracing::error!("SFU ICE Failed — 退出进程由守护拉起 (PIT-87)");
+                    std::process::exit(1);
+                }
             });
         }
         {
