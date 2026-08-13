@@ -1,24 +1,18 @@
-# AUDEMSP Status
+# MediaServo Status
 
-**生成**: 2026-08-12| 决策: 221 (D1-D220, 含跳号)| Phase: 3 完成 || 317 commits | 22 skills | mediasoup 0.24.1 | PIT-88 | 分支: main (编码双轨 + 5 codec + Web stats + BWE 恢复) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-13| 决策: 222 (D1-D221, 含跳号)| Phase: 3 完成 || 343 commits | 22 skills | mediasoup 0.24.1 | PIT-88 | 分支: main (重命名 MediaServo + 编码双轨 + 5 codec + Web stats + BWE 恢复) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
-| audemsp-common | 71 | — | EncoderStatus 信令 + codec 字段 |
-| audemsp-media | 54 | — | |
-| audemsp-webrtc (stub) | 48 | 67+ | track_sink + set_video_encoder_backend |
-| audemsp-webrtc (webrtc-sys) | 20 | 49 (4 ICE 预存) | get_stats 接线 + setCodecPreferences |
-| audemsp-webrtc (webrtc-rs) | 11 | 29 (9 SDP/ICE 预存) | |
-| audemsp-codec (stub) | 0 | 32 | |
-| audemsp-codec (FFmpeg) | 0 | 35 | |
-| audemsp-codec (GStreamer) | 0 | 27 | pixi 环境 |
-| audemsp-webrtc (stub) | 11 | 67+ | |
-| audemsp-webrtc (webrtc-sys) | 11 | 49 (4 ICE 预存) | |
-| audemsp-webrtc (webrtc-rs) | 11 | 29 (9 SDP/ICE 预存) | |
-| audemsp-codec (stub) | 0 | 32 | |
-| audemsp-codec (FFmpeg) | 0 | 35 | |
-| audemsp-codec (GStreamer) | 0 | 27 | pixi 环境 |
-| audemsp-server | 12 | 32 (27 e2e + 5 integration) | +3 SFU E2E (Linux only) |
-| audemsp-host | — | E2E 脚本 9/9 ✅ | macOS native |
-| audemsp-client | — | E2E 脚本 9/9 ✅ | macOS native |
+| mediaservo-common | 72 | — | EncoderStatus 信令 + codec 字段 |
+| mediaservo-media | 107 | — | |
+| mediaservo-webrtc (stub) | 48 | 67+ | track_sink + set_video_encoder_backend |
+| mediaservo-webrtc (webrtc-sys) | 20 | 49 (4 ICE 预存) | get_stats 接线 + setCodecPreferences |
+| mediaservo-webrtc (webrtc-rs) | 11 | 29 (9 SDP/ICE 预存) | |
+| mediaservo-codec (stub) | 0 | 32 | |
+| mediaservo-codec (FFmpeg) | 0 | 35 | |
+| mediaservo-codec (GStreamer) | 0 | 27 | pixi 环境 |
+| mediaservo-server | 67 | 32 (27 e2e + 5 integration) | +3 SFU E2E (Linux only) |
+| mediaservo-host | — | E2E 脚本 9/9 ✅ | macOS native |
+| mediaservo-client | — | E2E 脚本 9/9 ✅ | macOS native |
 
 ### macOS E2E 验证 (2026-07-24)
 ```
@@ -180,3 +174,10 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 ## ICE Failed 自愈 (2026-08-13, PIT-87)
 - host `on_ice_connection_state_change(Failed) → exit(1)`, systemd Restart=always 拉起（05d89db）
 - 验证: restart server → Disconnected → Failed → 进程退出; 重新拉起全链路恢复
+
+## 重命名 MediaServo (2026-08-13, D221)
+
+- AUDEMSP → MediaServo 全量重命名（T1: 259 文件机械替换 + 7 crate 目录/CLI mv; T2: AUDE 生态剥离 docs; T3: compose name/service/pixi 名）✅
+- 定位: 独立部署实时媒体伺服平台（监控/NVR + 会议 + 桌面 + 遥操作），脱离 AUDE 生态（D221 修订 D209）
+- 命名冲突实证 0/0/0（crates.io/npm/GitHub）; 保留面: memorys/plans/research 历史提及保留
+- T4 构建测试: 部分阻塞（webrtc-sys workspace 级构建失败, 疑磁盘/并行竞态, 与重命名无关已取证）; T5 运行时验证待完成

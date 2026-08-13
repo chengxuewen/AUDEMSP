@@ -45,14 +45,14 @@ D1 和 D126 是互补关系，不是替代关系。
 ## C4: crate 命名: host/client 对称
 
 **约束**：远程控制场景的 crate 命名遵循 host/client 对称模式：
-- **host** = 被控侧 → 推流端 → field/vehicle 侧 → `audemsp-host`
-- **client** = 主控侧 → 拉流端 → cockpit/operator 侧 → `audemsp-client`
+- **host** = 被控侧 → 推流端 → field/vehicle 侧 → `mediaservo-host`
+- **client** = 主控侧 → 拉流端 → cockpit/operator 侧 → `mediaservo-client`
 
 命名对应关系：
 | AUDEMSP | Parsec | RustDesk | Moonlight/Sunshine |
 |----------|--------|----------|-------------------|
-| `audemsp-host` | `ParsecHost` | Controlled host (server.rs) | Sunshine (Host) |
-| `audemsp-client` | `ParsecClient` | Controller (client.rs) | Moonlight (Client) |
+| `mediaservo-host` | `ParsecHost` | Controlled host (server.rs) | Sunshine (Host) |
+| `mediaservo-client` | `ParsecClient` | Controller (client.rs) | Moonlight (Client) |
 
 **来源**：远程桌面/远程操控工业惯例分析 (2026-07-19), D154
 
@@ -60,7 +60,7 @@ D1 和 D126 是互补关系，不是替代关系。
 
 ## C5: GStreamer → WebRTC 数据流边界
 
-**约束**: audemsp-host 中 GStreamer 和 WebRTC 的接口**仅允许 `&[u8]` 字节传递**：
+**约束**: mediaservo-host 中 GStreamer 和 WebRTC 的接口**仅允许 `&[u8]` 字节传递**：
 
 ```
 GStreamer pipeline (C, glib)
@@ -68,7 +68,7 @@ GStreamer pipeline (C, glib)
                        ↓
               H.264 byte buffer (&[u8])
                        ↓
-audemsp-webrtc (Rust wrapper)
+mediaservo-webrtc (Rust wrapper)
   TrackLocal::write_frame(&[u8])
                        ↓
 webrtc-sys (C++, libwebrtc)
@@ -86,16 +86,16 @@ webrtc-sys (C++, libwebrtc)
 
 ---
 
-## C6: audemsp-webrtc 命名规范
+## C6: mediaservo-webrtc 命名规范
 
-**约束**：audemsp-webrtc crate 遵循以下命名规范：
+**约束**：mediaservo-webrtc crate 遵循以下命名规范：
 - **类型名**: 对外 pub 类型全大写 RTC 前缀 (RTCPeerConnection, RTCDataChannel...)，内部类型不加前缀
 - **方法名**: 全部 snake_case (create_offer, add_track, on_track)，禁止 camelCase W3C 包装
 - **目录名**: backend/ (uniform singular)
 - **枚举变体**: PascalCase
 - **常量**: SCREAMING_SNAKE_CASE
 
-其他 crate (core, media, server, audemsp-*) 使用 bare names，无前缀。
+其他 crate (core, media, server, mediaservo-*) 使用 bare names，无前缀。
 
 **来源**: D166, D167, D168 (2026-07-22)
 
@@ -213,17 +213,17 @@ webrtc-sys (C++, libwebrtc)
 
 ---
 
-## C12: 仅通过 audemsp-webrtc 使用 WebRTC
+## C12: 仅通过 mediaservo-webrtc 使用 WebRTC
 
-**约束**：所有 client 端 crate（host/client）禁止直接依赖 webrtc-rs（`webrtc = "0.12"`），必须通过 `audemsp-webrtc` 抽象层使用 WebRTC 能力。P2P 和 SFU 路径统一经此抽象层。Server 端 SFU 路径不依赖 audemsp-webrtc（WebRTC 来自 mediasoup），webrtc feature 为 P2P relay 保留。
+**约束**：所有 client 端 crate（host/client）禁止直接依赖 webrtc-rs（`webrtc = "0.12"`），必须通过 `mediaservo-webrtc` 抽象层使用 WebRTC 能力。P2P 和 SFU 路径统一经此抽象层。Server 端 SFU 路径不依赖 mediaservo-webrtc（WebRTC 来自 mediasoup），webrtc feature 为 P2P relay 保留。
 
 **后端策略**：
-- 默认/当前后端 = `backend-webrtc-sys`（libwebrtc C++ via webrtc-sys FFI），不依赖 audemsp-codec
-- `backend-webrtc-rs` 为备选后端（Phase 2+），需额外依赖 audemsp-codec
+- 默认/当前后端 = `backend-webrtc-sys`（libwebrtc C++ via webrtc-sys FFI），不依赖 mediaservo-codec
+- `backend-webrtc-rs` 为备选后端（Phase 2+），需额外依赖 mediaservo-codec
 
 **Reason**：
-- `audemsp-webrtc` 已封装 W3C API（RTCPeerConnection + TrackSender + DataChannel）
-- 三后端抽象（stub/webrtc-rs/webrtc-sys）由 audemsp-webrtc 统一控制
+- `mediaservo-webrtc` 已封装 W3C API（RTCPeerConnection + TrackSender + DataChannel）
+- 三后端抽象（stub/webrtc-rs/webrtc-sys）由 mediaservo-webrtc 统一控制
 - 直接依赖绕过抽象层破坏后端切换能力和可测试性
 
 **禁止**：
@@ -235,7 +235,7 @@ webrtc = "0.12"
 **允许**：
 ```toml
 # Cargo.toml — 正确
-audemsp-webrtc = { path = "../audemsp-webrtc", features = ["backend-webrtc-sys"] }
+mediaservo-webrtc = { path = "../mediaservo-webrtc", features = ["backend-webrtc-sys"] }
 ```
 
 **来源**：用户显式要求（2026-07-31 Host SFU 评审后）
@@ -244,14 +244,14 @@ audemsp-webrtc = { path = "../audemsp-webrtc", features = ["backend-webrtc-sys"]
 
 ## C13: Server 统一 Docker 构建
 
-**约束**：audemsp-server 统一通过 Docker 编译（mediasoup C++ Worker 需要 Linux x86_64 + meson/ninja）。原生 `cargo check --workspace` 排除 server crate。
+**约束**：mediaservo-server 统一通过 Docker 编译（mediasoup C++ Worker 需要 Linux x86_64 + meson/ninja）。原生 `cargo check --workspace` 排除 server crate。
 
 **pixi 任务映射**：
 | 任务 | 命令 | 说明 |
 |------|------|------|
-| `check` | `cargo check --workspace --exclude audemsp-server` | 原生 |
-| `check-server` | `scripts/docker-cargo.sh check -p audemsp-server --features sfu-mediasoup` | Docker |
-| `build-server` | `scripts/docker-cargo.sh build -p audemsp-server --features sfu-mediasoup` | Docker |
+| `check` | `cargo check --workspace --exclude mediaservo-server` | 原生 |
+| `check-server` | `scripts/docker-cargo.sh check -p mediaservo-server --features sfu-mediasoup` | Docker |
+| `build-server` | `scripts/docker-cargo.sh build -p mediaservo-server --features sfu-mediasoup` | Docker |
 
 **原因**：
 - mediasoup-sys 的 meson wrap 依赖 wrapdb.mesonbuild.com（不可达时无法下载 flatbuffers patch）
@@ -282,7 +282,7 @@ audemsp-webrtc = { path = "../audemsp-webrtc", features = ["backend-webrtc-sys"]
 
 **约束**：任何返回 Error 响应/Err 的代码路径**必须**同时有 `tracing::error!`/`tracing::warn!` 日志。错误信息只进响应不进日志 = 调用方忽略响应时全链路静默（PIT-54：produce Err 分支不打日志 + Host 不读响应 → 失败表现为"挂起"，浪费数小时排查）。
 
-**检查**：`grep -n "SignalingMessage::Error" crates/audemsp-server/src/signaling.rs` — 每个构造点上方应有日志行。
+**检查**：`grep -n "SignalingMessage::Error" crates/mediaservo-server/src/signaling.rs` — 每个构造点上方应有日志行。
 
 **来源**：PIT-54 (2026-08-04 produce UnsupportedCodec 静默)
 
@@ -309,13 +309,13 @@ audemsp-webrtc = { path = "../audemsp-webrtc", features = ["backend-webrtc-sys"]
 **约束**：使用依赖库/项目/工具（crate、框架、FFI、协议）时，**必须优先遵循官方文档、官方仓库源码、官方示例和社区推荐用法**。禁止自创推测用法和"最小可用"接口——官方/社区示例和推荐用法已经过实践验证，能避免重复踩坑。
 
 **适用范围**：
-- **webrtc crate**（audemsp-webrtc）：仅暴露完整的 W3C WebRTC API（RTCPeerConnection.addTrack/addTransceiver/createOffer/setLocalDescription/setRemoteDescription/onicecandidate...），禁止为"省事"裁剪成最小接口或自选语义接口
+- **webrtc crate**（mediaservo-webrtc）：仅暴露完整的 W3C WebRTC API（RTCPeerConnection.addTrack/addTransceiver/createOffer/setLocalDescription/setRemoteDescription/onicecandidate...），禁止为"省事"裁剪成最小接口或自选语义接口
 - **host/client 及 SDK**：遵循 mediasoup 官方客户端架构和示例（libmediasoupclient C++ / mediasoup-client JS / mediasoup-demo），produce/consume 用标准 offer/answer 协商，rtpParameters 从协商结果推导，禁止手工构造 SDP + 手工 JSON rtp_parameters
 - **其他依赖**：mediasoup-rs、GStreamer、FFmpeg、Docker 等同样适用
 
 **反面教材（PIT-65 教训）**：Host SFU produce 手工构造 remote SDP（`a=recvonly`）+ 手工 `build_produce_rtp_parameters` JSON + 从 answer 手工提取 ssrc，绕过标准 `addTransceiver(sendonly) → createOffer → setRemoteDescription(answer)` 协商。后果：① `x-google-max-keyframe-interval` 加在 remote fmtp 但 libwebrtc 从 local answer 读参数 → 失效（稳态 GOP 仍 ~99s）；② ssrc/PT 硬编码 vs 协商值可能不一致；③ 方向反转绕协商 → 关键帧/PLI 反馈链路异常。
 
-**检查**：`grep -nE "build_remote_sdp|build_produce_rtp_parameters|create_answer.*set_local|a=recvonly" crates/audemsp-host/src/` — 这些手工协商痕迹应被标准 offer/answer 取代。
+**检查**：`grep -nE "build_remote_sdp|build_produce_rtp_parameters|create_answer.*set_local|a=recvonly" crates/mediaservo-host/src/` — 这些手工协商痕迹应被标准 offer/answer 取代。
 
 **来源**：用户显式要求（2026-08-05 PIT-65 重构评审后）
 
@@ -356,23 +356,23 @@ docs/reference/
 
 **来源**: PIT-70 (2026-08-07 mediasoup 构建 ninja 路径规避被否决)
 
-## C21: mediasoup 仅限 audemsp-server 使用 — 禁止反向依赖 (2026-08-07)
+## C21: mediasoup 仅限 mediaservo-server 使用 — 禁止反向依赖 (2026-08-07)
 
-**约束**: ① **mediasoup（mediasoup-sys）只允许出现在 audemsp-server 的依赖树**——host/client/SDK 及其测试**禁止依赖 audemsp-server 或任何含 mediasoup 的 crate**（含 dev-dependencies / 测试专用 feature）。② 跨 crate 的 SFU 集成测试必须通过 **WS 信令协议**交互（Host 模拟端连外部 server），不得 import server 内部类型（SfuManager/SignalingServer）。③ 违背 C12 的历史遗留：`audemsp-host/tests/e2e_sfu.rs` 曾依赖 audemsp-server（进程内 spawn SfuManager）——导致 webrtc-sys（libwebrtc 内嵌 OpenSSL）与 mediasoup-sys（静态 openssl-3.0.8）**X509 符号冲突，链接必挂**，且测试从未在 Linux 编译通过（C14）。
+**约束**: ① **mediasoup（mediasoup-sys）只允许出现在 mediaservo-server 的依赖树**——host/client/SDK 及其测试**禁止依赖 mediaservo-server 或任何含 mediasoup 的 crate**（含 dev-dependencies / 测试专用 feature）。② 跨 crate 的 SFU 集成测试必须通过 **WS 信令协议**交互（Host 模拟端连外部 server），不得 import server 内部类型（SfuManager/SignalingServer）。③ 违背 C12 的历史遗留：`mediaservo-host/tests/e2e_sfu.rs` 曾依赖 mediaservo-server（进程内 spawn SfuManager）——导致 webrtc-sys（libwebrtc 内嵌 OpenSSL）与 mediasoup-sys（静态 openssl-3.0.8）**X509 符号冲突，链接必挂**，且测试从未在 Linux 编译通过（C14）。
 
-**原因**: ① 依赖方向单向（C12: server 用 mediasoup，host/client 用 audemsp-webrtc，两者不交叉）；② 双 OpenSSL 静态链接符号冲突（X509_PUBKEY_it duplicate symbol）——架构性，无法绕过；③ 测试便利不得凌驾架构边界（PIT-71 教训：进程内模式设计从诞生起未真正跑通）。
+**原因**: ① 依赖方向单向（C12: server 用 mediasoup，host/client 用 mediaservo-webrtc，两者不交叉）；② 双 OpenSSL 静态链接符号冲突（X509_PUBKEY_it duplicate symbol）——架构性，无法绕过；③ 测试便利不得凌驾架构边界（PIT-71 教训：进程内模式设计从诞生起未真正跑通）。
 
-**检查**: `cargo tree -p audemsp-host -i mediasoup-sys` 应为空（host 依赖树无 mediasoup）；`grep -rn "audemsp-server" crates/audemsp-host/Cargo.toml crates/audemsp-client/Cargo.toml` 应无引用。
+**检查**: `cargo tree -p mediaservo-host -i mediasoup-sys` 应为空（host 依赖树无 mediasoup）；`grep -rn "mediaservo-server" crates/mediaservo-host/Cargo.toml crates/mediaservo-client/Cargo.toml` 应无引用。
 
 **来源**: 用户架构强调 (2026-08-07) + PIT-71 e2e_sfu.rs 链接冲突根因。
 
 ## C22: Host 禁止在 Docker 中运行 — 含测试 (2026-08-10)
 
-**约束**: ① **audemsp-host（二进制、测试、E2E 流程）不允许在 Docker 容器内运行**——宿主原生编译/运行（macOS 或 Linux 宿主直接 `cargo build/run/test`）。② e2e_sfu 等 Host 侧测试在**宿主原生**执行，仅 server（mediasoup）在 Docker 容器内。③ Host 连 Docker server 时用宿主可达 IP（`AUDEMSP_SFU_ANNOUNCED_IP=宿主IP`），不得用容器内 IP（172.18.x）作为 announced address——容器内 host 经宿主 IP 有 hairpin NAT 问题（P1 实证：容器→宿主 IP:20000 的 STUN 不通）。
+**约束**: ① **mediaservo-host（二进制、测试、E2E 流程）不允许在 Docker 容器内运行**——宿主原生编译/运行（macOS 或 Linux 宿主直接 `cargo build/run/test`）。② e2e_sfu 等 Host 侧测试在**宿主原生**执行，仅 server（mediasoup）在 Docker 容器内。③ Host 连 Docker server 时用宿主可达 IP（`MEDIASERVO_SFU_ANNOUNCED_IP=宿主IP`），不得用容器内 IP（172.18.x）作为 announced address——容器内 host 经宿主 IP 有 hairpin NAT 问题（P1 实证：容器→宿主 IP:20000 的 STUN 不通）。
 
 **原因**: 用户显式要求（2026-08-10）——host 是边缘侧部署形态（车端/设备），开发/测试环境必须与部署一致；容器内跑 host 引入 NAT/网络抽象，掩盖真实网络行为（ICE/STUN/延迟），且 P1 已实证容器内 host 连宿主 IP 的 UDP 路径不通。
 
-**检查**: `grep -rn "docker exec.*audemsp-host\|docker.*cargo.*audemsp-host\|audemsp-host" scripts/*.sh .github/workflows/ci.yml` — host 相关命令应宿主原生；`AUDEMSP_SFU_ANNOUNCED_IP` 应为宿主可达 IP（非 172.18.x）。
+**检查**: `grep -rn "docker exec.*mediaservo-host\|docker.*cargo.*mediaservo-host\|mediaservo-host" scripts/*.sh .github/workflows/ci.yml` — host 相关命令应宿主原生；`MEDIASERVO_SFU_ANNOUNCED_IP` 应为宿主可达 IP（非 172.18.x）。
 
 **来源**: 用户显式要求 (2026-08-10)
 
@@ -388,15 +388,15 @@ docs/reference/
 libEGL/libv4lconvert 仅系统目录）；`cargo:rustc-link-arg` 不从 rlib 传播；系统 gcc 原生找到全部系统库
 = 上游 livekit 官方 Jetson 流程（PIT-85/D220）。
 
-**检查**: `pixi run bash -c 'echo $CC'` 应输出 `/usr/bin/gcc`；`audemsp.sh build host` 应 Finished；
-`ldd target/debug/audemsp-host | grep -c "not found"` = 0。**禁止**：`source .pixi/envs/default/activate` 验证环境
+**检查**: `pixi run bash -c 'echo $CC'` 应输出 `/usr/bin/gcc`；`mediaservo.sh build host` 应 Finished；
+`ldd target/debug/mediaservo-host | grep -c "not found"` = 0。**禁止**：`source .pixi/envs/default/activate` 验证环境
 （pixi 0.66 静默不生效 → CONDA_PREFIX 空 → 误用系统工具链造成假成功）；把 conda gcc 的 CC/CXX 覆盖回
 conda 交叉编译器（会 PIT-85 复发）。
 
 **来源**: PIT-85 / D220 (2026-08-12)
 ## C24: admin dist 编译期嵌入 — 改 TS 源码后必须 rebuild 才生效 (2026-08-13)
 
-**约束**: Admin Dashboard 前端（`www/apps/admin/src/`）修改后，**9800 生产入口（server 托管）不会自动生效**——`crates/audemsp-server/build.rs` 在编译期 `include_bytes!` 嵌入 `www/apps/admin/dist/`（rust-embed 模式）。开发验证必须走 5173（vite dev, 热更新）；9800 入口需：`cd www/apps/admin && npm run build` + `./audemsp.sh restart server`（build.rs rerun-if-changed 触发重新嵌入）。
+**约束**: Admin Dashboard 前端（`www/apps/admin/src/`）修改后，**9800 生产入口（server 托管）不会自动生效**——`crates/mediaservo-server/build.rs` 在编译期 `include_bytes!` 嵌入 `www/apps/admin/dist/`（rust-embed 模式）。开发验证必须走 5173（vite dev, 热更新）；9800 入口需：`cd www/apps/admin && npm run build` + `./mediaservo.sh restart server`（build.rs rerun-if-changed 触发重新嵌入）。
 
 **检查**: 修改 sfu-client.ts/VideoPlayer.tsx 后，9800 页面 JS bundle 是否含新字段（`curl http://127.0.0.1:9800/admin` → HTML 引用的 `index-*.js` 与 `dist/assets/` 最新产物一致）。
 

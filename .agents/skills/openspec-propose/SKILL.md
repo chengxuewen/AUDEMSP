@@ -1,7 +1,7 @@
 ---
 name: openspec-propose
 description: >-
-  Propose a new change for AUDESYS with structured artifacts (proposal, design,
+  Propose a new change for MediaServo with structured artifacts (proposal, design,
   tasks). Generates .sisyphus/plans/<name>/proposal.md + design.md + tasks.md.
   Use when the user describes what they want to build and needs a complete proposal ready for implementation.
 license: MIT
@@ -11,12 +11,12 @@ metadata:
   author: openspec
   version: "2.0"
   category: workflow
-  project: AUDESYS
+  project: MediaServo
 ---
 
-# OpenSpec Propose — AUDESYS
+# OpenSpec Propose — MediaServo
 
-Create a structured change proposal for AUDESYS. Produce three artifacts that together answer
+Create a structured change proposal for MediaServo. Produce three artifacts that together answer
 "what are we building, how does it fit, and what's the plan?"
 
 When ready to implement, follow with `/openspec-apply`.
@@ -56,8 +56,8 @@ Read every spec whose module overlaps. Note if no relevant spec exists.
 
 | Layer | Location | When affected |
 |-------|----------|---------------|
-| **HAL Core** | `crates/audesys-hal-core/` | New traits, types, primitives, error types |
-| **amw_inproc** | `crates/amw_inproc/` | Transport/Discovery implementation changes |
+| **HAL Core** | `crates/mediaservo-common/` | New traits, types, primitives, error types |
+| **mediaservo** | `crates/mediaservo/` | Transport/Discovery implementation changes |
 | **FlatBuffers** | `crates/hal-flatbuffers/` + `.fbs` schemas | New/changed cross-language types |
 | **Studio** | `apps/studio/` | Tauri+React+TypeScript frontend changes (D21) |
 
@@ -65,10 +65,10 @@ Read every spec whose module overlaps. Note if no relevant spec exists.
 
 | Transport | Phase | Purpose |
 |-----------|-------|---------|
-| **amw_inproc** | Phase 1 | In-process HAL Transport/Discovery (D11) |
+| **mediaservo** | Phase 1 | In-process HAL Transport/Discovery (D11) |
 | **amw_zenoh** | Phase 2 | Network transport via Zenoh (future) |
 
-Most Phase 1 changes target `amw_inproc` only.
+Most Phase 1 changes target `mediaservo` only.
 
 ### 3. Create the proposal directory
 
@@ -82,8 +82,8 @@ Create `.sisyphus/plans/<change-name>/proposal.md` with these sections:
 - **What** — 2-4 sentences, specific
 - **Why** — problem, use case, gap
 - **Scope** — in scope / out of scope
-- **Layers Affected** — checklist: HAL Core / amw_inproc / FlatBuffers / Studio
-- **Transports Affected** — amw_inproc: yes/no/partial, amw_zenoh: yes/no/partial
+- **Layers Affected** — checklist: HAL Core / mediaservo / FlatBuffers / Studio
+- **Transports Affected** — mediaservo: yes/no/partial, amw_zenoh: yes/no/partial
 - **Existing Specs** — list `openspec/specs/<name>.md` with one-line description each
 - **New Specs Needed** — list or "None"
 - **Risks** — 2-4 bullet points (thread safety, FFI, build, interop)
@@ -99,7 +99,7 @@ Create `.sisyphus/plans/<change-name>/design.md` with these sections:
 - **Integration Points** — HAL trait boundary, amw boundary, FlatBuffers boundary, Studio boundary
 - **Rust/HAL Specifics** — new traits/structs, Signal/StreamChannel wiring (D10), thread safety (Send+Sync, Config Barrier D17), YAML→FlatBuffers config (D24)
 - **Error Handling** — HAL 5-layer error model (D46): type/transport/resource/discovery/scheduling
-- **Testing Strategy** — checklist: Rust unit, integration, FlatBuffers round-trip, amw_inproc E2E, qa-fast gate (`./scripts/qa/qa-fast.sh`)
+- **Testing Strategy** — checklist: Rust unit, integration, FlatBuffers round-trip, mediaservo E2E, qa-fast gate (`./scripts/qa/qa-fast.sh`)
 - **Dependencies** — new cargo deps, FlatBuffers schema changes (or "None")
 
 ### 6. Write tasks.md
@@ -112,12 +112,12 @@ Create `.sisyphus/plans/<change-name>/tasks.md`. Tasks must be **atomic, ordered
 ## Phase 1: Foundation
 
 - [ ] **Add `<trait/struct>` to HAL Core**
-  - File: `crates/audesys-hal-core/src/<path>/<file>.rs`
-  - Verify: `cargo check -p audesys-hal-core`
+  - File: `crates/mediaservo-common/src/<path>/<file>.rs`
+  - Verify: `cargo check -p mediaservo-common`
 
-- [ ] **Implement for amw_inproc**
-  - File: `crates/amw_inproc/src/<file>.rs`
-  - Verify: `cargo check -p amw_inproc`
+- [ ] **Implement for mediaservo**
+  - File: `crates/mediaservo/src/<file>.rs`
+  - Verify: `cargo check -p mediaservo`
 
 ## Phase 2: Transport & Bindings
 
@@ -129,7 +129,7 @@ Create `.sisyphus/plans/<change-name>/tasks.md`. Tasks must be **atomic, ordered
 
 - [ ] **Add Rust unit tests** (AAA pattern, D33)
   - File: same as implementation
-  - Verify: `cargo test -p audesys-hal-core`
+  - Verify: `cargo test -p mediaservo-common`
 
 - [ ] **Add integration tests**
   - File: `tests/<name>_test.rs`
@@ -159,8 +159,8 @@ Display summary — change name, artifact list, line counts. Let user request ch
 
 | Purpose | Path |
 |---------|------|
-| HAL Core | `crates/audesys-hal-core/src/` |
-| amw_inproc | `crates/amw_inproc/src/` |
+| HAL Core | `crates/mediaservo-common/src/` |
+| mediaservo | `crates/mediaservo/src/` |
 | FlatBuffers schemas | `crates/hal-flatbuffers/*.fbs` |
 | Studio | `apps/studio/src/` |
 | Specs | `openspec/specs/` |
@@ -169,14 +169,14 @@ Display summary — change name, artifact list, line counts. Let user request ch
 
 ---
 
-## AUDESYS-Specific Guidelines
+## MediaServo-Specific Guidelines
 
 ### Crate references
 
 | Crate | Path | Type |
 |---------|------|------|
-| HAL Core | `crates/audesys-hal-core/` | Rust (traits, types, primitives) |
-| amw-inproc | `crates/amw_inproc/` | Rust (HAL Transport/Discovery in-process) |
+| HAL Core | `crates/mediaservo-common/` | Rust (traits, types, primitives) |
+| amw-inproc | `crates/mediaservo/` | Rust (HAL Transport/Discovery in-process) |
 | HAL FlatBuffers | `crates/hal-flatbuffers/` | Rust + .fbs schemas |
 | Studio | `apps/studio/` | Tauri + React + TypeScript (D21) |
 
@@ -184,7 +184,7 @@ Display summary — change name, artifact list, line counts. Let user request ch
 
 ```bash
 cargo build                                    # Full build
-cargo build --package audesys-hal-core --package amw_inproc  # HAL-only
+cargo build --package mediaservo-common --package mediaservo  # HAL-only
 cargo test                                     # Debug build + tests
 ./scripts/qa/qa-fast.sh                        # QA fast gate (5 checks)
 ```
@@ -193,7 +193,7 @@ cargo test                                     # Debug build + tests
 
 - Rust stable toolchain, ownership, borrowing, traits
 - HAL traits + FlatBuffers for cross-language interop (D19)
-- amw_inproc for Phase 1 transport (D11)
+- mediaservo for Phase 1 transport (D11)
 - Multi-language via FlatBuffers schema (D19)
 - Thread safety: Config Barrier (D17) for RT config changes
 - Config via YAML → FlatBuffers (D24)
@@ -205,9 +205,9 @@ cargo test                                     # Debug build + tests
 - **Always ask for the change name** — do not generate one without user confirmation
 - **Read specs before proposing** — ignoring existing SDD contracts is waste
 - **Layer assessment must be explicit** — "maybe affects FlatBuffers" is not acceptable; decide and document
-- **Transport assessment must be explicit** — amw_inproc-only? amw_zenoh? Both? Document the split
+- **Transport assessment must be explicit** — mediaservo-only? amw_zenoh? Both? Document the split
 - **Tasks must be atomic** — each task produces one verifiable result (compiling code, passing tests)
-- Always reference actual AUDESYS file paths and crate names
+- Always reference actual MediaServo file paths and crate names
 - If context is critically unclear, ask — but prefer reasonable decisions to keep momentum
 - If a proposal with that name already exists, ask to continue or create new
 - Do NOT propose changes to `version.txt` — versioning is user-managed

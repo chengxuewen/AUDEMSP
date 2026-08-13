@@ -2,7 +2,7 @@
 name: openspec-explore
 description: >-
   Enter explore mode — a thinking partner for exploring ideas, investigating
-  problems, and clarifying requirements for AUDESYS (Rust + HAL + amw_inproc multi-language).
+  problems, and clarifying requirements for MediaServo (Rust + HAL + mediaservo multi-language).
   Use when the user wants to think through something before or during a change.
 license: MIT
 compatibility: Designed for Claude Code, GitHub Copilot, and similar agents.
@@ -11,10 +11,10 @@ metadata:
   author: openspec
   version: "1.0"
   category: workflow
-  project: AUDESYS
+  project: MediaServo
 ---
 
-# OpenSpec Explore — AUDESYS
+# OpenSpec Explore — MediaServo
 
 Enter explore mode. Think deeply. Visualize freely. Follow the conversation wherever it goes.
 
@@ -40,13 +40,13 @@ Enter explore mode. Think deeply. Visualize freely. Follow the conversation wher
 **Explore the problem space**
 - Ask clarifying questions that emerge from what they said
 - Challenge assumptions about Rust/HAL architecture
-- Reframe the problem in AUDESYS context
+- Reframe the problem in MediaServo context
 - Find analogies from similar industrial control system stations
 
-**Investigate the AUDESYS codebase**
+**Investigate the MediaServo codebase**
 - Map existing architecture relevant to the discussion
-  - `crates/audesys-hal-core/` — HAL traits, types, primitives (D10/D11/D12)
-  - `crates/amw_inproc/` — In-process HAL transport/discovery
+  - `crates/mediaservo-common/` — HAL traits, types, primitives (D10/D11/D12)
+  - `crates/mediaservo/` — In-process HAL transport/discovery
   - `crates/hal-flatbuffers/` — FlatBuffers schema + bindings (D19)
   - `apps/studio/` — Tauri + React + TypeScript IDE (D21)
   - `Cargo.toml` — Virtual workspace manifest
@@ -56,7 +56,7 @@ Enter explore mode. Think deeply. Visualize freely. Follow the conversation wher
 
 **Compare options**
 - Brainstorm multiple Rust/architecture approaches
-- Build comparison tables (e.g., amw_inproc vs amw_zenoh vs amw_iceoryx)
+- Build comparison tables (e.g., mediaservo vs amw_zenoh vs amw_iceoryx)
 - Sketch tradeoffs for HAL/Runtime integration
 - Recommend a path (if asked)
 
@@ -79,11 +79,11 @@ Enter explore mode. Think deeply. Visualize freely. Follow the conversation wher
 │         │                                             │
 │         ▼                                             │
 │   ┌────────────────┐     ┌──────────────────────┐     │
-│   │ amw_inproc     │     │ HAL FlatBuffers      │     │
+│   │ mediaservo     │     │ HAL FlatBuffers      │     │
 │   │ (D11 in-proc)  │     │ (D19 cross-lang)     │     │
 │   └────────────────┘     └──────────────────────┘     │
 │                                                       │
-│   AUDESYS HAL architecture                            │
+│   MediaServo HAL architecture                            │
 └───────────────────────────────────────────────────────┘
 ```
 
@@ -146,24 +146,24 @@ When exploring, draw from four structured sources in order of priority:
 - **Check when** questions involve "why was this done this way?" or project history
 
 ### 4. Codebase (`crates/`, `apps/`)
-- `crates/audesys-hal-core/` — HAL traits, types, primitives (D10/D11/D12)
-- `crates/amw_inproc/` — in-process transport/discovery (D11, Phase 1)
+- `crates/mediaservo-common/` — HAL traits, types, primitives (D10/D11/D12)
+- `crates/mediaservo/` — in-process transport/discovery (D11, Phase 1)
 - `crates/hal-flatbuffers/` — FlatBuffers schema + bindings (D19, cross-language)
 - `apps/studio/` — Tauri + React + TypeScript IDE (D21, Phase 1)
 - **Check when** questions involve actual implementation details
 
 ---
 
-## AUDESYS Project Awareness
+## MediaServo Project Awareness
 
-When exploring, keep these AUDESYS specifics in mind:
+When exploring, keep these MediaServo specifics in mind:
 
 | Concern | Details |
 |---------|---------|
 | Build system | cargo workspace → cargo build / cargo test |
 | Rust standard | Rust stable, ownership, borrowing, traits |
 | HAL primitives | Signal / StreamChannel / RPC (D10) |
-| Middleware | amw_inproc (Phase 1), amw_zenoh (Phase 2) (D11) |
+| Middleware | mediaservo (Phase 1), amw_zenoh (Phase 2) (D11) |
 | Type system | IEC 61131-3 mapped — 14 types (D12) |
 | Multi-language | FlatBuffers schemas + codegen (D19) |
 | RT config | HAL Config Barrier at cycle boundary (D17) |
@@ -191,7 +191,7 @@ User: I'm thinking about adding a signal monitoring panel
 
 You: Signal monitoring could go in several places. Let me think about this...
 
-      SIGNAL MONITORING OPTIONS IN AUDESYS
+      SIGNAL MONITORING OPTIONS IN MediaServo
       ═══════════════════════════════════════════
 
       ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
@@ -214,7 +214,7 @@ You: [reads hal-core signal module and related files]
 
      Let me trace what happens when a Signal write occurs...
 
-     write_signal() → Config Barrier check (D17) → amw_inproc publish
+     write_signal() → Config Barrier check (D17) → mediaservo publish
          │                                               │
          │                                               ▼
          │                                    subscriber callback
@@ -228,11 +228,11 @@ You: [reads hal-core signal module and related files]
 
 **User wants to compare options:**
 ```
-User: Should we use amw_inproc or amw_zenoh for Phase 1?
+User: Should we use mediaservo or amw_zenoh for Phase 1?
 
-You: Let's look at what AUDESYS already does...
+You: Let's look at what MediaServo already does...
 
-     amw_inproc (current)  vs   amw_zenoh (Phase 2+)
+     mediaservo (current)  vs   amw_zenoh (Phase 2+)
      ─────────────────────────────────────────────────
      Mature in codebase     │  New, needs setup
      Zero-copy in-process   │  Network transport
@@ -240,7 +240,7 @@ You: Let's look at what AUDESYS already does...
      Phase 0/1 ready        │  Phase 2+ target
 
      Unless you need network transport right now,
-     amw_inproc is the lower-risk path for Phase 1.
+     mediaservo is the lower-risk path for Phase 1.
 ```
 
 ---
@@ -278,5 +278,5 @@ When it feels like things are crystallizing, you might summarize:
 - **Don't force structure** — Let patterns emerge naturally
 - **Don't auto-capture** — Offer to save insights, don't just do it
 - **Do visualize** — A good diagram is worth many paragraphs
-- **Do explore the codebase** — Ground discussions in AUDESYS reality
+- **Do explore the codebase** — Ground discussions in MediaServo reality
 - **Do question assumptions** — Including the user's and your own

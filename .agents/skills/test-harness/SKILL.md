@@ -1,11 +1,11 @@
 ---
 name: test-harness
-description: "AUDESYS 多语言自动化测试工具架。从 SDD 规范生成测试骨架 (Rust/TS/Python/C++/C)、AAA 模式强制执行、测试→规范反向追溯、覆盖率报告。交互式菜单驱动。支持 Phase 感知 (跳过未就绪模块)。"
+description: "MediaServo 多语言自动化测试工具架。从 SDD 规范生成测试骨架 (Rust/TS/Python/C++/C)、AAA 模式强制执行、测试→规范反向追溯、覆盖率报告。交互式菜单驱动。支持 Phase 感知 (跳过未就绪模块)。"
 ---
 
 # 测试工具架 (Test Harness)
 
-为 AUDESYS 多语言项目提供自动化测试生成与验证。从 SDD 规范直接产出测试代码，确保 AAA 模式、Phase 对齐、语言惯例一致。
+为 MediaServo 多语言项目提供自动化测试生成与验证。从 SDD 规范直接产出测试代码，确保 AAA 模式、Phase 对齐、语言惯例一致。
 
 **哲学**: 测试不是写完代码再补的东西，是从规范直接长出来的。一个好测试文件 = 规范的可执行副本。
 
@@ -39,7 +39,7 @@ description: "AUDESYS 多语言自动化测试工具架。从 SDD 规范生成�
 
 ## 多语言策略
 
-AUDESYS 是一个多语言项目 (D19, D21)。测试生成必须适配各语言惯例。
+MediaServo 是一个多语言项目 (D19, D21)。测试生成必须适配各语言惯例。
 
 ### 语言检测
 
@@ -317,7 +317,7 @@ hal-protocol       | 88%      | 82%      | 34/37
 /test-harness selective
 ```
 
-> 注：amw_inproc 和 hal-flatbuffers 为 Phase 1 stub crates（M0.3），当前无实际测试目标。Mode 7 使用 `cargo metadata` 检查 crate 存在性后再建议测试命令。
+> 注：mediaservo 和 hal-flatbuffers 为 Phase 1 stub crates（M0.3），当前无实际测试目标。Mode 7 使用 `cargo metadata` 检查 crate 存在性后再建议测试命令。
 从 `git diff` 识别变更 → 仅运行受影响的测试（非门禁，调度工具）：
 
 1. `git diff --name-only HEAD` 获取变更文件
@@ -325,8 +325,8 @@ hal-protocol       | 88%      | 82%      | 34/37
 
 | 变更路径匹配 | 测试命令 |
 |---|---|
-| `crates/audesys-hal-core/` | `cargo test -p audesys-hal-core` |
-| `crates/amw_inproc/` | `cargo test -p amw_inproc`（Phase 1, stub only） |
+| `crates/mediaservo-common/` | `cargo test -p mediaservo-common` |
+| `crates/mediaservo/` | `cargo test -p mediaservo`（Phase 1, stub only） |
 | `crates/hal-flatbuffers/` | `cargo test -p hal-flatbuffers`（Phase 1, stub only） |
 | `*.fbs` (FlatBuffers schema) | `cargo test -p hal-flatbuffers` |
 | `Cargo.toml` or `Cargo.lock` | `cargo test --workspace` |
@@ -339,11 +339,11 @@ hal-protocol       | 88%      | 82%      | 34/37
 
 ---
 
-## AUDESYS 特定测试模式
+## MediaServo 特定测试模式
 
 ### HAL Trait 测试
 
-所有 HAL 核心 trait 测试使用 `MockHalTransport` (`amw_inproc`)：
+所有 HAL 核心 trait 测试使用 `MockHalTransport` (`mediaservo`)：
 
 ```rust
 // Rust 模式
@@ -415,7 +415,7 @@ fn test_halvalue_fbs_roundtrip() {
 
 ```
 将生成以下变更:
-  crates/audesys-hal-core/src/types.rs +45 (内联测试模块)
+  crates/mediaservo-common/src/types.rs +45 (内联测试模块)
   tests/integration/test_type_roundtrip.rs (新文件, 150行)
   tests/integration/test_qos_security.rs (新文件, 80行)
 

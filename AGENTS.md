@@ -2,7 +2,7 @@
 
 **Generated:** 2026-07-23
 
-MediaServo — 实时媒体伺服平台。独立部署的视频/媒体服务平台，涵盖监控相机接入与录制回放（NVR）、视频会议、远程桌面、遥操作、直播推拉流等能力。当前状态: Phase 3 完成，7 crate workspace，webrtc triple-backend (webrtc-rs 视频管线完整对齐)，mediaservo-codec 三后端 (stub+FFmpeg+GStreamer)，217 commits on main。
+MediaServo — 实时媒体伺服平台。独立部署的视频/媒体服务平台，涵盖监控相机接入与录制回放（NVR）、视频会议、远程桌面、遥操作、直播推拉流等能力。当前状态: Phase 3 完成，7 crate workspace，webrtc triple-backend (webrtc-rs 视频管线完整对齐)，mediaservo-codec 三后端 (stub+FFmpeg+GStreamer)，343 commits on main。
 
 ## STRUCTURE
 
@@ -24,8 +24,8 @@ MediaServo/
 │   ├── mediaservo-host/   # Host 应用 (headless, 采集+编码+推流)
 │   ├── mediaservo-client/ # Remote 应用 (拉流+解码+控制)
 │   ├── mediaservo-server/ # Server 应用 (信令+relay+监控)
-│   ├── mediaservo-common/   # 共享基础: config, error, metrics, protocol, auth (41 tests)
-│   ├── mediaservo-media/  # 媒体管线: pipeline, broadcast, engine, transform (54 tests)
+│   ├── mediaservo-common/   # 共享基础: config, error, metrics, protocol, auth (72 tests)
+│   ├── mediaservo-media/  # 媒体管线: pipeline, broadcast, engine, transform (107 tests)
 │   ├── mediaservo-webrtc/ # WebRTC 抽象层 (stub/webrtc-rs/webrtc-sys, video pipeline parity)
 │   └── mediaservo-codec/  # 编解码: stub + FFmpeg + GStreamer 三后端
 ├── docs/               # 设计文档 (architecture.md + modules/ + reference/ + research/)
@@ -97,8 +97,8 @@ _项目已进入代码实施阶段。以下为当前状态：_
 | mediaservo-host | 🟡 骨架完成 | Host 应用: 采集、编码、推流、信令、配置 |
 | mediaservo-client | 🟡 骨架完成 | Remote 应用: 拉流、解码、渲染、控制 |
 | mediaservo-server | 🟡 骨架完成 | Server 应用: 信令 relay、监控、会话管理 |
-│ mediaservo-common | ✅ 已实现 | 共享基础: config, error, metrics, protocol, auth (41 tests)
-│ mediaservo-media | ✅ 已实现 | 媒体管线: pipeline, broadcast, engine, transform (54 tests)
+│ mediaservo-common | ✅ 已实现 | 共享基础: config, error, metrics, protocol, auth (72 tests)
+│ mediaservo-media | ✅ 已实现 | 媒体管线: pipeline, broadcast, engine, transform (107 tests)
 │ mediaservo-webrtc | ✅ triple-backend | WebRTC 抽象层 (stub/webrtc-rs/webrtc-sys), 118+ tests, webrtc-rs 视频管线完整对齐
 │ mediaservo-codec | ✅ 三后端 | 编解码: stub + FFmpeg (static) + GStreamer (dynamic, pixi)
 | Phase 2+ crates | 🔲 计划中 | 详见 `docs/architecture.md`
@@ -144,6 +144,6 @@ _项目已进入代码实施阶段。以下为当前状态：_
 
 ## NOTES
 
-- **Phase 3 完成** — Docker/CI/DevContainer 就位，SFU connect_transport 已实现，217 commits on main
+- **Phase 3 完成** — Docker/CI/DevContainer 就位，SFU connect_transport 已实现，343 commits on main
 - **骨架代码已创建** — `crates/mediaservo-{host,client,server}` 三个 crate 含模块骨架
 - **生态共享依赖** — 第三方平台通过 Rust crate 静态链接或 napi 绑定消费本仓库

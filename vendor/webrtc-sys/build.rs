@@ -109,7 +109,7 @@ fn main() {
     let webrtc_include = webrtc_dir.join("include");
     let webrtc_lib = webrtc_dir.join("lib");
 
-    // AUDEMSP vendored (PIT-77+): 优先缓存（webrtc_dir.exists 命中即跳过下载），
+    // MediaServo vendored (PIT-77+): 优先缓存（webrtc_dir.exists 命中即跳过下载），
     // 下载失败自动重试（默认 3 次，退避 2s*attempt；LK_WEBRTC_RETRIES 可配）。
     // 上游 webrtc-sys-build 无重试 — 大文件经代理下载 TLS 中断是间歇性网络问题。
     if !webrtc_dir.exists() {

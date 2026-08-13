@@ -1,20 +1,20 @@
-# audemsp-media Crate Design
+# mediaservo-media Crate Design
 
 **Created:** 2026-07-20 | **Updated:** 2026-07-22
 **Status:** ✅ Implemented — divergences from spec documented below
 
 ## Overview
 
-`audemsp-media` is a new workspace crate providing video frame types, pixel format buffers, source/sink pipeline traits, frame generators, and spatial/color transforms. Code is ported from [webrtc-kit](https://github.com/chengxuewen/webrtc-kit) `video/` module, with enhancements from OpenCTK's `media/source` reference architecture.
+`mediaservo-media` is a new workspace crate providing video frame types, pixel format buffers, source/sink pipeline traits, frame generators, and spatial/color transforms. Code is ported from [webrtc-kit](https://github.com/chengxuewen/webrtc-kit) `video/` module, with enhancements from OpenCTK's `media/source` reference architecture.
 
-**Design principle:** Media crate with minimal `audemsp-core` dependency (for `CoreError`). Async pipeline engine (`tokio`). Self-contained video types with `VideoFrame<T>`, `VideoBuffer` trait, `VideoSource<F>` / `VideoSink<F>` pipeline traits.
+**Design principle:** Media crate with minimal `mediaservo-core` dependency (for `CoreError`). Async pipeline engine (`tokio`). Self-contained video types with `VideoFrame<T>`, `VideoBuffer` trait, `VideoSource<F>` / `VideoSink<F>` pipeline traits.
 
-**Divergence from original spec:** Added `audemsp-core` and `tokio` deps after engine/plugin modules moved from core (D169).
+**Divergence from original spec:** Added `mediaservo-core` and `tokio` deps after engine/plugin modules moved from core (D169).
 
 ## Crate Structure
 
 ```
-crates/audemsp-media/
+crates/mediaservo-media/
 ├── Cargo.toml
 ├── src/
 │   ├── lib.rs                    # pub mod exports + compile_error! guard
@@ -49,10 +49,10 @@ crates/audemsp-media/
 
 ```toml
 [package]
-name = "audemsp-media"
+name = "mediaservo-media"
 version.workspace = true
 edition.workspace = true
-description = "AUDEMSP Media — video frame types, buffers, source/sink pipeline, transforms"
+description = "MediaServo Media — video frame types, buffers, source/sink pipeline, transforms"
 license.workspace = true
 
 [dependencies]
@@ -61,7 +61,7 @@ tracing = "0.1"
 chrono = { version = "0.4", features = ["clock"] }
 rand = "0.8"
 yuv-sys = { version = "0.3", optional = true }
-audemsp-core = { path = "../audemsp-core" }
+mediaservo-core = { path = "../mediaservo-core" }
 tokio = { version = "1", features = ["sync", "rt-multi-thread", "time", "macros"] }
 
 [dev-dependencies]
@@ -78,7 +78,7 @@ backend-native = []
 features = ["backend-yuv-sys"]
 ```
 
-**Divergence from original spec:** `libyuv-sys` renamed to `yuv-sys`. Added `audemsp-core`, `tokio`, `chrono`, `rand` deps (engine/plugin from core). Added egui dev-deps for examples.
+**Divergence from original spec:** `libyuv-sys` renamed to `yuv-sys`. Added `mediaservo-core`, `tokio`, `chrono`, `rand` deps (engine/plugin from core). Added egui dev-deps for examples.
 
 - Minimal dependencies: `thiserror` + `tracing` + optional `libyuv-sys`
 - Inherits `version`/`edition`/`license` from workspace
@@ -376,7 +376,7 @@ pub enum MediaError {
 pub type MediaResult<T> = Result<T, MediaError>;
 ```
 
-Uses `thiserror` (aligns with AUDEMSP conventions; webrtc-kit used manual impls). Import style matches existing crates: `use thiserror::Error; #[derive(Error, Debug)]`.
+Uses `thiserror` (aligns with MediaServo conventions; webrtc-kit used manual impls). Import style matches existing crates: `use thiserror::Error; #[derive(Error, Debug)]`.
 
 ## Testing Strategy
 
@@ -407,19 +407,19 @@ Target: ≥80% line coverage.
 
 | # | Decision | Rationale |
 |---|----------|-----------|
-| D1 | Independent crate, no `audemsp-core` dependency | Self-contained video pipeline; AUDEMSP-core types are a different abstraction layer |
+| D1 | Independent crate, no `mediaservo-core` dependency | Self-contained video pipeline; MediaServo-core types are a different abstraction layer |
 | D2 | `I420BufferRef` borrowed view for backend traits | Zero-copy, lifetime-checked plane access; avoids owned-buffer allocation in transform hot path |
 | D3 | `I420` as canonical center format | Industry standard; all conversion converges to I420; transforms operate on I420 |
-| D4 | Feature flags `backend-libyuv-sys` / `backend-native` | Matches `audemsp-webrtc` naming convention; compile-time backend selection |
+| D4 | Feature flags `backend-libyuv-sys` / `backend-native` | Matches `mediaservo-webrtc` naming convention; compile-time backend selection |
 | D5 | `VideoTransform` as merged trait (spatial + color) | Both always needed together; returned as single backend; simplifies feature-gating |
 | D6 | Batch operations on slices, caller pre-allocates | Zero internal allocation in transform hot path; matches libyuv C API pattern |
 | D7 | `VideoSinkWants` backpressure + dynamic `on_frame` return | Enables downstream to signal changing resolution/framerate constraints frame-by-frame |
-| D8 | `thiserror` for MediaError | Aligns with all existing AUDEMSP crates; replaces webrtc-kit manual Display+Error impl |
+| D8 | `thiserror` for MediaError | Aligns with all existing MediaServo crates; replaces webrtc-kit manual Display+Error impl |
 | D9 | No `serde` dependency in media crate | Frame buffers are runtime data; serialization belongs at application/codec layer |
 | D10 | `as_i420_ref()` instead of buffer-level `scale()` | Decouples buffer from scaling algorithm; backend handles all transforms |
 | D11 | `SinkId` for sink lifecycle (not `&Box<dyn Sink>`) | Type-safe removal; avoids fragile pointer comparison |
 | D12 | Broadcaster uses `Arc<F>` internally | `Box<dyn VideoBuffer>` is not `Clone`; `Arc<F>` enables zero-copy broadcast |
 | D13 | Unified `PixelFormat` enum (RGB + YUV) | Follows OpenCTK's `VideoType` approach; simpler than two separate enums |
 | D14 | `I420BufferRef` is `Copy`, passed by value | All fields are `&[u8]` + `usize` (all `Copy`); avoids double-indirection (`&&`) |
-| D15 | `compile_error!` guard for zero backends | Matches `audemsp-webrtc` convention; clear error message vs confusing missing-function |
+| D15 | `compile_error!` guard for zero backends | Matches `mediaservo-webrtc` convention; clear error message vs confusing missing-function |
 | D16 | `VideoFrameGenerator` retained for P2P testing | Needed for early P2P push/pull streaming tests without camera hardware |

@@ -319,3 +319,13 @@ Jetson 流程即系统工具链（C18 官方用法优先）；③ 系统 gcc 原
 C++ 全链路 gcc 10.5；② **Jetson H264/AV1 硬编码器可用**（人工验证：backend=hardware + codec=h264/av1
 实际走 Jetson MMAPI 编码器）；macOS/x86_64 CI 零影响（全部 linux-aarch64 门控）；
 ③ 后续若启 GStreamer codec 后端需单独评估 conda gstreamer 与系统工具链混用。
+
+## D221: AUDEMSP → MediaServo 独立平台重命名 (2026-08-13)
+
+**决策**: 全量重命名 AUDEMSP → MediaServo。品牌名 **MediaServo**（PascalCase, 文档/UI/正式名 "MediaServo Platform, 实时媒体伺服平台"）+ 技术前缀 `mediaservo-`（7 crate + 二进制 + CLI + env）+ **脱离 AUDE 生态**为独立部署的视频/媒体服务平台（监控/NVR + 会议 + 桌面 + 遥操作 + 推流）。命名冲突实证: crates.io/npm/GitHub **0/0/0**（6 轮全维度检查）。**修订 D209** 的生态归属结论（原"统一命名、生态一致"被本次"独立平台"取代）。
+
+**原因**: ① 品牌化——不再是"AUDE 生态多媒体系统"，独立定位媒体伺服平台（Servo=精确低延迟驱动，契合项目帧时间戳/帧率/BWE 控制基因）；② 与 AUDE 解耦（后续不依附 AUDESYS/AUDEBase 生态）；③ 冲突检测零背书。
+
+**范围**: T1 机械替换 259 文件/1436 行（env MEDIASERVO_* + 品牌 MediaServo + 小写 mediaservo + audemedia→mediaservo）+ 7 crate 目录/二进制/CLI 文件 git mv；T2 AUDE 生态剥离（README/AGENTS/docs 11 文件 80 处 → 中性平台表述）；T3 基础设施名（compose `name: mediaservo`、service 文件、pixi 名、audemsp_cli.py）；doc-audit 修复 H1-H3/M1-M3（decisions/status/conventions/AGENTS 同步）。
+
+**影响**: ① Cargo.lock 随 T1 同步（7/7 mediaservo, 0 audemsp）；② Docker 层缓存全失效一次性重编译；③ env 改名 `AUDEMSP_*`→`MEDIASERVO_*`（scripts 侧零残留）；④ 保留面: `.agents/memorys/` + `.sisyphus/.omo plans` + `docs 调研存档` 保留历史提及（D209 等史实不可篡改）；⑤ 后续约定/检查命令统一 `mediaservo-*`（conventions C4-C22 同步）。

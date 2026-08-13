@@ -28,7 +28,7 @@ features = ["backend-yuv-sys"]
 
 [[example]]
 name = "viewer"
-required-features = ["backend-yuv-sys"]
+required-features = ["backend-native"]  # 预存 bug 修复: import NativeTransform (mediaservo-rename T4 发现)
 
 [[example]]
 name = "square-gen-egui"
