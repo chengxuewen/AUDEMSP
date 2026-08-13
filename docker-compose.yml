@@ -1,4 +1,5 @@
 # Production docker-compose — image-based, no build context
+name: mediaservo
 services:
   server:
     image: ghcr.io/org/mediaservo-server:latest

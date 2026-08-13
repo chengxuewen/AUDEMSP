@@ -1,4 +1,5 @@
 # Development docker-compose — build-based, source mount
+name: mediaservo
 services:
   server:
     build:

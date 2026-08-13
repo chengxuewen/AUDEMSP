@@ -1,5 +1,5 @@
 [workspace]
-name = "MediaServo"
+name = "mediaservo"
 channels = ["conda-forge"]
 platforms = ["osx-64", "osx-arm64", "linux-64", "linux-aarch64"]
 version = "0.1.0"
