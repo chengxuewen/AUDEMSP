@@ -1,0 +1,65 @@
+[package]
+name = "mediaservo-host"
+version = "0.1.0"
+edition = "2024"
+description = "MediaServo Remote Host — V4L2 capture, NVENC encode, WebRTC push (field/vehicle side)"
+license = "Apache-2.0"
+
+[[bin]]
+name = "mediaservo-host"
+path = "src/main.rs"
+
+[dependencies]
+mediaservo-common = { path = "../mediaservo-common" }
+mediaservo-media = { path = "../mediaservo-media" }
+# GStreamer (optional — requires system GStreamer on Linux/Jetson)
+gstreamer = { version = "0.23", optional = true }
+gstreamer-app = { version = "0.23", optional = true }
+gstreamer-video = { version = "0.23", optional = true }
+
+# WebRTC — only via mediaservo-webrtc abstraction (C12)
+mediaservo-webrtc = { path = "../mediaservo-webrtc", features = ["backend-webrtc-sys"] }
+# Legacy P2P webrtc-rs dependency — gated behind webrtc-p2p feature
+webrtc = { version = "0.12", optional = true }
+
+# HTTP + WebSocket
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5", features = ["trace", "cors", "timeout"] }
+
+# Config + serialization
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+prometheus-client = "0.22"
+anyhow = "1"
+
+# Crypto (HMAC for DataChannel)
+hmac = "0.12"
+sha2 = "0.10"
+
+# Async utilities
+# WebSocket client for signaling
+tokio-tungstenite = { version = "0.24", features = ["connect"] }
+futures-util = "0.3"
+base64 = "0.22"
+async-trait = "0.1"
+bytes = "1"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+
+[features]
+default = []
+gstreamer = ["dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video"]
+production = ["gstreamer"]
+# Legacy P2P WebRTC transport (webrtc-rs)
+webrtc-p2p = ["dep:webrtc"]
+[dev-dependencies]
+tempfile = "3"
+tokio-tungstenite = { version = "0.24", features = ["connect"] }

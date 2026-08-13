@@ -1,12 +1,12 @@
-# AUDEMSP 架构设计
+# MediaServo 架构设计
 
 > Phase 0 — 架构定义 | 2026-07-16 | 最后同步 decisions.md: D205 (2026-07-31)
 
-> **⚠️ MVP v2 架构变更 (D118, 2026-07-17)**: Phase 1 MVP 采用 Host→Server→Remote relay 三组件模式（原为 Host↔Remote P2P）。信令 relay 和媒体 relay 均由 audemsp-server 承载。完整 P2P/Host↔Remote 直连模式保留为 Phase 2+ 架构目标。
+> **⚠️ MVP v2 架构变更 (D118, 2026-07-17)**: Phase 1 MVP 采用 Host→Server→Remote relay 三组件模式（原为 Host↔Remote P2P）。信令 relay 和媒体 relay 均由 mediaservo-server 承载。完整 P2P/Host↔Remote 直连模式保留为 Phase 2+ 架构目标。
 
 ## 1. 概述
 
-AUDEMSP 是 AUDE 生态的多媒体基础设施，提供远程桌面、视频会议、直播推拉流、监控相机接入等能力。采用微内核 + 插件架构，支持多形态部署。
+MediaServo 是 AUDE 生态的多媒体基础设施，提供远程桌面、视频会议、直播推拉流、监控相机接入等能力。采用微内核 + 插件架构，支持多形态部署。
 
 ### 1.1 七个产品能力
 
@@ -30,14 +30,14 @@ AUDEMSP 是 AUDE 生态的多媒体基础设施，提供远程桌面、视频会
 
 ```
 AUDESYS (工业控制) ──┐              ┌── AUDEBase (企业应用)
-                     ├── AUDEMSP ──┤
+                     ├── MediaServo ──┤
    引用 native crate │  多媒体核心   │ Docker 模块
                      │              │
                      └──────────────┘
 ```
 
 - **与 AUDESYS**：可选嵌入，通过 Rust crate 静态链接，仅使用远程桌面和遥操作能力
-- **与 AUDEBase**：零硬依赖。AUDEBase 可运行 AUDEMSP 作为 Docker 模块（类比群晖 Surveillance Station）。此时用户/权限委托给 AUDEBase RBAC/LDAP
+- **与 AUDEBase**：零硬依赖。AUDEBase 可运行 MediaServo 作为 Docker 模块（类比群晖 Surveillance Station）。此时用户/权限委托给 AUDEBase RBAC/LDAP
 - **独立部署**：可脱离 AUDE 生态完全独立运行，自带完整后端
 
 ### 1.3 设计原则
@@ -45,18 +45,18 @@ AUDESYS (工业控制) ──┐              ┌── AUDEBase (企业应用)
 | 原则 | 说明 | 关联决策 |
 |------|------|---------|
 | **多后端编译期分发** | WebRTC 多后端 (webrtc-sys/webrtc-rs/stub, str0m Phase 2+) 通过 `#[cfg(feature)]` 编译期 dispatch，无运行时 dyn trait 开销。借鉴 webrtc-kit trait 抽象模式 | D144-D151 |
-| **零 WebRTC 依赖内核** | audemsp-common 不依赖任何 WebRTC crate，MediaTransport trait 为纯抽象接口 | D150 |
+| **零 WebRTC 依赖内核** | mediaservo-common 不依赖任何 WebRTC crate，MediaTransport trait 为纯抽象接口 | D150 |
 | **Component 服务层** | 服务级 Component 与管线级 Plugin 分离，三层抽象模型 | D126 |
 ## 2. 三层架构
 
 > 📄 详见 [modules/03-client-host.md](/docs/modules/03-client-host.md)
 
-AUDEMSP 采用控制面与数据面分离的三层架构：后台服务集中管理用户、设备、权限、License 及信令；Client/Host 数据面通过 gRPC/REST 与控制面通信。Client 和 Host 双应用设计源自 D2 决策——Host 需运行在无桌面环境的平台（Linux 服务器、车端边缘设备），双应用可减少 Host 体积。
+MediaServo 采用控制面与数据面分离的三层架构：后台服务集中管理用户、设备、权限、License 及信令；Client/Host 数据面通过 gRPC/REST 与控制面通信。Client 和 Host 双应用设计源自 D2 决策——Host 需运行在无桌面环境的平台（Linux 服务器、车端边缘设备），双应用可减少 Host 体积。
 
 > 🔄 **D128 Gateway 路由**: 统一端口 :9800 对外暴露，Gateway Component 内部路由分派：`/ws` → SignalingComponent, `/admin/api/*` → AdminComponent, `/admin/*` → SPA 静态文件, `/health` → MonitorComponent。
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                     AUDEMSP 后台服务                            │
+│                     MediaServo 后台服务                            │
 │                                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐ │
 │  │ 用户管理  │ │ 权限控制  │ │ License  │ │ 设备管理  │ │ 信令   │ │
@@ -71,7 +71,7 @@ AUDEMSP 采用控制面与数据面分离的三层架构：后台服务集中管
         ┌────────────────────┼────────────────────┐
         ▼                    ▼                    ▼
 ┌───────────────────┐ ┌───────────────────┐ ┌───────────────────┐
-│ AUDEMSP Client  │ │ AUDEMSP Host    │ │ 其他客户端/AI     │
+│ MediaServo Client  │ │ MediaServo Host    │ │ 其他客户端/AI     │
 │ (桌面 GUI)        │ │ (Headless)        │ │                   │
 │                   │ │                   │ │                   │
 │ 全量 SDK          │ │ 仅生产 SDK        │ │ 按需集成          │
@@ -92,19 +92,19 @@ AUDEMSP 采用控制面与数据面分离的三层架构：后台服务集中管
 | 层 | 职责 | 技术 |
 |---|---|---|
 | **后台服务** | 控制面：用户、设备、权限、License、信令 | Rust (axum/tonic) |
-| **Client** | 桌面 GUI，全功能操作端 | Tauri v2 + audemsp-common |
-| **Host** | Headless 远端，纯产出媒体流 | audemsp-common (无 GUI 依赖) |
+| **Client** | 桌面 GUI，全功能操作端 | Tauri v2 + mediaservo-common |
+| **Host** | Headless 远端，纯产出媒体流 | mediaservo-common (无 GUI 依赖) |
 | **SDK** | 核心管线 + 领域插件 | Rust crate 体系 |
 
 ### 2.1 Client vs Host
 
-| | AUDEMSP Client | AUDEMSP Host |
+| | MediaServo Client | MediaServo Host |
 |---|---|---|
 | **运行环境** | 桌面操作系统 | 服务器 / 边缘 / 车端 / 无桌面 |
 | **GUI** | Tauri v2 | Embedded Web (localhost 配置页) |
 | **SDK** | 全量（生产 + 消费） | 仅生产（capture, encode, push） |
 | **角色** | 可控制他人，也可被控制 | 仅产出媒体流 |
-| **安装** | 桌面安装包 | 单一二进制 `audemsp-host` |
+| **安装** | 桌面安装包 | 单一二进制 `mediaservo-host` |
 | **体积** | 大（含 GUI 框架） | 小（无 GUI 依赖） |
 
 双应用而非单应用的决策原因：Host 需要运行在没有桌面环境的平台上（无 GUI 的 Linux 服务器、车端嵌入式设备）。
@@ -121,7 +121,7 @@ Auth Provider trait 实现双模式认证：Local 模式（内嵌 SQLite + JWT�
 
 ```
                     ┌──────────────────────────┐
-                    │    AUDEMSP Backend      │
+                    │    MediaServo Backend      │
                     │                           │
                     │    AuthProvider (trait)    │
                     │    ┌───────────────────┐   │
@@ -190,13 +190,13 @@ interface Permission {
 
 ### 3.4 参考模型
 
-类比群晖 DSM：AUDEMSP 作为 Docker 模块安装在 AUDEBase 上，使用 AUDEBase 的用户/权限系统（类似 Jira 安装在群晖上使用 DSM 的 LDAP 账户）。
+类比群晖 DSM：MediaServo 作为 Docker 模块安装在 AUDEBase 上，使用 AUDEBase 的用户/权限系统（类似 Jira 安装在群晖上使用 DSM 的 LDAP 账户）。
 
 ## 4. 插件体系
 
 > 📄 详见 [modules/06-plugin-system.md](/docs/modules/06-plugin-system.md)
 
-微内核 audemsp-common 承载 PluginManager、LicenseManager、ProtocolBroker、PipelineEngine、AuthProvider 五大核心组件。插件按领域分为生产类（Host 采集/编码/推流）、消费类（Client 解码/渲染/拉流）、协议类（RTMP/HLS/SRT/RTSP/WebRTC）和中继类（STUN/TURN/SFU）。三层 trait 层次（Plugin → MediaSource/Processor/Sink → 具体实现）提供清晰的扩展边界。
+微内核 mediaservo-common 承载 PluginManager、LicenseManager、ProtocolBroker、PipelineEngine、AuthProvider 五大核心组件。插件按领域分为生产类（Host 采集/编码/推流）、消费类（Client 解码/渲染/拉流）、协议类（RTMP/HLS/SRT/RTSP/WebRTC）和中继类（STUN/TURN/SFU）。三层 trait 层次（Plugin → MediaSource/Processor/Sink → 具体实现）提供清晰的扩展边界。
 
 ### 4.0 Component 服务层 (D126-D134)
 
@@ -220,14 +220,14 @@ interface Permission {
 |---|---|---|
 | **Plugin 层** | 任意 Component 内 | ScreenCapture, H264Encoder |
 | **Component 层** | Host / Server / Remote 进程 | SignalingComponent, RelayComponent, GatewayComponent |
-| **Process 层** | OS 进程 (systemd/K8s) | hostd, audemsp-server, audemsp-client |
+| **Process 层** | OS 进程 (systemd/K8s) | hostd, mediaservo-server, mediaservo-client |
 
-Component trait 位于独立 crate `audemsp-component` (D127)，采用 init→run→shutdown 三阶段生命周期 (D131)，ComponentBus 支持 RPC + Event 双模式路由 (D132-D133)，ComponentManager 提供单层监督 + crash-loop 防护 (D134)。
+Component trait 位于独立 crate `mediaservo-component` (D127)，采用 init→run→shutdown 三阶段生命周期 (D131)，ComponentBus 支持 RPC + Event 双模式路由 (D132-D133)，ComponentManager 提供单层监督 + crash-loop 防护 (D134)。
 
 ### 4.1 微内核架构
 
 ```
-audemsp-common (微内核)
+mediaservo-common (微内核)
 ├── PluginManager     — 插件注册、生命周期
 ├── LicenseManager    — 权限校验、配额控制
 ├── ProtocolBroker    — 内部协议路由 (FlatBuffers)
@@ -300,8 +300,8 @@ trait MediaSink: Plugin {
 }
 ```
 
-/// 多后端传输抽象（ponytail: audemsp-common 定义此 trait，audemsp-webrtc 的 RTCPeerConnection 作为实现层。Phase 2+ 迁入 audemsp-common 的 MediaTransport trait 与 webrtc crate 解耦。详见 docs/modules/17-webrtc-crate.md）
-/// audemsp-common 不依赖任何 WebRTC crate，保证独立编译测试
+/// 多后端传输抽象（ponytail: mediaservo-common 定义此 trait，mediaservo-webrtc 的 RTCPeerConnection 作为实现层。Phase 2+ 迁入 mediaservo-common 的 MediaTransport trait 与 webrtc crate 解耦。详见 docs/modules/17-webrtc-crate.md）
+/// mediaservo-common 不依赖任何 WebRTC crate，保证独立编译测试
 #[async_trait]
 pub trait MediaTransport: Send + Sync {
     async fn create_video_track(&self, source_id: &str) -> Result<TrackLocal, TransportError>;
@@ -311,7 +311,7 @@ pub trait MediaTransport: Send + Sync {
 
 # ponytail: MediaTransport trait — Phase 0 webrtc-sys 为主力后端，webrtc-rs 已有 struct 骨架，str0m Phase 2+。完整多后端 trait 体系 Phase 2+。
 
-# audemsp-common 零 WebRTC 依赖 (D150)。
+# mediaservo-common 零 WebRTC 依赖 (D150)。
 
 ### 4.3 插件加载方式
 
@@ -411,11 +411,11 @@ Phase 2+: 支持 Simulcast/SVC 多层编码 — 单一输入源产出多个质�
 
 > 📄 详见 [modules/04-sdk-layers.md](/docs/modules/04-sdk-layers.md)
 
-Phase 1 MVP 核心为 field/remote 双 SDK 模型 (D65-D69, D82)，分别对应车端（采集+编码+推流）和座舱（拉流+解码+控制）。audemsp-common 微内核作为公共基础，Phase 2+ 扩展 streaming、conference、surveillance 等领域 SDK。
+Phase 1 MVP 核心为 field/remote 双 SDK 模型 (D65-D69, D82)，分别对应车端（采集+编码+推流）和座舱（拉流+解码+控制）。mediaservo-common 微内核作为公共基础，Phase 2+ 扩展 streaming、conference、surveillance 等领域 SDK。
 
 ```
                     ┌─────────────────┐
-                    │  audemsp-common │  ← 微内核（所有场景共享）
+                    │  mediaservo-common │  ← 微内核（所有场景共享）
                     │  PluginManager  │
                     │  LicenseManager │
                     │  PipelineEngine │
@@ -424,7 +424,7 @@ Phase 1 MVP 核心为 field/remote 双 SDK 模型 (D65-D69, D82)，分别对应�
         ┌────────────────────┼────────────────────┐
         ▼                                         ▼
 ┌───────────────────────┐            ┌───────────────────────┐
-│ audemsp-field        │            │ audemsp-client       │
+│ mediaservo-field        │            │ mediaservo-client       │
 │ (车端 SDK)             │◄─ WebRTC ─►│ (座舱 SDK)             │
 ├───────────────────────┤            ├───────────────────────┤
 │ CameraCapture (D64)    │            │ VideoDecode (D46)      │
@@ -440,12 +440,12 @@ Phase 1 MVP 核心为 field/remote 双 SDK 模型 (D65-D69, D82)，分别对应�
 │ .a + .so (D83)│                    │ FFmpeg (D70)  │
 └───────────────┘                      └───────────────┘
 
-Phase 2+: audemsp-streaming, audemsp-conference, audemsp-surveillance
+Phase 2+: mediaservo-streaming, mediaservo-conference, mediaservo-surveillance
 ```
 
 ### 7.1 客户端 UI Module
 
-AUDEMSP Client 是统一桌面应用。按后台返回的权限动态加载 UI Module：
+MediaServo Client 是统一桌面应用。按后台返回的权限动态加载 UI Module：
 
 ```typescript
 const permissions = await backend.getPermissions(userId);
@@ -480,19 +480,19 @@ if (permissions.surveillance) modules.push(SurveillanceModule); // 监控 tab
 
 ## 9. Cargo Workspace 结构
 
-当前 workspace 含 7 个 Cargo member crate（D126-D155 增量）：audemsp-common (微内核), audemsp-host, audemsp-client, audemsp-server, audemsp-webrtc (D137 新增, RTP track API), audemsp-media (媒体管线引擎), audemsp-codec (编解码三后端: stub+FFmpeg+GStreamer)。
+当前 workspace 含 7 个 Cargo member crate（D126-D155 增量）：mediaservo-common (微内核), mediaservo-host, mediaservo-client, mediaservo-server, mediaservo-webrtc (D137 新增, RTP track API), mediaservo-media (媒体管线引擎), mediaservo-codec (编解码三后端: stub+FFmpeg+GStreamer)。
 
 ```
 crates/
-├── audemsp-common/         微内核 (PluginManager, LicenseManager, PipelineEngine, AuthProvider trait)
-├── audemsp-host/         Host 应用 (headless, 采集+编码+推流+信令+配置, 单体架构 D155)
-├── audemsp-client/       Remote 应用 (拉流+解码+渲染+控制)
-├── audemsp-server/       Server 应用 (信令 relay+监控+会话管理, mediasoup SFU; C21: mediasoup 仅限本 crate 依赖树，host/client 禁止依赖)
-├── audemsp-webrtc/       WebRTC 封装 (W3C API, webrtc-sys 默认后端/libwebrtc, 多后端 feature gate; C12: 所有 client crate 仅经此层使用 WebRTC，禁止与 mediasoup 同链)
-├── audemsp-media/        媒体管线 (PipelineEngine, BroadcastEngine, Transform 接口)
-└── audemsp-codec/        编解码 (stub + FFmpeg 静态链接 + GStreamer pixi)
+├── mediaservo-common/         微内核 (PluginManager, LicenseManager, PipelineEngine, AuthProvider trait)
+├── mediaservo-host/         Host 应用 (headless, 采集+编码+推流+信令+配置, 单体架构 D155)
+├── mediaservo-client/       Remote 应用 (拉流+解码+渲染+控制)
+├── mediaservo-server/       Server 应用 (信令 relay+监控+会话管理, mediasoup SFU; C21: mediasoup 仅限本 crate 依赖树，host/client 禁止依赖)
+├── mediaservo-webrtc/       WebRTC 封装 (W3C API, webrtc-sys 默认后端/libwebrtc, 多后端 feature gate; C12: 所有 client crate 仅经此层使用 WebRTC，禁止与 mediasoup 同链)
+├── mediaservo-media/        媒体管线 (PipelineEngine, BroadcastEngine, Transform 接口)
+└── mediaservo-codec/        编解码 (stub + FFmpeg 静态链接 + GStreamer pixi)
   
-Phase 2+ 计划 crates: audemsp-component, audemsp-transport, audemsp-signaling, audemsp-pipeline, audemsp-auth, audemsp-field, audemsp-field-c, audemsp-client-c, audemsp-napi
+Phase 2+ 计划 crates: mediaservo-component, mediaservo-transport, mediaservo-signaling, mediaservo-pipeline, mediaservo-auth, mediaservo-field, mediaservo-field-c, mediaservo-client-c, mediaservo-napi
 ```
 
 ## 10. 技术选型

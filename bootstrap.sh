@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bootstrap.sh — First-time setup for AUDEMSP development
+# bootstrap.sh — First-time setup for MediaServo development
 # Usage: source bootstrap.sh
 #
 # This is the user-facing entry point. Run once per machine:
@@ -12,7 +12,7 @@ START_TIME=$(date +%s)
 BOOTSTRAP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 echo "================================================"
-echo "  AUDEMSP Development Environment Bootstrap"
+echo "  MediaServo Development Environment Bootstrap"
 echo "================================================"
 echo ""
 
@@ -53,8 +53,8 @@ ELAPSED=$((END_TIME - START_TIME))
 
 echo ""
 echo "================================================"
-echo "  AUDEMSP environment ready! (${ELAPSED}s)"
+echo "  MediaServo environment ready! (${ELAPSED}s)"
 echo "================================================"
 echo ""
 echo "Next time, just run:  source pixi.sh"
-echo "CLI ready: ./audemsp.sh -h   (build/up/e2e/clean/config/status...)"
+echo "CLI ready: ./mediaservo.sh -h   (build/up/e2e/clean/config/status...)"

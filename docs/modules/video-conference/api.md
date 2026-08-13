@@ -8,16 +8,16 @@ Conference SDK 提供创建和管理视频会议的完整 API。通过 napi-rs �
 
 ```bash
 # npm (through AUDEBase)
-npm install @audemsp/conference-sdk
+npm install @mediaservo/conference-sdk
 
 # Rust (through AUDESYS)
-cargo add audemsp-conference
+cargo add mediaservo-conference
 ```
 
 ### 初始化
 
 ```typescript
-import { ConferenceClient } from "@audemsp/conference-sdk";
+import { ConferenceClient } from "@mediaservo/conference-sdk";
 
 const client = new ConferenceClient({
   endpoint: "wss://media.example.com",
@@ -216,16 +216,16 @@ client.on("error", (event) => {
 ## 4. Rust API
 
 ```rust
-// Crate: audemsp-conference
+// Crate: mediaservo-conference
 // 通过 napi-rs 绑定暴露给 Node.js，同时提供原生 Rust API
 
-use audemsp_conference::{ConferenceClient, ConferenceConfig, Room};
+use mediaservo_conference::{ConferenceClient, ConferenceConfig, Room};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let client = ConferenceClient::new(ConferenceConfig {
         endpoint: "wss://media.example.com".into(),
-        token: std::env::var("AUDEMSP_TOKEN")?,
+        token: std::env::var("MEDIASERVO_TOKEN")?,
     });
 
     let room = client.create_room(CreateRoomParams {
@@ -268,7 +268,7 @@ interface ConferenceConfig {
 ## 6. 错误处理
 
 ```typescript
-import { ConferenceError } from "@audemsp/conference-sdk";
+import { ConferenceError } from "@mediaservo/conference-sdk";
 
 try {
   await client.rooms.join("non-existent-room");

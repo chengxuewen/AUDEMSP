@@ -1,14 +1,14 @@
 # Production docker-compose — image-based, no build context
 services:
   server:
-    image: ghcr.io/org/audemsp-server:latest
+    image: ghcr.io/org/mediaservo-server:latest
     ports:
       - "9800:9800"
       - "20000:20000/udp"
       - "40000-40100:40000-40100/udp"
     environment:
       RUST_LOG: debug
-      AUDEMSP_PSK: audemsp-dev
+      MEDIASERVO_PSK: mediaservo-dev
     deploy:
       resources:
         limits:
@@ -23,7 +23,7 @@ services:
       timeout: 3s
       retries: 3
     volumes:
-      - ./config/server.docker.yaml:/opt/audemsp/etc/server.yaml:ro
+      - ./config/server.docker.yaml:/opt/mediaservo/etc/server.yaml:ro
 
   proxy:
     image: caddy:2

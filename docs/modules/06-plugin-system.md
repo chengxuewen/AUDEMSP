@@ -7,7 +7,7 @@
 ## 一、微内核架构
 
 ```
-audemsp-common (微内核)
+mediaservo-common (微内核)
 ├── PluginManager     — 插件注册、发现、生命周期
 ├── LicenseManager    — 权限校验、配额控制
 ├── ProtocolBroker    — 内部协议路由 (FlatBuffers)
@@ -177,7 +177,7 @@ inventory::submit! {
 // 动态插件导出 C ABI 函数
 
 #[no_mangle]
-pub extern "C" fn audemsp_plugin_register(registry: &mut PluginManager) {
+pub extern "C" fn mediaservo_plugin_register(registry: &mut PluginManager) {
     registry.register(Arc::new(MyCustomDecoder));
 }
 
@@ -221,7 +221,7 @@ RunTime:      dlopen → extern "C" register() → PluginManager::register()
 
 ## 五、能力声明 vs 运行时协商
 
-| 维度 | AUDEMSP (D30) | GStreamer | OBS |
+| 维度 | MediaServo (D30) | GStreamer | OBS |
 |------|-----------------|-----------|-----|
 | 声明时机 | 编译时注册 | 插件 init + PadTemplate | 模块加载时 |
 | 格式匹配 | 直接比较 (codec strings + pixel formats) | Caps 交集 + fixate | output_flags 位掩码 |

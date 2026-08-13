@@ -10,7 +10,7 @@ macOS 开发采用**混合架构**：Host 和 Client 原生运行，Server (SFU)
 ┌───────────────────────────────────────────────┐
 │                  Docker (Linux)               │
 │  ┌─────────────────────────────────────────┐  │
-│  │         audemsp-server                 │  │
+│  │         mediaservo-server                 │  │
 │  │  ┌──────────┐  ┌────────────────────┐   │  │
 │  │  │ Signaling │  │  mediasoup Worker  │   │  │
 │  │  │  (WS)    │  │  (RTP relay)       │   │  │
@@ -58,18 +58,18 @@ docker compose up -d
 # 验证：docker compose logs -f server
 
 # 2. 启动 Host（macOS 原生）
-cargo run --bin audemsp-host -- --config config/host.conf
+cargo run --bin mediaservo-host -- --config config/host.conf
 
 # 3. 启动 Client（macOS 原生，新终端）
 source pixi.sh
-cargo run --bin audemsp-client -- --config crates/audemsp-client/config/remote.conf
+cargo run --bin mediaservo-client -- --config crates/mediaservo-client/config/remote.conf
 ```
 
 ## 配置文件
 
 ### host.conf
 
-路径：`config/host.conf`（默认 `/opt/audemsp/etc/host.conf`）
+路径：`config/host.conf`（默认 `/opt/mediaservo/etc/host.conf`）
 
 ```yaml
 host:
@@ -96,7 +96,7 @@ media:
 
 ### remote.conf
 
-路径：`crates/audemsp-client/config/remote.conf`（默认 `/opt/audemsp/etc/remote.conf`）
+路径：`crates/mediaservo-client/config/remote.conf`（默认 `/opt/mediaservo/etc/remote.conf`）
 
 ```yaml
 version: 1
@@ -104,7 +104,7 @@ version: 1
 server:
   signaling_url: "ws://localhost:9800/ws"
 
-# psk: "audemsp-dev"        # 信号认证预共享密钥（默认值）
+# psk: "mediaservo-dev"        # 信号认证预共享密钥（默认值）
 ```
 
 ## 日常开发流程
@@ -120,10 +120,10 @@ server:
 cargo check --workspace
 
 # 只检查 Host
-cargo check --bin audemsp-host
+cargo check --bin mediaservo-host
 
 # 完整构建（含 SFU feature，需在 Docker 内）
-docker compose exec server cargo build --features sfu-mediasoup --bin audemsp-server
+docker compose exec server cargo build --features sfu-mediasoup --bin mediaservo-server
 ```
 
 ### 运行测试
@@ -133,10 +133,10 @@ docker compose exec server cargo build --features sfu-mediasoup --bin audemsp-se
 cargo test --workspace
 
 # 仅 Host 测试
-cargo test -p audemsp-host
+cargo test -p mediaservo-host
 
 # Docker 内运行 SFU 测试
-docker compose exec server cargo test -p audemsp-server --features sfu-mediasoup
+docker compose exec server cargo test -p mediaservo-server --features sfu-mediasoup
 
 # Lint 检查
 cargo clippy --workspace --all-targets -- -D warnings
@@ -152,10 +152,10 @@ cargo fmt --all -- --check
 docker compose restart server
 
 # 2. 新终端：启动 Host
-cargo run --bin audemsp-host -- --config config/host.conf
+cargo run --bin mediaservo-host -- --config config/host.conf
 
 # 3. 新终端：启动 Client
-cargo run --bin audemsp-client -- --config crates/audemsp-client/config/remote.conf
+cargo run --bin mediaservo-client -- --config crates/mediaservo-client/config/remote.conf
 
 # 4. 查看日志
 docker compose logs -f server          # Server 日志
@@ -182,7 +182,7 @@ docker-compose.yml 已配置 `cargo-cache` named volume，避免重复下载：
 
 ```bash
 # 清理缓存（如遇损坏）
-docker volume rm audemsp_cargo-cache
+docker volume rm mediaservo_cargo-cache
 ```
 
 ### macOS 本机编译
@@ -273,7 +273,7 @@ pixi.toml 已声明 `osx-64` 和 `osx-arm64` 两个平台，pixi 自动选择匹
 | `docker compose logs -f server` | 实时查看 Server 日志 |
 | `docker compose build --no-cache` | 完整重建镜像 |
 | `docker compose exec server cargo check --features sfu-mediasoup` | 容器内编译检查 |
-| `docker compose exec server cargo test -p audemsp-server --features sfu-mediasoup` | 容器内运行 SFU 测试 |
+| `docker compose exec server cargo test -p mediaservo-server --features sfu-mediasoup` | 容器内运行 SFU 测试 |
 
 ## 相关文档
 

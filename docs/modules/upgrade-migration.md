@@ -22,16 +22,16 @@ Remote (Client): MAJOR.minor.patch
 
 | 层 | crates | 变更语义 |
 |----|--------|---------|
-| 契约层 | audemsp-common（protocol/auth/config） | **任何 wire 格式变更 = 所有消费者 breaking** |
-| 能力层 | audemsp-media / audemsp-webrtc / audemsp-codec | feature 化能力（见三后端矩阵） |
-| 应用层 | audemsp-host / audemsp-client / audemsp-server | 沿用 D118 二进制矩阵 |
+| 契约层 | mediaservo-common（protocol/auth/config） | **任何 wire 格式变更 = 所有消费者 breaking** |
+| 能力层 | mediaservo-media / mediaservo-webrtc / mediaservo-codec | feature 化能力（见三后端矩阵） |
+| 应用层 | mediaservo-host / mediaservo-client / mediaservo-server | 沿用 D118 二进制矩阵 |
 
 ### 规则
 
-1. **独立 semver**：7 crate 各自版本，0.1.x 阶段允许 breaking（minor 递增）；进入 1.0 后严格 semver。`version.workspace = true` 仅用于同步发布节奏的 crate（当前 media/codec），不强制全 workspace 同步——audemsp-common 0.2 不必拖带 server 0.2。
-2. **audemsp-webrtc 三后端 feature 矩阵**（C12）：stub/webrtc-rs/webrtc-sys 属 feature 级兼容；新增后端 = minor，后端行为变更 = major。
+1. **独立 semver**：7 crate 各自版本，0.1.x 阶段允许 breaking（minor 递增）；进入 1.0 后严格 semver。`version.workspace = true` 仅用于同步发布节奏的 crate（当前 media/codec），不强制全 workspace 同步——mediaservo-common 0.2 不必拖带 server 0.2。
+2. **mediaservo-webrtc 三后端 feature 矩阵**（C12）：stub/webrtc-rs/webrtc-sys 属 feature 级兼容；新增后端 = minor，后端行为变更 = major。
 3. **MSRV**：rust-toolchain.toml 固定；[规划] CI 加 `cargo-semver-checks` 门禁（PR 检测公共 API breaking）。
-4. **消费方锁定**：AUDESYS pin `=x.y.z` 或 commit 引用；AUDEBase（napi）由 audemsp-common 版本决定 ABI 面，发布时同版本记录。
+4. **消费方锁定**：AUDESYS pin `=x.y.z` 或 commit 引用；AUDEBase（napi）由 mediaservo-common 版本决定 ABI 面，发布时同版本记录。
 5. **变更通知**：breaking 变更在 decisions.md + CHANGELOG 双记录（[规划] cargo release 或 per-crate changelog 生成）。
 ## 配置迁移
 
@@ -53,12 +53,12 @@ host.conf 使用 JSON Schema 加 `version` 字段：
 systemd service 控制：
 
 ```
-1. systemctl stop audemsp-host
-2. 替换 /usr/local/bin/audemsp-host
-3. systemctl start audemsp-host
+1. systemctl stop mediaservo-host
+2. 替换 /usr/local/bin/mediaservo-host
+3. systemctl start mediaservo-host
 ```
 
-Host 启动时检查 `version` 字段，自动执行 schema 迁移。Remote 通过 `audemsp-server` 推送更新包。
+Host 启动时检查 `version` 字段，自动执行 schema 迁移。Remote 通过 `mediaservo-server` 推送更新包。
 
 ## 容器镜像升级 (Server, Docker)
 
@@ -70,8 +70,8 @@ Server 是唯一 Docker 部署的组件（C13），镜像由 CI 发布，无手�
 
 | Tag | 含义 | 更新时机 |
 |-----|------|---------|
-| `ghcr.io/org/audemsp-server:latest` | 滚动最新 | 每次 main push |
-| `ghcr.io/org/audemsp-server:sha-<commit>` | 精确版本，可回滚锚点 | 每次 main push |
+| `ghcr.io/org/mediaservo-server:latest` | 滚动最新 | 每次 main push |
+| `ghcr.io/org/mediaservo-server:sha-<commit>` | 精确版本，可回滚锚点 | 每次 main push |
 
 CI（`.github/workflows/docker.yml`）流程：push main → 构建 runtime stage → 打双 tag → **冒烟门禁**（run 镜像 30s 内 `/health` 返回 200，失败则 push 失败，PIT-39）。
 
@@ -90,7 +90,7 @@ CI（`.github/workflows/docker.yml`）流程：push main → 构建 runtime stag
 
 ```
 docker compose pull                          # 或跳过：直接指定旧 tag
-docker compose up -d ghcr.io/org/audemsp-server:sha-<旧commit>
+docker compose up -d ghcr.io/org/mediaservo-server:sha-<旧commit>
 docker compose up -d                          # 恢复 compose 文件默认 latest
 ```
 
@@ -99,7 +99,7 @@ docker compose up -d                          # 恢复 compose 文件默认 late
 ### 配置与数据迁移
 
 - 配置：`./config/server.docker.yaml` 挂载只读（`docker-compose.yml:24`），镜像升级不触碰配置；新字段经 serde `#[serde(default)]` 兼容（见上文 §配置迁移）。
-- 数据库：sqlx migrate 启动时自动执行（见下节 §数据库迁移）；升级前备份 `audemsp.db`（operations.md §备份）。
+- 数据库：sqlx migrate 启动时自动执行（见下节 §数据库迁移）；升级前备份 `mediaservo.db`（operations.md §备份）。
 - 版本兼容：遵循 §版本兼容矩阵 (D118)——MAJOR 不同必须同步升级 Host/Remote。
 
 ### 与 Host 升级的差异
@@ -121,7 +121,7 @@ migrations/
   20260715000002_add_room_config.sql
 ```
 
-Server 启动时自动执行未应用的迁移。生产环境需先备份 `audemsp.db`。
+Server 启动时自动执行未应用的迁移。生产环境需先备份 `mediaservo.db`。
 
 ## 功能开关迁移
 

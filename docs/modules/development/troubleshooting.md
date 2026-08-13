@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Common issues encountered during AUDEMSP development and deployment, with diagnostics and fixes.
+Common issues encountered during MediaServo development and deployment, with diagnostics and fixes.
 
 ## Docker Networking Debug
 
@@ -53,12 +53,12 @@ rm -rf ~/.cargo/registry/cache/
 ### Symptom
 `Address already in use` errors on startup.
 
-### AUDEMSP Ports
+### MediaServo Ports
 | Service | Default Port |
 |---------|-------------|
-| audemsp-server | 9800 |
-| audemsp-host | 9801 |
-| audemsp-client | 9101 |
+| mediaservo-server | 9800 |
+| mediaservo-host | 9801 |
+| mediaservo-client | 9101 |
 
 ### Find and Kill
 ```bash
@@ -85,7 +85,7 @@ WebRTC peers can't establish a connection despite successful SDP exchange.
 ### Debug Levels
 Enable verbose ICE logging:
 ```bash
-RUST_LOG=webrtc=debug,ice=trace ./target/debug/audemsp-server
+RUST_LOG=webrtc=debug,ice=trace ./target/debug/mediaservo-server
 ```
 
 ### Common Causes
@@ -123,7 +123,7 @@ RUST_LOG=webrtc=debug,ice=trace ./target/debug/audemsp-server
 RUST_LOG=debug cargo run
 
 # Specific module
-RUST_LOG=audemsp-webrtc=debug,audemsp-server=trace cargo run
+RUST_LOG=mediaservo-webrtc=debug,mediaservo-server=trace cargo run
 
 # JSON format for structured analysis
 RUST_LOG_FORMAT=json
@@ -136,18 +136,18 @@ ulimit -c unlimited
 echo '/tmp/core.%e.%p' | sudo tee /proc/sys/kernel/core_pattern
 
 # Analyze after crash
-gdb ./target/debug/audemsp-server /tmp/core.audemsp-server.1234
+gdb ./target/debug/mediaservo-server /tmp/core.mediaservo-server.1234
 (gdb) bt
 ```
 
 ### Memory Profiling
 ```bash
 # Valgrind for memory leaks
-valgrind --leak-check=full ./target/debug/audemsp-server
+valgrind --leak-check=full ./target/debug/mediaservo-server
 
 # heaptrack for Rust (Linux)
 cargo install heaptrack
-heaptrack ./target/debug/audemsp-server
+heaptrack ./target/debug/mediaservo-server
 ```
 
 ---
@@ -162,7 +162,7 @@ curl -v ws://localhost:9800/ws
 netstat -tlnp | grep -E '9800|9801|9101'
 
 # Running processes
-ps aux | grep audemsp
+ps aux | grep mediaservo
 
 # Disk space (cargo cache grows large)
 du -sh ~/.cargo/registry/

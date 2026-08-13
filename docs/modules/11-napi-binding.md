@@ -14,7 +14,7 @@
 ```
 AUDEBase (Node.js)
 │
-├─ @audemsp/napi
+├─ @mediaservo/napi
 │   ├─ Session          ← napi-rs 导出类
 │   │   ├─ EventEmitter
 │   │   ├─ control.send()
@@ -25,7 +25,7 @@ AUDEBase (Node.js)
 │  napi-rs FFI
 │
 ▼
-audemsp-common (Rust)
+mediaservo-common (Rust)
 ├─ SessionManager        ← 新建 thin wrapper
 ├─ MediaTransport        ← 现有
 ├─ PluginManager         ← 现有
@@ -37,7 +37,7 @@ audemsp-common (Rust)
 ### 创建
 
 ```typescript
-import { createSession, SessionType, SessionRole } from '@audemsp/napi';
+import { createSession, SessionType, SessionRole } from '@mediaservo/napi';
 
 const session = createSession({
   type: 'teleop_cockpit',      // SessionType
@@ -180,7 +180,7 @@ session.control.requestKeyframe();
 ## 11.4 Rust 侧实现
 
 ```rust
-// audemsp-common/src/session.rs (新建)
+// mediaservo-common/src/session.rs (新建)
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -264,10 +264,10 @@ Phase 1 遥控座舱场景 15fps，55MB/s 拷贝开销可接受。
 ## 11.7 与 AUDEBase 集成
 
 ```typescript
-// AUDEBase 插件内部使用 AUDEMSP Session
+// AUDEBase 插件内部使用 MediaServo Session
 
 // plugins/teleop-cockpit/src/index.ts
-import { createSession } from '@audemsp/napi';
+import { createSession } from '@mediaservo/napi';
 
 export class TeleopCockpitPlugin implements Plugin {
   private session: Session;

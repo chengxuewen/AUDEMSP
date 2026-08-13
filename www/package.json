@@ -1,12 +1,12 @@
 {
-  "name": "audemsp-admin",
+  "name": "mediaservo-admin",
   "private": true,
   "packageManager": "pnpm@10.32.1",
   "scripts": {
     "dev": "turbo run dev",
-    "dev:admin": "turbo run dev --filter=@audemsp/admin",
+    "dev:admin": "turbo run dev --filter=@mediaservo/admin",
     "build": "turbo run build",
-    "build:admin": "turbo run build --filter=@audemsp/admin",
+    "build:admin": "turbo run build --filter=@mediaservo/admin",
     "lint": "turbo run lint"
   },
   "devDependencies": {

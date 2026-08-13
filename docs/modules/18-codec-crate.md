@@ -1,14 +1,14 @@
-# 18. Codec Crate — audemsp-codec
+# 18. Codec Crate — mediaservo-codec
 
 > 状态：Phase 2 规划中 | 关联决策：D43, D46, D70, D71, D82, C5
 
 ## 定位
 
-`audemsp-codec` 是 AUDEMSP 的统一编解码层，提供 `VideoEncoder` / `VideoDecoder` trait，后端通过编译期 feature gate 支持 GStreamer 和 FFmpeg 双后端。遵循 C5 `&[u8]` 字节边界——不依赖 `audemsp-media` 的类型体系。
+`mediaservo-codec` 是 MediaServo 的统一编解码层，提供 `VideoEncoder` / `VideoDecoder` trait，后端通过编译期 feature gate 支持 GStreamer 和 FFmpeg 双后端。遵循 C5 `&[u8]` 字节边界——不依赖 `mediaservo-media` 的类型体系。
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                 audemsp-codec                      │
+│                 mediaservo-codec                      │
 │                                                     │
 │  CodecFactory::create_encoder()                     │
 │    └→ Box<dyn VideoEncoder>                        │
@@ -85,9 +85,9 @@ pub trait VideoDecoder: Send {
 
 Host 端双后端可切换：
 ```toml
-# Cargo.toml (audemsp-host)
-audemsp-codec = { features = ["backend-ffmpeg"] }   # 生产/edge 静态分发
-# audemsp-codec = { features = ["backend-gstreamer"] } # 开发机默认
+# Cargo.toml (mediaservo-host)
+mediaservo-codec = { features = ["backend-ffmpeg"] }   # 生产/edge 静态分发
+# mediaservo-codec = { features = ["backend-gstreamer"] } # 开发机默认
 ```
 
 ## 编码/解码链路
@@ -111,7 +111,7 @@ TrackReceiver → EncodedPacket(H.264 bytes)
 
 ## 数据边界 (C5)
 
-codec crate **不依赖** `audemsp-media`。所有数据交换通过 `&[u8]`：
+codec crate **不依赖** `mediaservo-media`。所有数据交换通过 `&[u8]`：
 
 - `VideoFrame`（codec 自有类型，不同于 media 的 `VideoFrame<T>`）
 - `EncodedPacket`（纯 `Vec<u8>` + 元数据）
@@ -144,7 +144,7 @@ impl CodecFactory {
 使用示例：
 
 ```rust
-use audemsp_codec::{CodecFactory, EncoderConfig, CodecId, BackendId};
+use mediaservo_codec::{CodecFactory, EncoderConfig, CodecId, BackendId};
 
 let factory = CodecFactory::new();
 let mut encoder = factory.create_encoder(
@@ -167,7 +167,7 @@ encoder.flush()?;
 ## 文件结构
 
 ```
-crates/audemsp-codec/
+crates/mediaservo-codec/
 ├── Cargo.toml
 ├── src/
 │   ├── lib.rs              re-exports + feature gate guards
@@ -194,7 +194,7 @@ crates/audemsp-codec/
 ```
 ## API 边界与类型映射
 
-codec crate 不依赖 audemsp-media，通过 &[u8] 交换数据（C5）。
+codec crate 不依赖 mediaservo-media，通过 &[u8] 交换数据（C5）。
 
 | codec 类型 | media/webrtc 类型 | 转换方向 |
 |-----------|-------------------|---------|
@@ -266,13 +266,13 @@ CodecError (thiserror)，关键变体：
 - [08. 管线模型参考](08-pipeline-model.md) — PipelineEngine 集成
 - [决策记录 D43/D46/D70/D71/D82](../.agents/memorys/decisions.md) — 编码架构决策链
 - [FFmpeg 静态构建策略](../reference/codec/ffmpeg-static-build-strategy.md) — 构建方案
-- [SDD 验收标准](../../.sisyphus/plans/audemsp-codec/acceptance-criteria.md) — 具体阈值
-- [验收矩阵 §10](../../.sisyphus/plans/audemsp-codec/acceptance-criteria.md#10-test-matrix) — 20 场景 AC 矩阵
+- [SDD 验收标准](../../.sisyphus/plans/mediaservo-codec/acceptance-criteria.md) — 具体阈值
+- [验收矩阵 §10](../../.sisyphus/plans/mediaservo-codec/acceptance-criteria.md#10-test-matrix) — 20 场景 AC 矩阵
 
 ## 交叉引用
 
 以下文档链接回本文档：
 - [17. WebRTC Crate](17-webrtc-crate.md) — Phase 2 预留 write_frame / on_encoded_packet API
-- [SDD 验收标准](../../.sisyphus/plans/audemsp-codec/acceptance-criteria.md) — 对齐 push-pull trait API
+- [SDD 验收标准](../../.sisyphus/plans/mediaservo-codec/acceptance-criteria.md) — 对齐 push-pull trait API
 - [FFmpeg 静态构建策略](../reference/codec/ffmpeg-static-build-strategy.md) — 预构建 + CI 集成
-- [验收矩阵 §10](../../.sisyphus/plans/audemsp-codec/acceptance-criteria.md#10-test-matrix) — 8+ 场景测试矩阵
+- [验收矩阵 §10](../../.sisyphus/plans/mediaservo-codec/acceptance-criteria.md#10-test-matrix) — 8+ 场景测试矩阵

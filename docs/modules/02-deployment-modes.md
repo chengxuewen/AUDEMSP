@@ -1,6 +1,6 @@
 # 部署形态
 
-> AUDEMSP 支持四种部署形态，适应不同场景需求。
+> MediaServo 支持四种部署形态，适应不同场景需求。
 
 ---
 
@@ -28,8 +28,8 @@
 **集成方式**：
 ```rust
 // AUDESYS 项目中引用
-extern crate audemsp_core;
-use audemsp_core::remote::RemoteDesktopClient;
+extern crate mediaservo_core;
+use mediaservo_core::remote::RemoteDesktopClient;
 ```
 
 ---
@@ -46,7 +46,7 @@ use audemsp_core::remote::RemoteDesktopClient;
 
 **部署**：
 ```bash
-docker run -d --name audemsp-sidecar audemsp/sidecar:latest
+docker run -d --name mediaservo-sidecar mediaservo/sidecar:latest
 ```
 
 ---
@@ -63,13 +63,13 @@ docker run -d --name audemsp-sidecar audemsp/sidecar:latest
 
 **启动**：
 ```bash
-audemsp-server --config /etc/audemsp/config.toml
-audemsp-client  # 启动桌面 GUI
+mediaservo-server --config /etc/mediaservo/config.toml
+mediaservo-client  # 启动桌面 GUI
 ```
 
 **Phase 1 运维策略**：
 - systemd service 配置 `Restart=always` + `RestartSec=5s`（D155）
-- 单进程部署：Host 功能内聚于 audemsp-host（D155 决策）
+- 单进程部署：Host 功能内聚于 mediaservo-host（D155 决策）
 
 ---
 

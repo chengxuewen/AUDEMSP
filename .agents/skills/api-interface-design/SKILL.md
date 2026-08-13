@@ -1,20 +1,20 @@
 ---
 name: api-interface-design
-description: "Contract-first design for AUDEMSP: Rust traits (Component/Plugin), WebSocket signaling protocol (SignalingMessage enum), and REST API boundaries (OpenAPI 3.0.3). Enforces protocol backward compatibility, crate-boundary contracts, and serde wire-format discipline. Use BEFORE adding new API endpoints, WS message types, or crate-level trait changes."
+description: "Contract-first design for MediaServo: Rust traits (Component/Plugin), WebSocket signaling protocol (SignalingMessage enum), and REST API boundaries (OpenAPI 3.0.3). Enforces protocol backward compatibility, crate-boundary contracts, and serde wire-format discipline. Use BEFORE adding new API endpoints, WS message types, or crate-level trait changes."
 ---
 
 # api-interface-design — Contract-First API Design
 
 > Define the contract BEFORE the implementation. Traits, messages, and endpoints are the architecture — code is decoration.
 
-## AUDEMSP API Boundaries
+## MediaServo API Boundaries
 
-AUDEMSP has three distinct API contract surfaces:
+MediaServo has three distinct API contract surfaces:
 
 | Boundary | Form | Location | Contract |
 |----------|------|----------|----------|
-| **Component/Plugin traits** | Rust traits | `audemsp-media` (engine/), `audemsp-host` (host/) | Trait signature stability |
-| **WebSocket signaling** | JSON enum | `audemsp-common/src/protocol.rs` | `#[serde(tag = "type")]` discipline |
+| **Component/Plugin traits** | Rust traits | `mediaservo-media` (engine/), `mediaservo-host` (host/) | Trait signature stability |
+| **WebSocket signaling** | JSON enum | `mediaservo-common/src/protocol.rs` | `#[serde(tag = "type")]` discipline |
 | **REST API** | OpenAPI 3.0.3 | `docs/openapi.yaml` | Schema + validation |
 
 ## Design Protocol
@@ -24,8 +24,8 @@ AUDEMSP has three distinct API contract surfaces:
 Which boundary is affected?
 
 ```
-Component trait change → audemsp-media traits
-WS protocol change    → audemsp-common protocol.rs
+Component trait change → mediaservo-media traits
+WS protocol change    → mediaservo-common protocol.rs
 REST endpoint change  → OpenAPI spec + server routes
 Cross-boundary        → Draft all contracts FIRST
 ```
@@ -145,13 +145,13 @@ Rules:
 
 ### Crate Dependency Direction
 ```
-audemsp-common  ← protocol types (leaf dependency)
+mediaservo-common  ← protocol types (leaf dependency)
         ↑
-audemsp-media   ← component traits
+mediaservo-media   ← component traits
         ↑
-audemsp-server  ← implements traits, handles WS
-audemsp-host    ← implements traits, sends WS
-audemsp-client  ← implements traits, sends WS
+mediaservo-server  ← implements traits, handles WS
+mediaservo-host    ← implements traits, sends WS
+mediaservo-client  ← implements traits, sends WS
 ```
 
 No circular dependencies. The protocol crate has zero internal deps.
@@ -161,8 +161,8 @@ No circular dependencies. The protocol crate has zero internal deps.
 ### Per Boundary
 
 ```
-[ ] Rust trait:  cargo doc --no-deps -p audemsp-media  (check docs compile)
-[ ] WS protocol: cargo test -p audemsp-common           (serde roundtrip tests)
+[ ] Rust trait:  cargo doc --no-deps -p mediaservo-media  (check docs compile)
+[ ] WS protocol: cargo test -p mediaservo-common           (serde roundtrip tests)
 [ ] REST API:    python3 -c "import yaml; yaml.safe_load(open('docs/openapi.yaml'))"
 [ ] E2E:         Host → WS → Server → WS → Client test scripts pass
 ```
@@ -213,7 +213,7 @@ No circular dependencies. The protocol crate has zero internal deps.
 >
 > — Hyrum Wright, Google
 
-**每一个可观察行为都会成为事实契约。** 在 AUDEMSP 中这尤其重要：
+**每一个可观察行为都会成为事实契约。** 在 MediaServo 中这尤其重要：
 
 | 边界 | 可观察行为（隐性契约） | 防护 |
 |------|----------------------|------|
@@ -232,14 +232,14 @@ No circular dependencies. The protocol crate has zero internal deps.
 
 ### 本项目约束
 
-AUDEMSP 是 7 crate workspace：
+MediaServo 是 7 crate workspace：
 
 ```
-audemsp-common  ← leaf, no workspace deps
+mediaservo-common  ← leaf, no workspace deps
         ↑
-audemsp-media / audemsp-codec / audemsp-webrtc
+mediaservo-media / mediaservo-codec / mediaservo-webrtc
         ↑
-audemsp-host / audemsp-client / audemsp-server
+mediaservo-host / mediaservo-client / mediaservo-server
 ```
 
 规则：
@@ -291,12 +291,12 @@ fn connect(room_id: String, peer_id: String, transport_id: String) { /* ... */ }
 
 ### 本项目约定
 
-AUDEMSP 关键 ID 类型（推荐品牌化）：
+MediaServo 关键 ID 类型（推荐品牌化）：
 
 ```
-audemsp-common/src/protocol.rs:  RoomId, PeerId, SessionId
-audemsp-media/src/engine/:      StreamId, TrackId
-audemsp-server/src/sfu/:        TransportId, ProducerId, ConsumerId
+mediaservo-common/src/protocol.rs:  RoomId, PeerId, SessionId
+mediaservo-media/src/engine/:      StreamId, TrackId
+mediaservo-server/src/sfu/:        TransportId, ProducerId, ConsumerId
 ```
 
 > **ponytail**: 仅对跨模块传递的 ID 做品牌化。内部一次性局部变量不需要。

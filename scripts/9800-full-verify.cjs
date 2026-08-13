@@ -7,7 +7,7 @@ const CHROME = '/home/maxsense/.cache/ms-playwright/chromium_headless_shell-1232
   const page = await browser.newPage();
   page.on('console', m => { const t = m.text(); if (t.includes('error') || t.includes('encoder_status')) console.log('[console]', t.slice(0, 120)); });
   await page.goto('http://127.0.0.1:9800/admin', { waitUntil: 'networkidle', timeout: 30000 });
-  await page.evaluate(t => localStorage.setItem('audemsp_admin_token', t), process.argv[2]);
+  await page.evaluate(t => localStorage.setItem('mediaservo_admin_token', t), process.argv[2]);
   await page.reload({ waitUntil: 'networkidle', timeout: 30000 });
   console.log('page ready, waiting devices...');
   await page.waitForFunction(() => document.body.innerText.includes('Play'), { timeout: 20000 });

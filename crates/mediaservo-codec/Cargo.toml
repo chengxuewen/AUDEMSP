@@ -1,0 +1,26 @@
+[package]
+name = "mediaservo-codec"
+version.workspace = true
+edition.workspace = true
+description = "MediaServo Codec — unified video encode/decode API (H.264), GStreamer + FFmpeg dual backend"
+license.workspace = true
+
+[dependencies]
+thiserror = "2"
+tracing = "0.1"
+
+# FFmpeg backend (static link, Remote default) — ffmpeg-the-third: active fork, safer API
+ffmpeg-the-third = { version = "5", optional = true }
+
+# GStreamer backend (dynamic link, Host default)
+gstreamer = { version = "0.23", optional = true }
+gstreamer-app = { version = "0.23", optional = true }
+gstreamer-video = { version = "0.23", optional = true }
+
+[features]
+default = []
+backend-ffmpeg = ["dep:ffmpeg-the-third"]
+backend-gstreamer = ["dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video"]
+
+[build-dependencies]
+pkg-config = "0.3"

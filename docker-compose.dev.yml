@@ -14,17 +14,17 @@ services:
       - "40000-40100:40000-40100/udp"
     environment:
       RUST_LOG: debug
-      AUDEMSP_PSK: audemsp-dev
+      MEDIASERVO_PSK: mediaservo-dev
       # PIT-58: SFU announced_address 用宿主可达 IP (宿主机网卡) — 容器内探测=172.18.0.2 其他主机不可达
-      AUDEMSP_SFU_ANNOUNCED_IP: ${AUDEMSP_SFU_ANNOUNCED_IP:-}
+      MEDIASERVO_SFU_ANNOUNCED_IP: ${MEDIASERVO_SFU_ANNOUNCED_IP:-}
       # 容器内进程（mediasoup-sys meson wrapdb）需要独立代理 (PIT-38)
       HTTPS_PROXY: ${https_proxy:-}
       NO_PROXY: ${no_proxy:-}
     volumes:
       - .:/workspace
-      - ./config/server.docker.yaml:/opt/audemsp/etc/server.yaml:ro
+      - ./config/server.docker.yaml:/opt/mediaservo/etc/server.yaml:ro
       - cargo-cache:/workspace/target
-    command: cargo run --bin audemsp-server --features sfu-mediasoup,admin-dashboard
+    command: cargo run --bin mediaservo-server --features sfu-mediasoup,admin-dashboard
     cap_add:
       - SYS_PTRACE  # 调试: 容器内 gdb attach (produce 挂起诊断)
 

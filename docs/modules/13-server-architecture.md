@@ -5,14 +5,14 @@
 
 ## 13.1 概述
 
-audemsp-server 是 Phase 1 MVP 的中央中继节点，承担信令中继、媒体转发和运行监控三项职责。Server 不解码也不重编码视频帧，纯 RTP 包转发，延迟增量控制在 30ms 以内。
+mediaservo-server 是 Phase 1 MVP 的中央中继节点，承担信令中继、媒体转发和运行监控三项职责。Server 不解码也不重编码视频帧，纯 RTP 包转发，延迟增量控制在 30ms 以内。
 
 ```
 Host (macOS/Linux/Windows)
   │ WebRTC push (RTP/SRTP)
   │ Signaling (WS /ws, JSON SDP/ICE)
   ▼
-audemsp-server
+mediaservo-server
   ┌──────────────────────────────────────┐
   │  Signaling Relay (axum WS)           │
   │  /ws endpoint, JSON SDP/ICE 中继     │
@@ -59,7 +59,7 @@ Phase 2 引入 mediasoup SFU 替代 Phase 1 的同进程 RTCPeerConnection bridg
 **架构**:
 
 ```
-audemsp-server (Rust)
+mediaservo-server (Rust)
   ├── Signaling Relay (axum + SignalHandler)
   │     SDP adapter → mediasoup 参数转换
   │
@@ -109,7 +109,7 @@ Remote 拉流:
 | SFU 指标 | prometheus-client + mediasoup observer | SFU Worker/Router/Transport/Producer/Consumer 指标 |
 | 中间件 | tower-http (CORS, rate-limit, trace) | 生产级 HTTP 中间件 |
 | 认证 | jsonwebtoken (JWT) + argon2 (密码哈希) | 自包含 token，无外部认证服务 |
-| Web UI | React 19 + Ant Design 5 + recharts | 与 audemsp-client 共享组件生态 |
+| Web UI | React 19 + Ant Design 5 + recharts | 与 mediaservo-client 共享组件生态 |
 
 ## 13.4 房间与中继
 
@@ -159,7 +159,7 @@ Phase 1: 单二进制 + Docker Compose（server + monitoring stack）。
 
 ```
 docker-compose.yml:
-  audemsp-server   # 主服务
+  mediaservo-server   # 主服务
   prometheus        # 指标收集
   grafana           # 监控面板
 ```

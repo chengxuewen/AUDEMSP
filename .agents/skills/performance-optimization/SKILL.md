@@ -1,6 +1,6 @@
 ---
 name: performance-optimization
-description: "AUDEMSP performance profiling and optimization. WebRTC latency tracing, mediasoup SFU throughput, Admin UI React render profiling, cargo bench regression detection. Use when latency spikes, after media pipeline changes, or before release."
+description: "MediaServo performance profiling and optimization. WebRTC latency tracing, mediasoup SFU throughput, Admin UI React render profiling, cargo bench regression detection. Use when latency spikes, after media pipeline changes, or before release."
 ---
 
 # performance-optimization — 性能优化
@@ -10,7 +10,7 @@ description: "AUDEMSP performance profiling and optimization. WebRTC latency tra
 
 ## 触发条件
 
-- 延迟 >100ms (AUDEMSP 目标: <100ms E2E)
+- 延迟 >100ms (MediaServo 目标: <100ms E2E)
 - 吞吐下降 >10%
 - Admin UI 渲染掉帧
 - 媒体管线代码变更后
@@ -36,8 +36,8 @@ description: "AUDEMSP performance profiling and optimization. WebRTC latency tra
 cargo bench --workspace
 
 # 特定 crate
-cargo bench -p audemsp-codec
-cargo bench -p audemsp-webrtc
+cargo bench -p mediaservo-codec
+cargo bench -p mediaservo-webrtc
 
 # 对比 pre/post-change
 cargo bench -- --save-baseline before
@@ -48,7 +48,7 @@ cargo bench -- --baseline before
 ### 关键基线设置
 
 ```rust
-// crates/audemsp-media/benches/pipeline_bench.rs
+// crates/mediaservo-media/benches/pipeline_bench.rs
 use criterion::{black_box, Criterion};
 
 fn bench_encode_1080p(c: &mut Criterion) {
@@ -64,13 +64,13 @@ fn bench_encode_1080p(c: &mut Criterion) {
 
 ```bash
 # flamegraph (Linux, 需要 perf)
-cargo flamegraph --bin audemsp-host -- --capture test-video
+cargo flamegraph --bin mediaservo-host -- --capture test-video
 
 # valgrind / cachegrind
-valgrind --tool=cachegrind cargo run -p audemsp-host --release
+valgrind --tool=cachegrind cargo run -p mediaservo-host --release
 
 # 代码级计时 (项目中已有 metrics 模块)
-# crates/audemsp-common/src/metrics.rs
+# crates/mediaservo-common/src/metrics.rs
 use std::time::Instant;
 let start = Instant::now();
 // ... operation ...
@@ -89,8 +89,8 @@ metrics::record("encode_latency_us", start.elapsed().as_micros());
 
 ```bash
 # 检查现有的 metrics 打点
-grep -rn 'metrics::record\|latency\|Instant::now' crates/audemsp-webrtc/src/ --include='*.rs'
-grep -rn 'metrics::record\|latency\|Instant::now' crates/audemsp-media/src/ --include='*.rs'
+grep -rn 'metrics::record\|latency\|Instant::now' crates/mediaservo-webrtc/src/ --include='*.rs'
+grep -rn 'metrics::record\|latency\|Instant::now' crates/mediaservo-media/src/ --include='*.rs'
 ```
 
 ### DataChannel 延迟
@@ -132,11 +132,11 @@ fn send_frame(&mut self, frame: &Frame) {
 
 ```bash
 # Docker 环境
-docker compose exec server cargo bench -p audemsp-server -- --bench sfu_throughput
+docker compose exec server cargo bench -p mediaservo-server -- --bench sfu_throughput
 
 # 或使用 mediasoup 内置 stats
 # 检查 worker resource usage
-grep -rn 'rtp_listener\|max_income_bitrate\|producer.*stats' crates/audemsp-server/src/sfu/ --include='*.rs'
+grep -rn 'rtp_listener\|max_income_bitrate\|producer.*stats' crates/mediaservo-server/src/sfu/ --include='*.rs'
 ```
 
 ### mediasoup 调优参数
@@ -152,8 +152,8 @@ grep -rn 'rtp_listener\|max_income_bitrate\|producer.*stats' crates/audemsp-serv
 ```
 
 ```bash
-# 检查当前 AUDEMSP transport 配置
-grep -rn 'availableOutgoingBitrate\|maxIncomingBitrate\|initial' crates/audemsp-server/src/sfu/ --include='*.rs'
+# 检查当前 MediaServo transport 配置
+grep -rn 'availableOutgoingBitrate\|maxIncomingBitrate\|initial' crates/mediaservo-server/src/sfu/ --include='*.rs'
 ```
 
 ### SFU 健康监控
@@ -183,7 +183,7 @@ curl -s http://localhost:9800/api/admin/sfu/stats | jq '.rooms[].peers[].transpo
 # 4. browser_evaluate → performance.measure('render', 'start')
 
 # 代码级检查
-grep -rn 'useState\|useEffect\|useMemo\|useCallback\|React.memo' crates/audemsp-server/src/admin/ --include='*.tsx' --include='*.ts'
+grep -rn 'useState\|useEffect\|useMemo\|useCallback\|React.memo' crates/mediaservo-server/src/admin/ --include='*.tsx' --include='*.ts'
 ```
 
 ### React 优化清单
@@ -201,11 +201,11 @@ grep -rn 'useState\|useEffect\|useMemo\|useCallback\|React.memo' crates/audemsp-
 
 ```bash
 # 检查 React 项目中重组件
-grep -rn 'export.*function.*Component\|export.*default function' crates/audemsp-server/src/admin/ --include='*.tsx' | wc -l
+grep -rn 'export.*function.*Component\|export.*default function' crates/mediaservo-server/src/admin/ --include='*.tsx' | wc -l
 
 # 检查缺少 memoization
-grep -rn 'useState\|useEffect' crates/audemsp-server/src/admin/ --include='*.tsx' | wc -l
-grep -rn 'useMemo\|useCallback\|memo' crates/audemsp-server/src/admin/ --include='*.tsx' | wc -l
+grep -rn 'useState\|useEffect' crates/mediaservo-server/src/admin/ --include='*.tsx' | wc -l
+grep -rn 'useMemo\|useCallback\|memo' crates/mediaservo-server/src/admin/ --include='*.tsx' | wc -l
 # ponytail: ratio useMemo+useCallback+React.memo / useState+useEffect 应 >0.5
 ```
 
@@ -259,15 +259,15 @@ cargo clippy --workspace --all-features -- -D warnings  # 不引入不必要的 
 cargo bench --workspace -- --quick  # 快速基准 (采样不足，仅快速验证)
 ```
 
-## 热点参考 (AUDEMSP 已知)
+## 热点参考 (MediaServo 已知)
 
 | 热点 | 位置 | 预期 | 监控 |
 |------|------|------|------|
-| H.264 编码 | `audemsp-codec/src/ffmpeg/encoder.rs` | <5ms 1080p | metrics: `encode_latency_us` |
-| RTP 打包 | `audemsp-webrtc/src/backend/*/track.rs` | <1ms | metrics: `rtp_packetize_us` |
-| WebSocket relay | `audemsp-server/src/signaling/ws.rs` | <1ms per message | metrics: `ws_relay_us` |
-| GStreamer appsink | `audemsp-host/src/capture/gst.rs` | <3ms frame pull | 丢帧计数器 |
-| mediasoup transport | `audemsp-server/src/sfu/transport.rs` | <50ms connect | room stats |
+| H.264 编码 | `mediaservo-codec/src/ffmpeg/encoder.rs` | <5ms 1080p | metrics: `encode_latency_us` |
+| RTP 打包 | `mediaservo-webrtc/src/backend/*/track.rs` | <1ms | metrics: `rtp_packetize_us` |
+| WebSocket relay | `mediaservo-server/src/signaling/ws.rs` | <1ms per message | metrics: `ws_relay_us` |
+| GStreamer appsink | `mediaservo-host/src/capture/gst.rs` | <3ms frame pull | 丢帧计数器 |
+| mediasoup transport | `mediaservo-server/src/sfu/transport.rs` | <50ms connect | room stats |
 
 ## 报告格式
 

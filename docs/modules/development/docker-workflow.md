@@ -4,7 +4,7 @@
 
 ## 概述
 
-AUDEMSP 使用多阶段 Dockerfile (base → dev → builder → runtime) 和 docker-compose 简化开发环境搭建。mediasoup SFU 仅支持 Linux，macOS 开发者需通过 Docker 容器编译。
+MediaServo 使用多阶段 Dockerfile (base → dev → builder → runtime) 和 docker-compose 简化开发环境搭建。mediasoup SFU 仅支持 Linux，macOS 开发者需通过 Docker 容器编译。
 
 ## macOS Docker 工作流
 
@@ -26,7 +26,7 @@ docker compose exec server bash
 cargo check --features sfu-mediasoup
 
 # 运行服务器
-cargo run --bin audemsp-server
+cargo run --bin mediaservo-server
 ```
 
 ### 使用 VS Code Dev Container
@@ -42,7 +42,7 @@ docker-compose.yml 已配置 `cargo-cache` named volume，避免重复下载依�
 
 ```bash
 # 清理 cargo 缓存（如遇缓存损坏）
-docker volume rm audemsp_cargo-cache
+docker volume rm mediaservo_cargo-cache
 ```
 
 ## Linux 原生工作流
@@ -63,10 +63,10 @@ pip3 install meson
 cargo fetch
 
 # 编译含 SFU 的服务器
-cargo build --features sfu-mediasoup --bin audemsp-server
+cargo build --features sfu-mediasoup --bin mediaservo-server
 
 # 运行
-cargo run --features sfu-mediasoup --bin audemsp-server
+cargo run --features sfu-mediasoup --bin mediaservo-server
 ```
 
 ### clippy 检查

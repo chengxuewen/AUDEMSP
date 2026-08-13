@@ -3,11 +3,11 @@ name: source-driven-development
 description: "Ground every external dependency decision in official docs. Use when integrating mediasoup, webrtc-rs, React, Docker, GStreamer, FFmpeg, or any crate/framework. Verifies Cargo.toml deps against upstream docs. Triggers: 'check the docs', 'is this API correct', 'what does the spec say', 'verify against upstream', crate upgrade, new dependency."
 ---
 
-# Source-Driven Development — AUDEMSP
+# Source-Driven Development — MediaServo
 
 ## Overview
 
-Every external dependency decision must be backed by official documentation. AUDEMSP integrates C/C++ FFI (mediasoup, libwebrtc), three WebRTC backends, two codec backends, and Docker tooling. Training data goes stale — documentation doesn't lie. Verify every API call, every feature flag, every build step against upstream docs.
+Every external dependency decision must be backed by official documentation. MediaServo integrates C/C++ FFI (mediasoup, libwebrtc), three WebRTC backends, two codec backends, and Docker tooling. Training data goes stale — documentation doesn't lie. Verify every API call, every feature flag, every build step against upstream docs.
 
 ## When to Use
 
@@ -50,9 +50,9 @@ State what you found:
 
 ```
 DEPENDENCIES DETECTED:
-- mediasoup-sys 0.13 (from crates/audemsp-server/Cargo.toml)
-- webrtc 0.14 (from crates/audemsp-webrtc/Cargo.toml)
-- gstreamer 0.24 (from crates/audemsp-codec/Cargo.toml)
+- mediasoup-sys 0.13 (from crates/mediaservo-server/Cargo.toml)
+- webrtc 0.14 (from crates/mediaservo-webrtc/Cargo.toml)
+- gstreamer 0.24 (from crates/mediaservo-codec/Cargo.toml)
 → Fetching upstream docs for the relevant APIs.
 ```
 
@@ -166,7 +166,7 @@ This replaces the previous stub that only logged and returned "transport_connect
 (see PIT-07 in .agents/memorys/pitfalls.md).
 ```
 
-## AUDEMSP-Specific Verification
+## MediaServo-Specific Verification
 
 ### Rust Crate Dependencies
 
@@ -177,7 +177,7 @@ Before adding/changing a dep:
 grep -r "crate_name" Cargo.toml crates/*/Cargo.toml
 
 # 2. Verify version compatibility
-cargo tree -p audemsp-server -i mediasoup-sys
+cargo tree -p mediaservo-server -i mediasoup-sys
 
 # 3. Check MSRV against rust-toolchain.toml
 cat rust-toolchain.toml
@@ -188,16 +188,16 @@ cargo deny check
 
 ### Feature Flag Dependencies
 
-AUDEMSP feature flags are interdependent. Verify:
+MediaServo feature flags are interdependent. Verify:
 
 ```bash
 # Each flag combination must cargo check
-cargo check -p audemsp-webrtc --no-default-features --features backend-stub
-cargo check -p audemsp-webrtc --features backend-webrtc-rs
-cargo check -p audemsp-webrtc --features backend-webrtc-sys
-cargo check -p audemsp-codec --features backend-ffmpeg
-cargo check -p audemsp-codec --features backend-gstreamer
-cargo check -p audemsp-server --features sfu-mediasoup
+cargo check -p mediaservo-webrtc --no-default-features --features backend-stub
+cargo check -p mediaservo-webrtc --features backend-webrtc-rs
+cargo check -p mediaservo-webrtc --features backend-webrtc-sys
+cargo check -p mediaservo-codec --features backend-ffmpeg
+cargo check -p mediaservo-codec --features backend-gstreamer
+cargo check -p mediaservo-server --features sfu-mediasoup
 ```
 
 ### mediasoup Version Constraints
@@ -220,7 +220,7 @@ grep "runs-on" .github/workflows/ci.yml
 # Both should be ubuntu-22.04 / ubuntu:22.04
 ```
 
-## Common AUDEMSP Conflicts
+## Common MediaServo Conflicts
 
 ### Conflict: Crate version != binding version
 
@@ -234,7 +234,7 @@ API from v3.14.x (based on CHANGELOG.md).
 
 ```
 CONFLICT: Both backend-webrtc-rs and backend-webrtc-sys are enabled.
-Source: crates/audemsp-webrtc/Cargo.toml + PIT-04
+Source: crates/mediaservo-webrtc/Cargo.toml + PIT-04
 → compile_error! is expected. Only one backend per build.
 ```
 
@@ -256,12 +256,12 @@ C) Test on Linux CI
 - [ ] API signatures match the detected version (not training data)
 - [ ] Feature flag combinations all `cargo check` clean
 - [ ] Platform constraints documented (Linux-only, macOS-only)
-- [ ] Non-trivial decisions cite upstream docs + AUDEMSP decision record
+- [ ] Non-trivial decisions cite upstream docs + MediaServo decision record
 - [ ] Deprecated APIs not used (checked migration guides)
 - [ ] Conflicts between docs and existing code surfaced
 - [ ] Anything unverified is explicitly flagged
 
-## Red Flags (AUDEMSP)
+## Red Flags (MediaServo)
 
 - Writing `mediasoup::Transport::connect()` without checking the 0.13 API signature
 - Using webrtc-rs APIs from memory (v0.11 vs v0.14 differ significantly)
@@ -276,4 +276,4 @@ C) Test on Linux CI
 - `.agents/memorys/conventions.md` — C5 (GStreamer boundary), C6 (webrtc naming)
 - `.agents/memorys/decisions.md` — D198 (SFU Server-Offer), D155 (GStreamer interface)
 - `.agents/rules/common/constraints.md` — Platform constraints, Docker constraints
-- `crates/audemsp-webrtc/Cargo.toml` — Feature flag matrix
+- `crates/mediaservo-webrtc/Cargo.toml` — Feature flag matrix

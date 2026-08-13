@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/audemsp-host", "crates/audemsp-client", "crates/audemsp-server", "crates/audemsp-common", "crates/audemsp-webrtc", "crates/audemsp-media", "crates/audemsp-codec"]
+members = ["crates/mediaservo-host", "crates/mediaservo-client", "crates/mediaservo-server", "crates/mediaservo-common", "crates/mediaservo-webrtc", "crates/mediaservo-media", "crates/mediaservo-codec"]
 resolver = "3"
 
 [workspace.package]
@@ -13,7 +13,7 @@ lto = "thin"
 codegen-units = 16
 strip = true
 
-# AUDEMSP vendored patch (PIT-76): webrtc-sys 0.3.41 补全
+# MediaServo vendored patch (PIT-76): webrtc-sys 0.3.41 补全
 # RtpEncodingParameters.request_key_frame 字段（libwebrtc GenerateKeyFrame 标准路径，
 # 用于 Host 周期关键帧触发）。上游 livekit 未暴露此字段。
 # 升级 webrtc-sys 前必须检查 upstream 是否已含该字段，含则删除此 patch。

@@ -9,7 +9,7 @@ const TOKEN = process.argv[2];
   const page = await browser.newPage();
   page.on('console', m => { const t = m.text(); if (t.includes('error') || t.includes('transport-cc')) console.log('[console]', t.slice(0,200)); });
   await page.goto(APP, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(t => localStorage.setItem('audemsp_admin_token', t), TOKEN);
+  await page.evaluate(t => localStorage.setItem('mediaservo_admin_token', t), TOKEN);
   await page.reload({ waitUntil: 'domcontentloaded' });
   const playBtn = page.locator('.btn-play').first();
   await playBtn.waitFor({ timeout: 15000 });

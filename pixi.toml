@@ -1,5 +1,5 @@
 [workspace]
-name = "AUDEMSP"
+name = "MediaServo"
 channels = ["conda-forge"]
 platforms = ["osx-64", "osx-arm64", "linux-64", "linux-aarch64"]
 version = "0.1.0"
@@ -10,7 +10,7 @@ rust = ">=1.85.0,<2"
 flatbuffers = ">=24.3.25,<26"
 python = "3.12.*"
 pip = ">=24.0,<26"
-pyyaml = ">=6.0,<7"  # build-cli: audemsp config validate (PIT-76 审核 BLOCKER-2)
+pyyaml = ">=6.0,<7"  # build-cli: mediaservo config validate (PIT-76 审核 BLOCKER-2)
 ripgrep = ">=14.1.0,<15"
 # GStreamer 1.24+ (gstreamer-rs 0.23 min=1.14, tested=1.24)
 gstreamer = ">=1.24.0,<2"
@@ -37,24 +37,24 @@ openssl = ">=3,<4"
 [feature.dev.tasks]
 # === Cargo tasks ═════════════════════════════════════════════════
 # 不需要 mediasoup 的 crate — 原生编译 (所有平台)
-check = "cargo check --workspace --exclude audemsp-server"
-build = "cargo build --workspace --exclude audemsp-server"
-test = "cargo test --workspace --exclude audemsp-server"
+check = "cargo check --workspace --exclude mediaservo-server"
+build = "cargo build --workspace --exclude mediaservo-server"
+test = "cargo test --workspace --exclude mediaservo-server"
 lint = "cargo clippy --workspace --all-targets -- -D warnings"
 
-# audemsp-server — Docker 编译 (mediasoup C++ Worker 需要 Linux + meson)
-check-server = "sh -c 'scripts/docker-cargo.sh check -p audemsp-server --features sfu-mediasoup'"
-build-server = "sh -c 'scripts/docker-cargo.sh build -p audemsp-server --features sfu-mediasoup'"
-test-server = "sh -c 'scripts/docker-cargo.sh test -p audemsp-server --features sfu-mediasoup'"
+# mediaservo-server — Docker 编译 (mediasoup C++ Worker 需要 Linux + meson)
+check-server = "sh -c 'scripts/docker-cargo.sh check -p mediaservo-server --features sfu-mediasoup'"
+build-server = "sh -c 'scripts/docker-cargo.sh build -p mediaservo-server --features sfu-mediasoup'"
+test-server = "sh -c 'scripts/docker-cargo.sh test -p mediaservo-server --features sfu-mediasoup'"
 
 
 # 工具 (无变更)
 format = "cargo fmt --all -- --check"
 format-fix = "cargo fmt --all"
 audit = "cargo deny check"
-coverage = "cargo tarpaulin --workspace --exclude audemsp-server --out Html --out Lcov"
-test-gstreamer = "LD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$LD_LIBRARY_PATH DYLD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$DYLD_LIBRARY_PATH cargo test -p audemsp-codec --features backend-gstreamer"
-test-sfu = "cargo test -p audemsp-server --features sfu-mediasoup"
+coverage = "cargo tarpaulin --workspace --exclude mediaservo-server --out Html --out Lcov"
+test-gstreamer = "LD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$LD_LIBRARY_PATH DYLD_LIBRARY_PATH=$PIXI_PROJECT_ROOT/.pixi/envs/dev/lib:$DYLD_LIBRARY_PATH cargo test -p mediaservo-codec --features backend-gstreamer"
+test-sfu = "cargo test -p mediaservo-server --features sfu-mediasoup"
 
 # Docker compose tasks
 server = "docker compose up"

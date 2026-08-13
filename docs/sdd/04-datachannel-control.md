@@ -53,7 +53,7 @@ label: "control"
 
 ## 3. HMAC 安全 (D117)
 
-- 密钥: `DTLS-SRTP export_keying_material("audemsp-control")`
+- 密钥: `DTLS-SRTP export_keying_material("mediaservo-control")`
 - 算法: HMAC-SHA256, truncate 前 8 字节
 - 接收端: 验证 HMAC, 序列号单调递增, seq > last_seq + 窗口
 - 发送端: 队列 > 3 帧时丢弃最旧帧, 只发最新

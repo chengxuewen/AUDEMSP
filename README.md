@@ -1,6 +1,6 @@
-# AUDEMSP
+# MediaServo
 
-AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入、WebRTC 遥操作等能力。
+MediaServo — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一的多媒体基础设施，涵盖远程桌面、视频会议、直播推拉流、监控相机接入、WebRTC 遥操作等能力。
 
 ## 功能范围
 
@@ -15,7 +15,7 @@ AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一�
 
 ```
 ┌──────────────────────────────────────────────┐
-│           AUDEMSP 后台服务                 │
+│           MediaServo 后台服务                 │
 │   用户管理 · 权限控制 · License · 信令       │
 └──────────────────┬───────────────────────────┘
                    │ gRPC / REST
@@ -30,7 +30,7 @@ AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一�
 
 - **Client**：桌面 GUI 全功能应用（Tauri v2），可控制他人也可被控制
 - **Host**：无 GUI 守护进程，适合边缘设备/服务器/车端，纯产出媒体流
-- **微内核 + 插件**：audemsp-common 微内核，领域功能以插件形式加载
+- **微内核 + 插件**：mediaservo-common 微内核，领域功能以插件形式加载
 - **Auth 双模式**：独立部署自带账户系统；作为 AUDEBase 模块时委托平台 RBAC/LDAP
 
 详见 [`docs/architecture.md`](docs/architecture.md)。
@@ -52,22 +52,22 @@ AUDEMSP — AUDE 生态多媒体系统。为 AUDESYS 和 AUDEBase 提供统一�
 统一 CLI 入口（bootstrap 后可用）：
 
 ```bash
-./audemsp.sh -h            # 全部子命令（Windows: audemsp.bat）
+./mediaservo.sh -h            # 全部子命令（Windows: mediaservo.bat）
 
 # 动词 × 目标矩阵（target: server | host | client | all）
-./audemsp.sh build         # 构建 all（host/client 原生 + server Docker）
-./audemsp.sh build host    # 仅宿主侧（别名: build-host）
-./audemsp.sh build server  # 仅 server（别名: build-server）
-./audemsp.sh start server  # 启动 server 容器（幂等，自动注入 ANNOUNCED_IP）
-./audemsp.sh start host    # 启动 host 推流（杀旧进程；别名: run-host）
-./audemsp.sh stop server   # 停止 server（compose stop 保留容器，秒级再启）
-./audemsp.sh stop host     # 停止 host 进程
-./audemsp.sh restart server    # 重启 server（清旧再启，配置变更生效）
-./audemsp.sh logs host     # host 日志（/tmp/audemsp-host.log）
-./audemsp.sh e2e           # e2e_sfu 回归（前置: server + host + vite 运行中）
-./audemsp.sh status        # 环境诊断（pixi/cargo/docker/node）
-./audemsp.sh config validate   # 配置校验（pyyaml）
-./audemsp.sh clean         # 清构建产物（保留 cargo-cache 卷）; clean --all 全清
+./mediaservo.sh build         # 构建 all（host/client 原生 + server Docker）
+./mediaservo.sh build host    # 仅宿主侧（别名: build-host）
+./mediaservo.sh build server  # 仅 server（别名: build-server）
+./mediaservo.sh start server  # 启动 server 容器（幂等，自动注入 ANNOUNCED_IP）
+./mediaservo.sh start host    # 启动 host 推流（杀旧进程；别名: run-host）
+./mediaservo.sh stop server   # 停止 server（compose stop 保留容器，秒级再启）
+./mediaservo.sh stop host     # 停止 host 进程
+./mediaservo.sh restart server    # 重启 server（清旧再启，配置变更生效）
+./mediaservo.sh logs host     # host 日志（/tmp/mediaservo-host.log）
+./mediaservo.sh e2e           # e2e_sfu 回归（前置: server + host + vite 运行中）
+./mediaservo.sh status        # 环境诊断（pixi/cargo/docker/node）
+./mediaservo.sh config validate   # 配置校验（pyyaml）
+./mediaservo.sh clean         # 清构建产物（保留 cargo-cache 卷）; clean --all 全清
 ```
 
 > client 目标已注册（build 可用）；up/down/restart/logs client 待骨架完成后实现。

@@ -70,15 +70,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y meson ninja-build libuv1-dev libssl-dev
-      - name: Test audemsp-server (mediasoup)
-        run: cargo test -p audemsp-server --features sfu-mediasoup
-      - name: Build audemsp-server binary (for external-mode e2e)
-        run: cargo build -p audemsp-server --features sfu-mediasoup
-      - name: Start audemsp-server for e2e_sfu (pure external mode)
+      - name: Test mediaservo-server (mediasoup)
+        run: cargo test -p mediaservo-server --features sfu-mediasoup
+      - name: Build mediaservo-server binary (for external-mode e2e)
+        run: cargo build -p mediaservo-server --features sfu-mediasoup
+      - name: Start mediaservo-server for e2e_sfu (pure external mode)
         run: |
           # C21: e2e_sfu 是纯外部模式 — 需真实 server 进程 + WS 信令交互
-          # 注意: server 认证用 AUDEMSP_PSK env (main.rs:185), 与 e2e_sfu 的 SFU_E2E_PSK 匹配
-          AUDEMSP_PSK="audemsp-dev" nohup ./target/debug/audemsp-server > /tmp/server.log 2>&1 &
+          # 注意: server 认证用 MEDIASERVO_PSK env (main.rs:185), 与 e2e_sfu 的 SFU_E2E_PSK 匹配
+          MEDIASERVO_PSK="mediaservo-dev" nohup ./target/debug/mediaservo-server > /tmp/server.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -s --noproxy "*" http://127.0.0.1:9800/health 2>/dev/null | grep -q healthy; then
               echo "server ready after ${i}s"; break;
@@ -90,8 +90,8 @@ jobs:
         run: |
           # 首次 Linux 真跑 — CI 覆盖防 C14 假象重演 (PIT-71/72)
           SFU_E2E_WS_URL="ws://127.0.0.1:9800/ws" \
-          SFU_E2E_PSK="audemsp-dev" \
-          cargo test -p audemsp-host --test e2e_sfu
+          SFU_E2E_PSK="mediaservo-dev" \
+          cargo test -p mediaservo-host --test e2e_sfu
 
   benchmark:
     runs-on: ubuntu-latest
@@ -99,7 +99,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo bench -p audemsp-server
+      - run: cargo bench -p mediaservo-server
 
   openapi-validate:
     runs-on: ubuntu-latest

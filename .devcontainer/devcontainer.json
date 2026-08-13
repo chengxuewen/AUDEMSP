@@ -1,5 +1,5 @@
 {
-  "name": "AUDEMSP SFU Dev",
+  "name": "MediaServo SFU Dev",
   "dockerComposeFile": "../docker-compose.dev.yml",
   "service": "server",
   "workspaceFolder": "/workspace",

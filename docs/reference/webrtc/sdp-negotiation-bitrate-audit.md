@@ -34,7 +34,7 @@
 
 ## 3. 官方对照（mediasoup-client.md §2/§4）
 
-| # | 官方（libmediasoupclient/mediasoup-client JS） | AUDEMSP Host 现状 |
+| # | 官方（libmediasoupclient/mediasoup-client JS） | MediaServo Host 现状 |
 |---|------|------|
 | 角色 | client = **offerer**: `addTransceiver(sendonly) → createOffer → setLocalDescription(offer)` | client = **answerer**: 自构对端 offer → `setRemoteDescription` |
 | 自构侧 | **answer 由 SDK 自构**（`RemoteSdp::Send()`, RemoteSdp.cpp:157-185）→ `setRemoteDescription(answer)` | **offer 由 app 层自构**（`build_remote_sdp`）→ 协商, answer 由 libwebrtc 生成 |

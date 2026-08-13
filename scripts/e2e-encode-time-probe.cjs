@@ -10,7 +10,7 @@ const TOKEN = process.argv[2];
   const encLogs = [];
   page.on('console', m => { const t = m.text(); if (t.includes('encoder_status')) encLogs.push(t.slice(0, 160)); });
   await page.goto(APP, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(t => localStorage.setItem('audemsp_admin_token', t), TOKEN);
+  await page.evaluate(t => localStorage.setItem('mediaservo_admin_token', t), TOKEN);
   await page.reload({ waitUntil: 'domcontentloaded' });
   const candidates = await page.evaluate(() =>
     Array.from(document.querySelectorAll('*')).filter(el => el.children.length === 0 && el.textContent.trim().length > 0)

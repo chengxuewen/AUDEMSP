@@ -6,7 +6,7 @@ test.describe('Admin Layout', () => {
   });
 
   test('renders header and sidebar navigation', async ({ page }) => {
-    await expect(page.locator('header')).toContainText('AUDEMSP Admin');
+    await expect(page.locator('header')).toContainText('MediaServo Admin');
     await expect(page.locator('nav a', { hasText: 'Dashboard' })).toBeVisible();
     await expect(page.locator('nav a', { hasText: 'Settings' })).toBeVisible();
   });

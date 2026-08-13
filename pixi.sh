@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pixi.sh — Source this file to activate AUDEMSP pixi environment
+# pixi.sh — Source this file to activate MediaServo pixi environment
 # Usage: source pixi.sh
 
 set -euo pipefail

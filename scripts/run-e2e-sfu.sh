@@ -21,7 +21,7 @@ for port in 9800 5173; do
   curl -s --noproxy "*" -o /dev/null "http://127.0.0.1:${port}/" \
     || { echo "ERROR: 127.0.0.1:${port} 未监听 — 先启动环境" >&2; exit 1; }
 done
-pgrep -x audemsp-host > /dev/null || { echo "ERROR: Host 未运行" >&2; exit 1; }
+pgrep -x mediaservo-host > /dev/null || { echo "ERROR: Host 未运行" >&2; exit 1; }
 
 export HEADFUL="$HEADFUL_FLAG"
 node scripts/e2e-sfu-consume.cjs "$TOKEN"

@@ -77,15 +77,15 @@ Phase 2: Let's Encrypt (ACME) 自动续期，CRL 吊销列表。
 
 ### PSK 轮转 Runbook (doc-audit L5)
 
-> 现状 [已核实]：signaling.rs:173-177 连接时读取**单个** `AUDEMSP_PSK` env；**双密钥共存机制未实现**（Phase 2 设计），当前轮转 = 重启换 key。
+> 现状 [已核实]：signaling.rs:173-177 连接时读取**单个** `MEDIASERVO_PSK` env；**双密钥共存机制未实现**（Phase 2 设计），当前轮转 = 重启换 key。
 
 | 步骤 | 操作 | 验证 |
 |------|------|------|
 | 0. 前置 | 确认 server 日志可查 AuditEvent（AuthSuccess/AuthFailure） | `grep AuthSuccess` 日志 |
 | 1. 生成 | `openssl rand -hex 32` 生成新 PSK | 长度 64 hex |
-| 2. 切换 | 设置新 `AUDEMSP_PSK` → 重启 server（Phase 1 语义） | 旧连接断开、新连接 AuthSuccess |
-| 3. 共存窗口 | [规划] `AUDEMSP_PSK_OLD` 双 HMAC 校验（signaling.rs:174-176 改造点），24h 容忍未重连客户端 | 窗口内无 AuthFailure 增长 |
-| 4. 清理 | 窗口后清除 OLD；生产 compose 移除硬编码 psk → `env_file`/secret（docker-compose.yml:10） | `grep -rn "audemsp-dev"` 仅测试文件 |
+| 2. 切换 | 设置新 `MEDIASERVO_PSK` → 重启 server（Phase 1 语义） | 旧连接断开、新连接 AuthSuccess |
+| 3. 共存窗口 | [规划] `MEDIASERVO_PSK_OLD` 双 HMAC 校验（signaling.rs:174-176 改造点），24h 容忍未重连客户端 | 窗口内无 AuthFailure 增长 |
+| 4. 清理 | 窗口后清除 OLD；生产 compose 移除硬编码 psk → `env_file`/secret（docker-compose.yml:10） | `grep -rn "mediaservo-dev"` 仅测试文件 |
 | 5. 回滚 | 失败则恢复旧 env 重启（Phase 1 无窗口内回滚，步骤 3 的 OLD 机制是关键） | 连接恢复 |
 
 ## SFU 媒体面安全 (doc-audit M7)

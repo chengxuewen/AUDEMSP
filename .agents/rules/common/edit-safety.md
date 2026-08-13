@@ -1,6 +1,6 @@
 # Code Edit Safety
 
-> **Target audience**: AI agents editing AUDEMSP source code.
+> **Target audience**: AI agents editing MediaServo source code.
 > **Violation of these rules causes token waste from repeated fix cycles.**
 
 ## Tool Selection
@@ -89,7 +89,7 @@ After claiming tests are written or features are working:
 
 - **ALL required features MUST be in `default` features** in Cargo.toml — never require manual `--features` for core functionality
 - **Build commands in docs MUST include all features** — never document `cargo build` without required features
-- **Before running server, ALWAYS verify**: `cargo build -p audemsp-server` (with defaults) produces working binary
+- **Before running server, ALWAYS verify**: `cargo build -p mediaservo-server` (with defaults) produces working binary
 - **If a feature is optional, it must be explicitly opt-out** (disable with `--no-default-features`)
 
 ## Self-Verification Requirement (NON-NEGOTIABLE)
@@ -108,7 +108,7 @@ After claiming tests are written or features are working:
 
 ## Process Management (shell)
 
-- **NEVER use `pgrep -f` / `pkill -f` with a pattern that matches your own shell command line** (e.g. `pgrep -f "audemsp-host"` from a bash tool whose command string contains that literal) — it kills the shell itself, hanging the tool. Use `pgrep -x <exact-process-name>` (matches process name only, e.g. `audemsp-host`), or exclude own PID.
+- **NEVER use `pgrep -f` / `pkill -f` with a pattern that matches your own shell command line** (e.g. `pgrep -f "mediaservo-host"` from a bash tool whose command string contains that literal) — it kills the shell itself, hanging the tool. Use `pgrep -x <exact-process-name>` (matches process name only, e.g. `mediaservo-host`), or exclude own PID.
 - **Killing + relaunching in one shell command** can kill the just-started process (SIGTERM/SIGHUP to the process group on tool timeout). Launch with `setsid nohup ... < /dev/null & disown` and verify with `pgrep -x` in a separate call.
 - **Port-in-use on relaunch** (e.g. `Failed to bind 0.0.0.0:9801`) almost always means the old process survived the kill — verify with `ss -tlnp | grep <port>` and kill by PID.
 - **Container-recreated services lose apt-installed tools** (gdb etc.) — install debug tools in the Dockerfile dev target, not per-container.
@@ -137,7 +137,7 @@ After claiming tests are written or features are working:
 grep -c "重复模式" <file>    # 期望 1；>1 = edit 重复插入
 ```
 
-**先例**: 2026-08-10 会话内 edit 工具三次异常——① 替换丢失前几行（main.rs 配置路径缩进损坏但语法合法，编译通过但逻辑旧）；② 重复插入分派行（audemsp_cli.py 287/288 相同行 → restart/run-host 执行两轮容器重建）。**修复**: ① 改用 python 精确字符串替换（读文件→replace→写回）；② 删除重复行后 grep -c 验证。
+**先例**: 2026-08-10 会话内 edit 工具三次异常——① 替换丢失前几行（main.rs 配置路径缩进损坏但语法合法，编译通过但逻辑旧）；② 重复插入分派行（mediaservo_cli.py 287/288 相同行 → restart/run-host 执行两轮容器重建）。**修复**: ① 改用 python 精确字符串替换（读文件→replace→写回）；② 删除重复行后 grep -c 验证。
 
 **阻塞条件**: 多行 edit 后未验证唯一性/行数即提交。
 
@@ -172,7 +172,7 @@ grep -c "重复模式" <file>    # 期望 1；>1 = edit 重复插入
 
 **规则**: 禁止 `cargo fmt` / `pixi run cargo fmt` 无参数或带 `-- <path>` 运行nyi——cargo fmt 的 `--` 后参数**不是路径过滤**，会格式化整个 workspace；且本工作区存在 rustfmt 版本漂移（历史文件格式与当前 rustfmt 期望不一致，全量 fmt 产生 112 文件/3000+ 行 diff）。需要单文件格式化时用 `rustfmt --edition 2024 <file>`（rustfmt CLI 支持单文件），或手动保持风格。
 
-**先例**: 2026-08-12 `pixi run cargo fmt -- crates/audemsp-host/src/sfu_media.rs` 误格式化 workspace 112 文件（3103 insertions），`git checkout -- .` 恢复后才重新应用功能改动，浪费 3+ 轮。
+**先例**: 2026-08-12 `pixi run cargo fmt -- crates/mediaservo-host/src/sfu_media.rs` 误格式化 workspace 112 文件（3103 insertions），`git checkout -- .` 恢复后才重新应用功能改动，浪费 3+ 轮。
 
 **验证**: 任何 fmt 操作后 `git diff --stat | wc -l` 必须 == 预期文件数（通常 1）；`git status --short` 无意外文件。
 

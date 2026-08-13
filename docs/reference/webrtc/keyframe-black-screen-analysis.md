@@ -102,12 +102,12 @@ libwebrtc 官方标准机制（mediasoup-demo 也用），在 SDP fmtp 行配置
 - 优势: 一行改动，webrtc-sys 内，快速验证
 - 劣势: 依赖 OpenH264 是否解析该 Google 扩展参数（非 RFC 标准，有风险）；仍是战术性修复，受 libwebrtc 黑盒约束
 
-### 方案 C: encoded 路径 + audemsp-codec（架构改造，长期）
+### 方案 C: encoded 路径 + mediaservo-codec（架构改造，长期）
 
 switching to `capture_encoded_frame` + `take_keyframe_request()`，关键帧完全应用层可控。
 
 - 优势: 关键帧 100% 显式可控（GOP 配置 + PLI 闭环），可扩展（H.265/VP9/AV1/simulcast）
-- 劣势: 大改动（Host 依赖 audemsp-codec + 新路径 + 帧循环改造）
+- 劣势: 大改动（Host 依赖 mediaservo-codec + 新路径 + 帧循环改造）
 
 ### 决策建议
 
@@ -123,10 +123,10 @@ switching to `capture_encoded_frame` + `take_keyframe_request()`，关键帧完�
 
 ## 7. 相关文件
 
-- `crates/audemsp-host/src/sfu_media.rs`: `build_remote_sdp`（b=AS:2000, fmtp 行）
-- `crates/audemsp-host/src/main.rs`: SFU 帧循环（SquaresPattern + 绝对时间轴, 640x480）; `keyframe_interval` 死配置 (line 592)
-- `crates/audemsp-webrtc/src/backend/webrtc_sys.rs`: `WebrtcSysTrack` raw I420 路径 (line 587 on_captured_frame)
-- `crates/audemsp-server/src/sfu.rs`: `create_consumer` (line 353)
+- `crates/mediaservo-host/src/sfu_media.rs`: `build_remote_sdp`（b=AS:2000, fmtp 行）
+- `crates/mediaservo-host/src/main.rs`: SFU 帧循环（SquaresPattern + 绝对时间轴, 640x480）; `keyframe_interval` 死配置 (line 592)
+- `crates/mediaservo-webrtc/src/backend/webrtc_sys.rs`: `WebrtcSysTrack` raw I420 路径 (line 587 on_captured_frame)
+- `crates/mediaservo-server/src/sfu.rs`: `create_consumer` (line 353)
 - `~/.cargo/registry/src/*/webrtc-sys-0.3.41/src/video_track.cpp`: raw 路径 (167-247) 不查 keyframe flag; encoded 路径 (309) 用 flag
 - `~/.cargo/registry/src/*/mediasoup-0.24.1/src/router/consumer.rs`: ConsumerOptions paused 注释 (112-115); `request_key_frame()` (1234)
 - versionsatica/libmediasoupclient `src/Handler.cpp`: `SendHandler::Send()` 原生 track + 零关键帧配置

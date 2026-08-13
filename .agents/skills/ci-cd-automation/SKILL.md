@@ -1,9 +1,9 @@
 ---
 name: ci-cd-automation
-description: "AUDEMSP CI/CD pipeline management: Docker compose (server + SFU), GitHub Actions (fmt/check/clippy/test/mediasoup/benchmark), pixi tasks (check/build/lint/test/audit/coverage), cargo-deny audit, and platform-specific builds (macOS native + Linux Docker). Use for CI troubleshooting, pipeline changes, or pre-merge verification."
+description: "MediaServo CI/CD pipeline management: Docker compose (server + SFU), GitHub Actions (fmt/check/clippy/test/mediasoup/benchmark), pixi tasks (check/build/lint/test/audit/coverage), cargo-deny audit, and platform-specific builds (macOS native + Linux Docker). Use for CI troubleshooting, pipeline changes, or pre-merge verification."
 ---
 
-# ci-cd-automation — AUDEMSP CI/CD Pipeline
+# ci-cd-automation — MediaServo CI/CD Pipeline
 
 > The pipeline IS the gate. Every check is a contract. Don't merge red.
 
@@ -18,7 +18,7 @@ GitHub Actions (on push/PR to main)
 ├── test         : cargo test --workspace   (ubuntu + macOS)
 ├── test-gstreamer   : pixi run test-gstreamer  (ubuntu)
 ├── test-mediasoup   : SFU tests (ubuntu-22.04 only)
-├── benchmark        : cargo bench -p audemsp-server
+├── benchmark        : cargo bench -p mediaservo-server
 └── openapi-validate : Python OpenAPI 3.0.3 validation
 ```
 
@@ -37,12 +37,12 @@ cargo test --workspace
 ### Full (with mediasoup)
 
 ```bash
-pixi run check          # workspace (excludes audemsp-server)
-pixi run build          # workspace (excludes audemsp-server)
+pixi run check          # workspace (excludes mediaservo-server)
+pixi run build          # workspace (excludes mediaservo-server)
 pixi run lint           # clippy workspace
-pixi run test           # workspace (excludes audemsp-server)
-pixi run check-server   # audemsp-server via Docker (mediasoup)
-pixi run test-sfu       # audemsp-server with sfu-mediasoup feature (Docker)
+pixi run test           # workspace (excludes mediaservo-server)
+pixi run check-server   # mediaservo-server via Docker (mediasoup)
+pixi run test-sfu       # mediaservo-server with sfu-mediasoup feature (Docker)
 ```
 
 ## Docker Compose Workflow
@@ -57,7 +57,7 @@ docker compose up -d
 docker compose logs -f server
 
 # Execute commands inside
-docker compose exec server cargo check -p audemsp-server --features sfu-mediasoup
+docker compose exec server cargo check -p mediaservo-server --features sfu-mediasoup
 
 # SFU E2E test inside container
 docker compose exec server bash scripts/test-sfu-e2e.sh
@@ -80,17 +80,17 @@ docker compose down
 
 ### Cargo Tasks (mediasoup 分离)
 
-audemsp-server 走 Docker（C13）— `scripts/docker-cargo.sh` / `docker compose exec server`；
+mediaservo-server 走 Docker（C13）— `scripts/docker-cargo.sh` / `docker compose exec server`；
 其余 crate 原生编译。
 
 | Task | Command | When |
 |------|---------|------|
-| `pixi run check` | `cargo check --workspace --exclude audemsp-server` | After any code change |
-| `pixi run build` | `cargo build --workspace --exclude audemsp-server` | Before running bins |
+| `pixi run check` | `cargo check --workspace --exclude mediaservo-server` | After any code change |
+| `pixi run build` | `cargo build --workspace --exclude mediaservo-server` | Before running bins |
 | `pixi run lint` | `cargo clippy --workspace --all-targets -- -D warnings` | Before commit |
-| `pixi run test` | `cargo test --workspace --exclude audemsp-server` | Before PR |
-| `pixi run check-server` | `scripts/docker-cargo.sh check -p audemsp-server --features sfu-mediasoup` | Server 变更 |
-| `pixi run test-server` | `scripts/docker-cargo.sh test -p audemsp-server --features sfu-mediasoup` | SFU changes only |
+| `pixi run test` | `cargo test --workspace --exclude mediaservo-server` | Before PR |
+| `pixi run check-server` | `scripts/docker-cargo.sh check -p mediaservo-server --features sfu-mediasoup` | Server 变更 |
+| `pixi run test-server` | `scripts/docker-cargo.sh test -p mediaservo-server --features sfu-mediasoup` | SFU changes only |
 
 ### Vanilla Tasks (no wrapper, faster)
 
@@ -157,7 +157,7 @@ docker compose exec server cargo test --features sfu-mediasoup  # macOS workarou
 pixi run test-gstreamer  # Linux only
 
 # 8. Coverage check (target: 80%+)
-pixi run coverage | grep -E "audemsp|TOTAL"
+pixi run coverage | grep -E "mediaservo|TOTAL"
 ```
 
 ## CI Troubleshooting
@@ -210,15 +210,15 @@ print('OK')
 
 ```bash
 # Host and Client: NATIVE (no mediasoup dep)
-cargo build -p audemsp-host
-cargo build -p audemsp-client
+cargo build -p mediaservo-host
+cargo build -p mediaservo-client
 
 # Server: check only (mediasoup won't build)
-cargo check -p audemsp-server --features sfu-mediasoup
+cargo check -p mediaservo-server --features sfu-mediasoup
 
 # Full server build + test: use Docker
 docker compose up -d
-docker compose exec server cargo test -p audemsp-server --features sfu-mediasoup
+docker compose exec server cargo test -p mediaservo-server --features sfu-mediasoup
 ```
 
 ## Adding a New CI Job

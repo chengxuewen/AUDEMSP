@@ -76,7 +76,7 @@ auto rtpParameters = ... // from offer
 
 ## 2. 当前 Host 实现 vs 官方 —— 5 处偏差
 
-当前流程（`crates/audemsp-host/src/main.rs:277-361` + `sfu_media.rs`）：
+当前流程（`crates/mediaservo-host/src/main.rs:277-361` + `sfu_media.rs`）：
 
 ```
 ① pc.setRemoteDescription(手工构造 recvonly SDP)   ← 方向反转
@@ -103,13 +103,13 @@ auto rtpParameters = ... // from offer
 
 ### 3.0 原则
 
-- **audemsp-webrtc 仅暴露完整 W3C WebRTC API**（C18）：`addTransceiver`/`addTrack`/`createOffer`/`setLocalDescription`/`setRemoteDescription`/`onicecandidate`/`ontrack`/`getSendingRtpParameters` 齐全，禁止裁剪成最小接口。
+- **mediaservo-webrtc 仅暴露完整 W3C WebRTC API**（C18）：`addTransceiver`/`addTrack`/`createOffer`/`setLocalDescription`/`setRemoteDescription`/`onicecandidate`/`ontrack`/`getSendingRtpParameters` 齐全，禁止裁剪成最小接口。
 - **Host SFU 走标准 offer/answer 协商**（对齐 libmediasoupclient / mediasoup-client / mediasoup-demo）。
 - **ssrc/PT/fmtp 全部从协商结果推导**，禁止手工 JSON rtp_parameters + 手工 SDP 拼接。
 
-### 3.1 audemsp-webrtc：补齐 W3C API 面
+### 3.1 mediaservo-webrtc：补齐 W3C API 面
 
-`crates/audemsp-webrtc/src/backend/traits.rs` `PeerConnectionApi` 需新增/对齐：
+`crates/mediaservo-webrtc/src/backend/traits.rs` `PeerConnectionApi` 需新增/对齐：
 
 ```rust
 // W3C 标准接口（webrtc-rs 原生支持，webrtc-sys backend 需在 FFI 层补齐）
@@ -148,7 +148,7 @@ fn get_sending_rtp_parameters(&self, track_id: &str) -> Result<RtpParameters>;  
 
 | 阶段 | 内容 | 验证 |
 |------|------|------|
-| P1 | audemsp-webrtc 补 `add_transceiver`/`create_offer`/`get_sending_rtp_parameters`（traits + webrtc-sys backend） | `cargo test -p audemsp-webrtc --features backend-webrtc-sys` |
+| P1 | mediaservo-webrtc 补 `add_transceiver`/`create_offer`/`get_sending_rtp_parameters`（traits + webrtc-sys backend） | `cargo test -p mediaservo-webrtc --features backend-webrtc-sys` |
 | P2 | Host SFU produce 改标准协商流程 | E2E 截图渲染 + 关键帧间隔 < 5s |
 | P3 | 验证多页面黑屏（PIT-65）修复 | `/tmp/multi-page.cjs` 3 页 + 首帧延迟 |
 | P4 | sfu-client.ts（浏览器）同步对齐官方 mediasoup-client 消费流程 | 浏览器 consume 正常 |
@@ -161,10 +161,10 @@ fn get_sending_rtp_parameters(&self, track_id: &str) -> Result<RtpParameters>;  
 
 ## 7. 相关文件
 
-- `crates/audemsp-host/src/main.rs:277-361` — 当前 SFU produce 流程
-- `crates/audemsp-host/src/sfu_media.rs` — `build_remote_sdp` / `build_produce_rtp_parameters` / `negotiated_ssrc_from_sdp`
-- `crates/audemsp-webrtc/src/backend/traits.rs` — `PeerConnectionApi` 需补齐的 W3C 接口
-- `crates/audemsp-webrtc/src/backend/webrtc_sys.rs` — webrtc-sys backend 实现
+- `crates/mediaservo-host/src/main.rs:277-361` — 当前 SFU produce 流程
+- `crates/mediaservo-host/src/sfu_media.rs` — `build_remote_sdp` / `build_produce_rtp_parameters` / `negotiated_ssrc_from_sdp`
+- `crates/mediaservo-webrtc/src/backend/traits.rs` — `PeerConnectionApi` 需补齐的 W3C 接口
+- `crates/mediaservo-webrtc/src/backend/webrtc_sys.rs` — webrtc-sys backend 实现
 - `/tmp/mediasoup-client/src/handlers/Chrome74.ts` — 官方 send() 流程基准
 - `/tmp/libmediasoupclient/src/Handler.cpp` — 官方 C++ 客户端基准
 - `/tmp/mediasoup-demo/app/src/RoomClient.js` — 官方 demo 基准
@@ -190,7 +190,7 @@ fn get_sending_rtp_parameters(&self, track_id: &str) -> Result<RtpParameters>;  
 
 **注意（v2 修正）**: Sender 的 `set_parameters`/`replace_track`/`set_streams`/`get_stats` 与 Receiver 的 `get_parameters` **均可实现**（webrtc-sys FFI 有），属于 host-sfu-w3c-alignment P1/P2 实施范围（已实施完成，D214），**不列入**未来实现。
 
-**audemsp-webrtc 已覆盖/将覆盖**: 上述以外的 W3C RTCPeerConnection / RTCRtpTransceiver / RTCRtpSender / RTCRtpReceiver / RTCDataChannel / RTCRtpCapabilities 接口全部实现（host-sfu-w3c-alignment P0-P2，已实施完成，D214）。
+**mediaservo-webrtc 已覆盖/将覆盖**: 上述以外的 W3C RTCPeerConnection / RTCRtpTransceiver / RTCRtpSender / RTCRtpReceiver / RTCDataChannel / RTCRtpCapabilities 接口全部实现（host-sfu-w3c-alignment P0-P2，已实施完成，D214）。
 
 ---
 

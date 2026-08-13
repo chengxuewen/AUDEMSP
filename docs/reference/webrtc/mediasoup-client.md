@@ -2,7 +2,7 @@
 
 > 创建: 2026-08-05 | 来源: `.refinfo/` 官方源码 + 团队审核实证
 > 参考入口: `docs/reference/webrtc/mediasoup-refs.md`（导航）
-> 适用: AUDEMSP Host SFU produce / consume 对齐官方用法（C18）
+> 适用: MediaServo Host SFU produce / consume 对齐官方用法（C18）
 
 ## 1. 画像（Overview）
 
@@ -102,9 +102,9 @@ this->pc->SetRemoteDescription(webrtc::SdpType::kAnswer, answer);
 
 - Producer 侧: mediasoup 是**接收方**，remote SDP 方向 **recvonly**（官方客户端 remote 也 recvonly）。真正的差异是**"谁生成本地 m= 行"**（offer vs answer），不是方向本身（审计修正，纠正初版"方向反转"误判）。
 
-## 4. 案例对照：AUDEMSP Host 当前实现 vs 官方
+## 4. 案例对照：MediaServo Host 当前实现 vs 官方
 
-| # | 官方 | AUDEMSP Host 现状 | 问题 |
+| # | 官方 | MediaServo Host 现状 | 问题 |
 |---|------|------------------|------|
 | 1 | `addTransceiver(sendonly)` 生成 offer | `setRemoteDescription(手工 recvonly SDP)` | 绕过协商，codec 参数放错位置 |
 | 2 | `addTrack(track, stream)` / `addTransceiver` | `add_track("video")` 非 W3C 签名 | 无 sendEncodings |

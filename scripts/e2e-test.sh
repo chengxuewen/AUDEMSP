@@ -6,7 +6,7 @@ HOST_PID=""
 CLIENT_PID=""
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 PASS=0; FAIL=0
-TMPDIR="/tmp/audemsp-e2e-$$"
+TMPDIR="/tmp/mediaservo-e2e-$$"
 
 pass() { echo -e "${GREEN}[PASS]${NC} $1"; ((PASS++)); }
 fail() { echo -e "${RED}[FAIL]${NC} $1"; ((FAIL++)); }
@@ -39,12 +39,12 @@ fi
 
 # 2. Build
 info "2. Building..."
-cargo build -p audemsp-host -p audemsp-client 2>/dev/null && \
+cargo build -p mediaservo-host -p mediaservo-client 2>/dev/null && \
     pass "Build" || { fail "Build"; exit 1; }
 
 # 3. Start Host
 info "3. Starting Host..."
-cargo run -p audemsp-host --bin audemsp-host > "$TMPDIR/host.log" 2>&1 &
+cargo run -p mediaservo-host --bin mediaservo-host > "$TMPDIR/host.log" 2>&1 &
 HOST_PID=$!
 info "Host PID=$HOST_PID"
 
@@ -59,7 +59,7 @@ done
 
 # 4. Start Client
 info "4. Starting Client..."
-cargo run -p audemsp-client --bin audemsp-client > "$TMPDIR/client.log" 2>&1 &
+cargo run -p mediaservo-client --bin mediaservo-client > "$TMPDIR/client.log" 2>&1 &
 CLIENT_PID=$!
 info "Client PID=$CLIENT_PID"
 

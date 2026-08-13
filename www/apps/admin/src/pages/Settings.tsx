@@ -42,7 +42,7 @@ export default function Settings() {
 
       <section className="setting-group">
         <h3>About</h3>
-        <p>AUDEMSP Admin Dashboard v0.1.0</p>
+        <p>MediaServo Admin Dashboard v0.1.0</p>
         <p className="setting-desc">Remote control scenario — monitor device streams, consumers, and server health.</p>
       </section>
     </div>

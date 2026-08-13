@@ -1,19 +1,19 @@
 #!/bin/bash
-# install.sh — AUDEMSP Host 裸机部署脚本 (D104 Phase 1 部署机制)
-# 用途: 边缘设备/车端（无 Docker 环境）安装 audemsp-host 守护进程
-# 依赖: 先构建二进制 (cargo build -p audemsp-host --release) 且与 host.conf/服务文件同目录
+# install.sh — MediaServo Host 裸机部署脚本 (D104 Phase 1 部署机制)
+# 用途: 边缘设备/车端（无 Docker 环境）安装 mediaservo-host 守护进程
+# 依赖: 先构建二进制 (cargo build -p mediaservo-host --release) 且与 host.conf/服务文件同目录
 # 注意: Phase 2 起 Docker Compose 为主要部署方式 (D110)；本脚本保留边缘部署能力
 set -e
 
-PREFIX="${PREFIX:-/opt/audemsp}"
-echo "Installing AUDEMSP Host to $PREFIX..."
+PREFIX="${PREFIX:-/opt/mediaservo}"
+echo "Installing MediaServo Host to $PREFIX..."
 
-BIN_NAME="audemsp-host"
+BIN_NAME="mediaservo-host"
 
 # 二进制存在性检查（防静默失败 — PIT-39 教训）
 if [ ! -f "${BIN_NAME}" ]; then
     echo "ERROR: ${BIN_NAME} not found in current directory." >&2
-    echo "Build first: cargo build -p audemsp-host --release" >&2
+    echo "Build first: cargo build -p mediaservo-host --release" >&2
     exit 1
 fi
 

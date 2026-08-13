@@ -4,7 +4,7 @@
 
 ## 三层逻辑抽象模型
 
-AUDEMSP 在代码层面采用三层逻辑抽象（D126），与 D1 的部署拓扑三层互补：
+MediaServo 在代码层面采用三层逻辑抽象（D126），与 D1 的部署拓扑三层互补：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -165,7 +165,7 @@ pub trait AuthProvider: Send + Sync {
 | 决策 | 内容 |
 |------|------|
 | D126 | 三层抽象模型（Plugin / Component / Process） |
-| D127 | Component trait 独立 crate `audemsp-component` |
+| D127 | Component trait 独立 crate `mediaservo-component` |
 | D128 | 统一 HTTP Gateway 模式 |
 | D129 | tokio::mpsc → Zenoh 通信中间件 |
 | D130 | AuthProvider trait 鉴权架构 |

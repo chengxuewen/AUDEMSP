@@ -5,7 +5,7 @@
 
 ## 为何存在
 
-AUDEMSP Host SFU 集成需要权威的 mediasoup 客户端协商流程基准。官方客户端源码（mediasoup-client JS / libmediasoupclient C++ / mediasoup-demo）是**标准 offer/answer 协商流程的唯一权威对照**（C18 官方用法优先）。这些源码通过脚本拉取到 git-ignored 的 `.refinfo/`，不依赖 `/tmp`（跨主机/重启不丢失），浅克隆只取源码。
+MediaServo Host SFU 集成需要权威的 mediasoup 客户端协商流程基准。官方客户端源码（mediasoup-client JS / libmediasoupclient C++ / mediasoup-demo）是**标准 offer/answer 协商流程的唯一权威对照**（C18 官方用法优先）。这些源码通过脚本拉取到 git-ignored 的 `.refinfo/`，不依赖 `/tmp`（跨主机/重启不丢失），浅克隆只取源码。
 
 **刻意排除**:
 - `mediasoup`（server）— 我们只调 API 不改它，不需要源码
@@ -35,7 +35,7 @@ rm -rf .refinfo
 ## 关键文件导航（分析用）
 
 ### mediasoup-client (JS)
-| 文件 | 内容 | 对应 AUDEMSP 问题 |
+| 文件 | 内容 | 对应 MediaServo 问题 |
 |------|------|------------------|
 | `src/handlers/Chrome74.ts:335-563` | `send()` 完整 produce 协商 | Host produce 标准流程基准 |
 | `src/handlers/Chrome74.ts:360-364` | `addTransceiver(sendonly, sendEncodings)` | 标准方向 + 编码参数 |
@@ -44,7 +44,7 @@ rm -rf .refinfo
 | `src/handlers/ortc/RTCRtpParameters.ts` | ortc 参数构造 | ssrc/PT/fmtp 推导 |
 
 ### libmediasoupclient (C++)
-| 文件 | 内容 | 对应 AUDEMSP 问题 |
+| 文件 | 内容 | 对应 MediaServo 问题 |
 |------|------|------------------|
 | `src/Handler.cpp:185-381` | `SendHandler::Send()` 完整 produce | Host produce 标准流程 C++ 基准 |
 | `src/Handler.cpp:191-200` | `RtpTransceiverInit{kSendOnly, send_encodings}` | 标准 direction + encodings |
@@ -54,7 +54,7 @@ rm -rf .refinfo
 | `src/sdp/MediaSection.cpp:255-277` | codecOptions → fmtp (x-google-bitrate) | **官方 keyframe/码率参数路径** |
 
 ### mediasoup-demo
-| 文件 | 内容 | 对应 AUDEMSP 问题 |
+| 文件 | 内容 | 对应 MediaServo 问题 |
 |------|------|------------------|
 | `app/src/RoomClient.js` | 端到端 produce/consume | 完整信令 + 媒体协商流程 |
 

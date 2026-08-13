@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# _common.sh — shared utility for AUDEMSP scripts
+# _common.sh — shared utility for MediaServo scripts
 # Source this from other scripts: source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 set -euo pipefail
 
 # Guard against double-sourcing
-if [ -n "${_AUDEMSP_COMMON_SH_LOADED:-}" ]; then
+if [ -n "${_MEDIASERVO_COMMON_SH_LOADED:-}" ]; then
     return 0
 fi
-_AUDEMSP_COMMON_SH_LOADED=true
+_MEDIASERVO_COMMON_SH_LOADED=true
 
 # SCRIPT_DIR detects the CALLER's directory (BASH_SOURCE[1]), not this file
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}")" && pwd -P)"

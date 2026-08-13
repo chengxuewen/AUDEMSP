@@ -18,7 +18,7 @@ const APP = 'http://127.0.0.1:5173';
 
   // 1. Set token + reload
   await page.goto(APP, { waitUntil: 'domcontentloaded' });
-  await page.evaluate((t) => localStorage.setItem('audemsp_admin_token', t), TOKEN);
+  await page.evaluate((t) => localStorage.setItem('mediaservo_admin_token', t), TOKEN);
   await page.reload({ waitUntil: 'domcontentloaded' });
   console.log('token set, waiting for device list...');
 

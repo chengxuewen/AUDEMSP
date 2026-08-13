@@ -681,165 +681,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "audemsp-client"
-version = "0.1.0"
-dependencies = [
- "audemsp-common",
- "audemsp-media",
- "audemsp-webrtc",
- "axum",
- "base64",
- "futures-util",
- "gstreamer",
- "gstreamer-app",
- "gstreamer-video",
- "hmac",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.10.9",
- "tokio",
- "tokio-tungstenite",
- "tower-http 0.5.2",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "audemsp-codec"
-version = "0.1.0"
-dependencies = [
- "ffmpeg-the-third",
- "gstreamer",
- "gstreamer-app",
- "gstreamer-video",
- "pkg-config",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "audemsp-common"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "hmac",
- "jsonwebtoken",
- "prometheus-client",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.10.9",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "audemsp-host"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "audemsp-common",
- "audemsp-media",
- "audemsp-webrtc",
- "axum",
- "base64",
- "bytes",
- "chrono",
- "futures-util",
- "gstreamer",
- "gstreamer-app",
- "gstreamer-video",
- "hmac",
- "prometheus-client",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.10.9",
- "tempfile",
- "tokio",
- "tokio-tungstenite",
- "tower-http 0.5.2",
- "tracing",
- "tracing-subscriber",
- "webrtc",
-]
-
-[[package]]
-name = "audemsp-media"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "eframe",
- "egui",
- "image",
- "rand 0.8.7",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "yuv-sys",
-]
-
-[[package]]
-name = "audemsp-server"
-version = "0.1.0"
-dependencies = [
- "audemsp-common",
- "audemsp-webrtc",
- "axum",
- "axum-server",
- "base64",
- "chrono",
- "dashmap 6.2.1",
- "futures-util",
- "http",
- "jsonwebtoken",
- "mediasoup",
- "prometheus-client",
- "rust-embed",
- "rustls",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tokio-tungstenite",
- "tower 0.5.3",
- "tower-http 0.5.2",
- "tower_governor",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "audemsp-webrtc"
-version = "0.1.0"
-dependencies = [
- "audemsp-codec",
- "audemsp-media",
- "bytes",
- "cxx",
- "eframe",
- "egui",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "webrtc",
- "webrtc-sys",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3976,6 +3817,165 @@ checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
 dependencies = [
  "cfg-if",
  "digest 0.10.7",
+]
+
+[[package]]
+name = "mediaservo-client"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64",
+ "futures-util",
+ "gstreamer",
+ "gstreamer-app",
+ "gstreamer-video",
+ "hmac",
+ "mediaservo-common",
+ "mediaservo-media",
+ "mediaservo-webrtc",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "tokio",
+ "tokio-tungstenite",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "mediaservo-codec"
+version = "0.1.0"
+dependencies = [
+ "ffmpeg-the-third",
+ "gstreamer",
+ "gstreamer-app",
+ "gstreamer-video",
+ "pkg-config",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "mediaservo-common"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hmac",
+ "jsonwebtoken",
+ "prometheus-client",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "mediaservo-host"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64",
+ "bytes",
+ "chrono",
+ "futures-util",
+ "gstreamer",
+ "gstreamer-app",
+ "gstreamer-video",
+ "hmac",
+ "mediaservo-common",
+ "mediaservo-media",
+ "mediaservo-webrtc",
+ "prometheus-client",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber",
+ "webrtc",
+]
+
+[[package]]
+name = "mediaservo-media"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "eframe",
+ "egui",
+ "image",
+ "rand 0.8.7",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "yuv-sys",
+]
+
+[[package]]
+name = "mediaservo-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "axum-server",
+ "base64",
+ "chrono",
+ "dashmap 6.2.1",
+ "futures-util",
+ "http",
+ "jsonwebtoken",
+ "mediaservo-common",
+ "mediaservo-webrtc",
+ "mediasoup",
+ "prometheus-client",
+ "rust-embed",
+ "rustls",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "tower 0.5.3",
+ "tower-http 0.5.2",
+ "tower_governor",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "mediaservo-webrtc"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "cxx",
+ "eframe",
+ "egui",
+ "mediaservo-codec",
+ "mediaservo-media",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "webrtc",
+ "webrtc-sys",
 ]
 
 [[package]]

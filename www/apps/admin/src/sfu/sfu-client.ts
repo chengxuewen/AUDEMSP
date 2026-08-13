@@ -169,7 +169,7 @@ export class SfuConsumerClient {
     this.ws = new WebSocket(wsUrl, this.token ? [this.token] : []);
 
     // Auth: PSK fallback（无 token 时发明文 PSK；有 JWT 子协议则不发）
-    const psk = this.token ? null : 'audemsp-dev';
+    const psk = this.token ? null : 'mediaservo-dev';
     const authPromise = new Promise<void>((resolve, reject) => {
       this.ws!.onopen = () => {
         if (psk) this.ws!.send(psk);

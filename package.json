@@ -1,5 +1,5 @@
 {
-  "name": "AUDEMSP",
+  "name": "MediaServo",
   "devDependencies": {
     "@colbymchenry/codegraph": "^1.5.0",
     "@playwright/mcp": "^0.0.78"

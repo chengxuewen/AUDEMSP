@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-server.sh — Build + start AUDEMSP server via Docker dev compose
+# build-server.sh — Build + start MediaServo server via Docker dev compose
 # Usage: bash scripts/build-server.sh [build|up|down|logs|check]
 set -euo pipefail
 

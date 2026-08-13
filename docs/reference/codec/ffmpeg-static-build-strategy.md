@@ -2,7 +2,7 @@
 
 > **决策引用**: D71 — GStreamer (Field/Host) + FFmpeg (Remote), 统一 VideoDecoder/VideoEncoder trait
 > **目标**: Remote 端零运行时依赖的 FFmpeg 静态链接解码方案
-> **适用 crate**: `audemsp-codec` (Phase 2+), `audemsp-client` decode path
+> **适用 crate**: `mediaservo-codec` (Phase 2+), `mediaservo-client` decode path
 > **参考**: BtbN/FFmpeg-Builds (预构建), ffmpeg-sys-next (build.rs 模式), rivet-transcoder (GPU 直连 FFI)
 
 
@@ -15,7 +15,7 @@
 | 选项 | 复杂度 | 包体积 | 灵活性 | 适合阶段 |
 |------|--------|--------|--------|---------|
 | A: 引用 BtbN/FFmpeg-Builds 预构建包 | 低 | ~4 MB | 低（固定 codec 集） | Phase 1 快速集成 |
-| B: audemsp 自建预构建（本策略核心） | 中 | ~2 MB | 中（定制 codec 集） | Phase 2 正式方案 |
+| B: mediaservo 自建预构建（本策略核心） | 中 | ~2 MB | 中（定制 codec 集） | Phase 2 正式方案 |
 | C: 跟随 playa-ffmpeg 的 vcpkg 路径 | 低 | ~5 MB | 低 | 备选方案 |
 
 
@@ -41,7 +41,7 @@
                        │
 ┌──────────────────────▼──────────────────────────┐
 │  Rust 绑定层                                     │
-│  audemsp-codec::ffmpeg                          │
+│  mediaservo-codec::ffmpeg                          │
 │  ├── 直接用 ffmpeg-sys/ffmpeg-next 的 FFI        │
 │  └── 实现 VideoDecoder trait                     │
 └─────────────────────────────────────────────────┘
@@ -245,7 +245,7 @@ echo "=== Done: $OUTPUT_DIR/ffmpeg-${FFMPEG_VERSION}-${TARGET}.tar.gz ==="
 
 根据 FSF LGPL 2.1 §6, 静态链接 LGPL 库要求:
 
-1. **提供目标文件**: 提供 AUDEMSP `.o` 文件, 使最终用户可重新链接修改后的 FFmpeg
+1. **提供目标文件**: 提供 MediaServo `.o` 文件, 使最终用户可重新链接修改后的 FFmpeg
    - 可行方案: CI 中保留 `.rlib` 中间产物
 2. **源码分发**: FFmpeg 源码直接引用 (版本号 + URL), 不修改的源码可以不重新分发
 3. **通知**: LICENSE 文件中声明使用的 LGPL 组件及获取方式
@@ -253,7 +253,7 @@ echo "=== Done: $OUTPUT_DIR/ffmpeg-${FFMPEG_VERSION}-${TARGET}.tar.gz ==="
 ### 3.3 推荐合规方案
 
 ```
-AUDEMSP/
+MediaServo/
 ├── LICENSE           # Apache 2.0 (应用代码)
 ├── LICENSE.3rdparty  # 第三方许可声明
 │   ├── FFmpeg 7.0.2 — LGPL 2.1+
@@ -266,7 +266,7 @@ AUDEMSP/
 ```
 This product includes FFmpeg (version 7.0.2) licensed under LGPL 2.1+.
 Source: https://ffmpeg.org/releases/ffmpeg-7.0.2.tar.xz
-To relink against a modified FFmpeg, obtain AUDEMSP object files from:
+To relink against a modified FFmpeg, obtain MediaServo object files from:
   <release page URL>
 and run: cargo build --target <your-target> -- FFMPEG_DIR=<path>
 ```
@@ -287,7 +287,7 @@ and run: cargo build --target <your-target> -- FFMPEG_DIR=<path>
 
 ### 4.1 build.rs 设计
 
-`audemsp-codec/build.rs` (或 `audemsp-client/build.rs`):
+`mediaservo-codec/build.rs` (或 `mediaservo-client/build.rs`):
 
 ```rust
 // build.rs — FFmpeg static linking detection
@@ -387,7 +387,7 @@ backend-gstreamer = []
 ### 4.3 代码层 feature gate
 
 ```rust
-// audemsp-codec/src/lib.rs
+// mediaservo-codec/src/lib.rs
 
 /// 统一解码器工厂 — 编译时选择后端
 pub fn create_decoder(config: &DecodeConfig) -> Box<dyn VideoDecoder> {
@@ -659,7 +659,7 @@ int main() {
 ### 8.2 recommended release profile
 
 ```toml
-# Cargo.toml (audemsp-codec 或 workspace 级)
+# Cargo.toml (mediaservo-codec 或 workspace 级)
 [profile.release]
 opt-level = "z"      # 优先体积 (替代 "s")
 lto = true            # Rust + FFmpeg 跨库 LTO
@@ -679,7 +679,7 @@ panic = "abort"       # 进一步减小体积
 | 项目 | 结论 |
 |------|------|
 | 链接方式 | pkg-config 动态链接 (`.so`/`.dylib`), 非静态 |
-| 适用性 | 不适用 AUDEMSP Remote 的零依赖需求 |
+| 适用性 | 不适用 MediaServo Remote 的零依赖需求 |
 | 可借鉴 | feature flag 映射 codec 选择模式 (`ffmpeg_<ver>`) |
 
 ### 9.2 GStreamer (当前 Host 方案)
@@ -741,10 +741,10 @@ panic = "abort"       # 进一步减小体积
 |-------|------|------|--------|
 | **0** | FFmpeg 预构建脚本 + Dockerfiles | `ffmpeg-build/` 目录 | 2-3 天 |
 | **0** | CI 流水线: build-ffmpeg.yml | `.github/workflows/` | 1 天 |
-| **1** | `audemsp-codec` crate 骨架 | `crates/audemsp-codec/` | 2 天 |
+| **1** | `mediaservo-codec` crate 骨架 | `crates/mediaservo-codec/` | 2 天 |
 | **1** | build.rs (FFmpeg 检测+符号验证) | `build.rs` | 1 天 |
 | **1** | VideoDecoder trait 的 FFmpeg 实现 | `codec/ffmpeg_decoder.rs` | 3 天 |
-| **2** | Remote Client 集成解码 | `audemsp-client` decode path | 2 天 |
+| **2** | Remote Client 集成解码 | `mediaservo-client` decode path | 2 天 |
 | **2** | 二进制大小优化 + 基准测试 | release profile tuning | 1 天 |
 | **3** | GPL 编码器支持 (如需) | 动态链接 或 子进程 | TBD |
 

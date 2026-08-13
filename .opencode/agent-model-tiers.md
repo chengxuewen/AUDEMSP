@@ -1,11 +1,11 @@
-# AUDEMSP 模型分层体系
+# MediaServo 模型分层体系
 
 > 五层模型映射: premium-max / premium / fast / vision / lite
 > 双供应商架构: DeepSeek 官方直连 + New API 网关聚合
 
 ## 架构
 
-AUDEMSP 通过两条独立路径接入大模型:
+MediaServo 通过两条独立路径接入大模型:
 
 | 供应商 | 接入方式 | 特点 |
 |--------|----------|------|

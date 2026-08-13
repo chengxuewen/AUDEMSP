@@ -94,12 +94,12 @@ think-before-act  →  [行动]  →  lesson-memory  →  doc-audit
 适用任何项目，修改路径即可：
 
 ```
-- 技术陷阱 → {pitfall_log}      # AUDEMSP: .agents/memorys/pitfalls.md
-- 开发约束 → {conventions}       # AUDEMSP: .agents/memorys/conventions.md
-- 架构决策 → {decisions}         # AUDEMSP: .agents/memorys/decisions.md
-- 可执行检查 → {checks}          # AUDEMSP: .agents/rules/common/edit-safety.md
-- 测试要求 → {test_rules}        # AUDEMSP: .agents/rules/common/testing.md
-- 安全规则 → {security_rules}    # AUDEMSP: .agents/rules/common/security.md
-- Rust 编码 → {rust_style}       # AUDEMSP: .agents/rules/rust/coding-style.md
-- 项目状态 → {status}            # AUDEMSP: .agents/memorys/status.md
+- 技术陷阱 → {pitfall_log}      # MediaServo: .agents/memorys/pitfalls.md
+- 开发约束 → {conventions}       # MediaServo: .agents/memorys/conventions.md
+- 架构决策 → {decisions}         # MediaServo: .agents/memorys/decisions.md
+- 可执行检查 → {checks}          # MediaServo: .agents/rules/common/edit-safety.md
+- 测试要求 → {test_rules}        # MediaServo: .agents/rules/common/testing.md
+- 安全规则 → {security_rules}    # MediaServo: .agents/rules/common/security.md
+- Rust 编码 → {rust_style}       # MediaServo: .agents/rules/rust/coding-style.md
+- 项目状态 → {status}            # MediaServo: .agents/memorys/status.md
 ```

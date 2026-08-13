@@ -2,11 +2,11 @@
 
 > Phase 1 — 部署参考 | 2026-07-24
 > 关联文档: [security-architecture.md](security-architecture.md) §mTLS, [operations.md](operations.md) §TLS, [13-server-architecture.md](13-server-architecture.md) §部署
-> 关联 crate: audemsp-server
+> 关联 crate: mediaservo-server
 
 ## 19.1 概述
 
-AUDEMSP Phase 1 采用**外部 TLS 终止**策略：服务进程本身只监听 plain HTTP/WS，TLS 由前置的 reverse proxy（nginx/Caddy/Traefik）处理。这遵循 operations.md 的设计决策：「Phase 1: systemd socket activation + 外部 TLS 终止 (nginx/Caddy)」。
+MediaServo Phase 1 采用**外部 TLS 终止**策略：服务进程本身只监听 plain HTTP/WS，TLS 由前置的 reverse proxy（nginx/Caddy/Traefik）处理。这遵循 operations.md 的设计决策：「Phase 1: systemd socket activation + 外部 TLS 终止 (nginx/Caddy)」。
 
 本文档提供：
 - Reverse proxy 配置示例（nginx / Caddy / Traefik）
@@ -33,7 +33,7 @@ Client (browser/GUI)
             │ HTTP/1.1 plain (internal)
             ▼
 ┌─────────────────────────────┐
-│  audemsp-server (port 9800)│
+│  mediaservo-server (port 9800)│
 │  - axum HTTP + WS           │
 │  - CORS via CorsLayer       │
 │  - GovernorLayer (rate lim) │
@@ -52,16 +52,16 @@ Client (browser/GUI)
 | 开发环境 | `localhost:5173` (Vite dev) | `localhost:9800` (Server) | ✅ 是 |
 | 生产同域 | `app.example.com` | `app.example.com/api` | ❌ 不需要 |
 | 生产子域 | `web.example.com` | `api.example.com` | ✅ 是 |
-| 嵌入场景 | `aude.example.com` | `audemsp.example.com` | ✅ 是 |
+| 嵌入场景 | `aude.example.com` | `mediaservo.example.com` | ✅ 是 |
 
 ### 19.3.2 当前状态
 
-`crates/audemsp-server/Cargo.toml` (line 25):
+`crates/mediaservo-server/Cargo.toml` (line 25):
 ```toml
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 ```
 
-`cors` feature 已编译但**未被使用**。`crates/audemsp-server/src/main.rs` 的 axum router 仅配置了 `GovernorLayer`：
+`cors` feature 已编译但**未被使用**。`crates/mediaservo-server/src/main.rs` 的 axum router 仅配置了 `GovernorLayer`：
 
 ```rust
 // 当前: 无 CORS
@@ -147,7 +147,7 @@ CORS 可以在**两层**处理：
 在 `ServerConfig` 中添加 CORS 配置：
 
 ```rust
-// crates/audemsp-common/src/config.rs
+// crates/mediaservo-common/src/config.rs
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CorsConfig {
@@ -181,21 +181,21 @@ fn default_cors_allowed_origins() -> Vec<String> {
 
 ### 19.4.2 Nginx
 
-**最小配置** (`/etc/nginx/sites-available/audemsp`):
+**最小配置** (`/etc/nginx/sites-available/mediaservo`):
 
 ```nginx
-upstream audemsp_server {
+upstream mediaservo_server {
     server 127.0.0.1:9800;
     keepalive 64;
 }
 
 server {
     listen 443 ssl http2;
-    server_name audemsp.example.com;
+    server_name mediaservo.example.com;
 
     # TLS
-    ssl_certificate     /etc/letsencrypt/live/audemsp.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/audemsp.example.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/mediaservo.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mediaservo.example.com/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
@@ -209,7 +209,7 @@ server {
 
     # API endpoints (no CORS headers — handled by axum)
     location /api/ {
-        proxy_pass http://audemsp_server;
+        proxy_pass http://mediaservo_server;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -219,7 +219,7 @@ server {
 
     # WebSocket — critical: upgrade headers required
     location /ws {
-        proxy_pass http://audemsp_server;
+        proxy_pass http://mediaservo_server;
         proxy_http_version 1.1;
 
         # WebSocket upgrade
@@ -236,14 +236,14 @@ server {
 
     # Health check
     location /health {
-        proxy_pass http://audemsp_server;
+        proxy_pass http://mediaservo_server;
         proxy_http_version 1.1;
         access_log off;
     }
 
     # Metrics (internal only in production)
     location /metrics {
-        proxy_pass http://audemsp_server;
+        proxy_pass http://mediaservo_server;
         proxy_http_version 1.1;
         # 生产环境建议 IP 白名单或 basic auth:
         # allow 10.0.0.0/8;
@@ -254,7 +254,7 @@ server {
 # HTTP → HTTPS redirect
 server {
     listen 80;
-    server_name audemsp.example.com;
+    server_name mediaservo.example.com;
     return 301 https://$server_name$request_uri;
 }
 ```
@@ -269,7 +269,7 @@ server {
 **最小配置** (`/etc/caddy/Caddyfile`):
 
 ```caddyfile
-audemsp.example.com {
+mediaservo.example.com {
     # TLS automatically managed by Let's Encrypt
 
     # API
@@ -329,15 +329,15 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./letsencrypt:/letsencrypt"
 
-  audemsp-server:
-    image: audemsp-server:latest
+  mediaservo-server:
+    image: mediaservo-server:latest
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.audemsp.rule=Host(`audemsp.example.com`)"
-      - "traefik.http.routers.audemsp.entrypoints=websecure"
-      - "traefik.http.routers.audemsp.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.mediaservo.rule=Host(`mediaservo.example.com`)"
+      - "traefik.http.routers.mediaservo.entrypoints=websecure"
+      - "traefik.http.routers.mediaservo.tls.certresolver=letsencrypt"
       # WebSocket handled automatically by Traefik 2.x+
-      - "traefik.http.services.audemsp.loadbalancer.server.port=9800"
+      - "traefik.http.services.mediaservo.loadbalancer.server.port=9800"
 ```
 
 ## 19.5 证书管理
@@ -348,12 +348,12 @@ services:
 # 生成自签 CA
 openssl req -x509 -newkey rsa:4096 -days 365 -nodes \
   -keyout ca-key.pem -out ca-cert.pem \
-  -subj "/CN=AUDEMSP Dev CA"
+  -subj "/CN=MediaServo Dev CA"
 
 # 生成服务端证书
 openssl req -newkey rsa:4096 -nodes \
   -keyout server-key.pem -out server-req.pem \
-  -subj "/CN=audemsp.example.com"
+  -subj "/CN=mediaservo.example.com"
 
 # 用 CA 签名
 openssl x509 -req -in server-req.pem -days 90 \
@@ -373,7 +373,7 @@ openssl x509 -req -in server-req.pem -days 90 \
 | certbot (nginx) | `certbot --nginx` 自动配置 | 裸金属 nginx |
 | Caddy 内建 | 自动获取+续期，零配置 | 小规模部署 |
 | Traefik ACME | Docker labels 配置 | Docker 部署 |
-| rustls-acme (Phase 3) | 内建 ACME 客户端 | AUDEMSP 自身处理 |
+| rustls-acme (Phase 3) | 内建 ACME 客户端 | MediaServo 自身处理 |
 
 证书策略：
 - 90 天有效期，自动续期（剩余 30 天时触发）
@@ -399,20 +399,20 @@ services:
       - caddy_config:/config
     restart: unless-stopped
 
-  # === AUDEMSP Server ===
+  # === MediaServo Server ===
   server:
-    image: audemsp-server:latest
+    image: mediaservo-server:latest
     environment:
-      - AUDEMSP_SERVER_HOST=0.0.0.0
-      - AUDEMSP_SERVER_PORT=9800
-      - AUDEMSP_JWT_SECRET=${JWT_SECRET}
-      - AUDEMSP_CORS_ORIGINS=https://audemsp.example.com
-      - RUST_LOG=info,audemsp_server=debug
+      - MEDIASERVO_SERVER_HOST=0.0.0.0
+      - MEDIASERVO_SERVER_PORT=9800
+      - MEDIASERVO_JWT_SECRET=${JWT_SECRET}
+      - MEDIASERVO_CORS_ORIGINS=https://mediaservo.example.com
+      - RUST_LOG=info,mediaservo_server=debug
     expose:
       - "9800"
     volumes:
-      - ./data:/var/lib/audemsp
-      - ./config/server.conf:/etc/audemsp/server.conf:ro
+      - ./data:/var/lib/mediaservo
+      - ./config/server.conf:/etc/mediaservo/server.conf:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9800/health"]
@@ -450,7 +450,7 @@ volumes:
 ### Caddyfile
 
 ```caddyfile
-audemsp.example.com {
+mediaservo.example.com {
     # API routes
     handle /api/* {
         reverse_proxy server:9800 {

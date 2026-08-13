@@ -72,7 +72,7 @@ export default function Dashboard() {
         <VideoPlayer
           roomId={playingRoom}
           serverUrl={`ws://${window.location.host}`}
-          token={localStorage.getItem('audemsp_admin_token') || ''}
+          token={localStorage.getItem('mediaservo_admin_token') || ''}
           onClose={() => setPlayingRoom(null)}
         />
       )}

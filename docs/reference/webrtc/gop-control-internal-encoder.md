@@ -96,7 +96,7 @@ webrtc_video_engine.cc:2227: if (encoding.request_key_frame) → GenerateKeyFram
 **为什么最优**：
 - 保留内部编码器路径（Auto 后端，simulcast/SVC/自动降级全保留）——符合"简单内部编码器"倾向
 - 走 libwebrtc **标准 API**（`RtpEncodingParameters.request_key_frame`），非 hack
-- 改动极小：webrtc-sys 2 行 + audemsp-webrtc 1 方法 + Host 帧循环定时
+- 改动极小：webrtc-sys 2 行 + mediaservo-webrtc 1 方法 + Host 帧循环定时
 - 与 PLI 断裂无关（本地 SetParameters，不经 RTCP）
 - livekit 官方 `peer_transport.rs` 也做 SDP munging（x-google-start-bitrate）证明 SDP 注入是官方认可路径，但 max-keyframe-interval 无解析 → 需程序化触发
 
@@ -139,8 +139,8 @@ webrtc-sys = { path = "vendor/webrtc-sys" }
 |------|------|
 | `vendor/webrtc-sys/src/rtp_parameters.rs` | `RtpEncodingParameters` 加 `pub request_key_frame: bool` |
 | `vendor/webrtc-sys/src/rtp_parameters.cpp` | `to_native_rtp_encoding_paramters` 加 `native.request_key_frame = parameters.request_key_frame;` |
-| `crates/audemsp-webrtc/src/...` | `RtpSender` 暴露 `request_key_frame()` 方法 |
-| `crates/audemsp-host/src/main.rs` | 帧循环每 2s 调 `request_key_frame()` |
+| `crates/mediaservo-webrtc/src/...` | `RtpSender` 暴露 `request_key_frame()` 方法 |
+| `crates/mediaservo-host/src/main.rs` | 帧循环每 2s 调 `request_key_frame()` |
 
 ## 7. 关联调研结论（livekit rust-sdks 架构）
 
@@ -170,7 +170,7 @@ webrtc-sys = { path = "vendor/webrtc-sys" }
 
 1. 创建 `vendor/webrtc-sys`（完整复制 registry 0.3.39）
 2. 加 2 行 FFI 改动（`request_key_frame` 字段 + 转换）
-3. audemsp-webrtc 暴露 `request_key_frame()`
+3. mediaservo-webrtc 暴露 `request_key_frame()`
 4. Host 帧循环每 2s 触发
 5. 实测：关键帧间隔 ~2s、首帧 <2s、e2e 回归 4/4
 

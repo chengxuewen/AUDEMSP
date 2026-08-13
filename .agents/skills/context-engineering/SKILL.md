@@ -1,6 +1,6 @@
 ---
 name: context-engineering
-description: "Feed AUDEMSP agents the right context for a 7-crate polyglot workspace. Routes Rust rules to .rs tasks, C++/FFI rules to webrtc-sys/mediasoup boundaries, protocol rules to WS contract work. Prevents wrong-language lint violations and out-of-scope analysis. Use BEFORE any cross-crate or multi-language AUDEMSP task."
+description: "Feed MediaServo agents the right context for a 7-crate polyglot workspace. Routes Rust rules to .rs tasks, C++/FFI rules to webrtc-sys/mediasoup boundaries, protocol rules to WS contract work. Prevents wrong-language lint violations and out-of-scope analysis. Use BEFORE any cross-crate or multi-language MediaServo task."
 ---
 
 # context-engineering — Right Context, Right Language
@@ -17,17 +17,17 @@ description: "Feed AUDEMSP agents the right context for a 7-crate polyglot works
 | Web/Admin Dashboard work | HTML/CSS/JS + Rust server, different rulesets |
 | Code review spanning crates | Each crate needs its own rule set applied |
 
-## AUDEMSP Crate → Language Mapping
+## MediaServo Crate → Language Mapping
 
 | Crate / Layer | Primary | Ruleset | Verification |
 |---------------|---------|---------|-------------|
-| audemsp-common | Rust | `rules/rust/` + `rules/common/` | `cargo clippy -- -D warnings` |
-| audemsp-media | Rust | `rules/rust/` + `rules/common/` | `cargo clippy -- -D warnings` |
-| audemsp-webrtc | Rust + C++ (FFI) | `rules/rust/` + `rules/common/` + C++ primer | `cargo clippy` for Rust; C++ reviewed manually |
-| audemsp-codec | Rust + C (GStreamer) | `rules/rust/` + FFI safety | `cargo clippy`; GStreamer pipeline tested via pixi |
-| audemsp-server | Rust + (HTML/JS admin) | `rules/rust/` + `rules/common/` | `cargo test -p audemsp-server` |
-| audemsp-host | Rust (macOS native) | `rules/rust/` + `constraints.md` (macOS) | `cargo clippy -p audemsp-host` |
-| audemsp-client | Rust (macOS native) | `rules/rust/` + `constraints.md` (macOS) | `cargo clippy -p audemsp-client` |
+| mediaservo-common | Rust | `rules/rust/` + `rules/common/` | `cargo clippy -- -D warnings` |
+| mediaservo-media | Rust | `rules/rust/` + `rules/common/` | `cargo clippy -- -D warnings` |
+| mediaservo-webrtc | Rust + C++ (FFI) | `rules/rust/` + `rules/common/` + C++ primer | `cargo clippy` for Rust; C++ reviewed manually |
+| mediaservo-codec | Rust + C (GStreamer) | `rules/rust/` + FFI safety | `cargo clippy`; GStreamer pipeline tested via pixi |
+| mediaservo-server | Rust + (HTML/JS admin) | `rules/rust/` + `rules/common/` | `cargo test -p mediaservo-server` |
+| mediaservo-host | Rust (macOS native) | `rules/rust/` + `constraints.md` (macOS) | `cargo clippy -p mediaservo-host` |
+| mediaservo-client | Rust (macOS native) | `rules/rust/` + `constraints.md` (macOS) | `cargo clippy -p mediaservo-client` |
 | Admin Dashboard | HTML/CSS/JS | `rules/common/` (security, coding-style) | `npx tsc --noEmit` (if TS); manual JS review |
 
 ## Context Selection Protocol
@@ -43,7 +43,7 @@ Task → crates affected → languages involved → applicable rulesets
 **Example:**
 ```
 Task: "Add new WS message type ProduceMedia"
-→ audemsp-common (protocol.rs) + audemsp-server (handle_sfu_message)
+→ mediaservo-common (protocol.rs) + mediaservo-server (handle_sfu_message)
 → Rust only → rules/rust/coding-style.md + rules/common/security.md
 ```
 
@@ -64,8 +64,8 @@ for each crate in scope:
 | Scope | Verification |
 |-------|-------------|
 | Any .rs change | `cargo clippy -p <crate> -- -D warnings` |
-| WebRTC FFI change | `cargo check -p audemsp-webrtc --features backend-webrtc-rs` |
-| SFU change | `cargo check -p audemsp-server --features sfu-mediasoup` |
+| WebRTC FFI change | `cargo check -p mediaservo-webrtc --features backend-webrtc-rs` |
+| SFU change | `cargo check -p mediaservo-server --features sfu-mediasoup` |
 | Admin UI change | Visual QA via Playwright |
 | Full workspace | `pixi run check` |
 
@@ -90,13 +90,13 @@ for each crate in scope:
 ### Rust → Protocol (WebSocket JSON)
 - All messages use `#[serde(tag = "type", rename_all = "snake_case")]`
 - Browser clients must use snake_case NOT camelCase (PIT-06)
-- Protocol changes → update `crates/audemsp-common/src/protocol.rs`
+- Protocol changes → update `crates/mediaservo-common/src/protocol.rs`
 - E2E tests must validate new message types
 
 ### Rust → Admin UI (HTML/JS)
 - Embedded via `rust-embed`, compiled into server binary
 - Feature-gated: `admin-dashboard`
-- JS code goes in `crates/audemsp-server/admin/`
+- JS code goes in `crates/mediaservo-server/admin/`
 - No shared type system — JSON envelope validated server-side
 
 ## Gate Checklist

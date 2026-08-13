@@ -1,5 +1,5 @@
 const BASE = '/api/admin';
-const TOKEN_KEY = 'audemsp_admin_token';
+const TOKEN_KEY = 'mediaservo_admin_token';
 
 function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);

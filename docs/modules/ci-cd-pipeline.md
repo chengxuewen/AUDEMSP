@@ -32,15 +32,15 @@ Check → Test → Build (Package)
 
 - `cargo build --workspace --release`
 - 3 crate 分别打包 tarball:
-  - `audemsp-host-{version}-{target}.tar.gz`
-  - `audemsp-client-{version}-{target}.tar.gz`
-  - `audemsp-server-{version}-{target}.tar.gz`
+  - `mediaservo-host-{version}-{target}.tar.gz`
+  - `mediaservo-client-{version}-{target}.tar.gz`
+  - `mediaservo-server-{version}-{target}.tar.gz`
 - Artifact 上传为 workflow run attachment
 
 ## Phase 2 扩展
 
 - **Cross-compile**: aarch64-unknown-linux-gnu (Jetson Orin) 矩阵
-- **Docker**: `audemsp-server` 构建 multi-arch Docker 镜像 (linux/amd64 + linux/arm64)
+- **Docker**: `mediaservo-server` 构建 multi-arch Docker 镜像 (linux/amd64 + linux/arm64)
 - **Integration test**: 启动 docker-compose (server + 2 mock hosts)，运行 E2E 场景
 - **Release automation**: tag push → 自动发布 GitHub Release + crates.io publish
 

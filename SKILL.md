@@ -1,4 +1,4 @@
-# AUDEMSP Skills Registry
+# MediaServo Skills Registry
 
 ## Superpowers
 
@@ -6,7 +6,7 @@
 
 ## Project Skills
 
-AUDEMSP 项目专属技能，位于 `.agents/skills/`：
+MediaServo 项目专属技能，位于 `.agents/skills/`：
 
 | Skill | 类型 | 说明 |
 |-------|------|------|

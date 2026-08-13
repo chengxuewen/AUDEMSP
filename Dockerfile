@@ -43,26 +43,26 @@ FROM base AS dev
 RUN apt-get update && apt-get install -y --no-install-recommends gdb && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
 COPY Cargo.toml Cargo.lock ./
-COPY crates/audemsp-common/Cargo.toml crates/audemsp-common/
-COPY crates/audemsp-media/Cargo.toml crates/audemsp-media/
-COPY crates/audemsp-webrtc/Cargo.toml crates/audemsp-webrtc/
-COPY crates/audemsp-codec/Cargo.toml crates/audemsp-codec/
-COPY crates/audemsp-server/Cargo.toml crates/audemsp-server/
-COPY crates/audemsp-host/Cargo.toml crates/audemsp-host/
-COPY crates/audemsp-client/Cargo.toml crates/audemsp-client/
+COPY crates/mediaservo-common/Cargo.toml crates/mediaservo-common/
+COPY crates/mediaservo-media/Cargo.toml crates/mediaservo-media/
+COPY crates/mediaservo-webrtc/Cargo.toml crates/mediaservo-webrtc/
+COPY crates/mediaservo-codec/Cargo.toml crates/mediaservo-codec/
+COPY crates/mediaservo-server/Cargo.toml crates/mediaservo-server/
+COPY crates/mediaservo-host/Cargo.toml crates/mediaservo-host/
+COPY crates/mediaservo-client/Cargo.toml crates/mediaservo-client/
 # PIT-76: vendored [patch] 依赖需要 manifest（fetch 阶段）
 COPY vendor/webrtc-sys/Cargo.toml vendor/webrtc-sys/
 # dummy src 全建 — cargo fetch 要求依赖 crate 有 targets（缺 src 报 no targets specified）
 # 且 media crate 声明了 [[example]]（square-gen-egui/viewer/square-gen）→ 需 touch 对应文件
-RUN mkdir -p crates/audemsp-common/src && touch crates/audemsp-common/src/lib.rs && \
-    mkdir -p crates/audemsp-server/src && echo 'fn main() {}' > crates/audemsp-server/src/main.rs && \
-    mkdir -p crates/audemsp-media/src crates/audemsp-webrtc/src crates/audemsp-codec/src \
-             crates/audemsp-host/src crates/audemsp-client/src && \
-    touch crates/audemsp-media/src/lib.rs crates/audemsp-webrtc/src/lib.rs \
-          crates/audemsp-codec/src/lib.rs crates/audemsp-host/src/lib.rs crates/audemsp-client/src/lib.rs && \
-    mkdir -p crates/audemsp-media/examples crates/audemsp-webrtc/examples && touch crates/audemsp-media/examples/square-gen-egui.rs \
-          crates/audemsp-media/examples/viewer.rs crates/audemsp-media/examples/square-gen.rs \
-          crates/audemsp-webrtc/examples/webrtc_loopback_egui.rs
+RUN mkdir -p crates/mediaservo-common/src && touch crates/mediaservo-common/src/lib.rs && \
+    mkdir -p crates/mediaservo-server/src && echo 'fn main() {}' > crates/mediaservo-server/src/main.rs && \
+    mkdir -p crates/mediaservo-media/src crates/mediaservo-webrtc/src crates/mediaservo-codec/src \
+             crates/mediaservo-host/src crates/mediaservo-client/src && \
+    touch crates/mediaservo-media/src/lib.rs crates/mediaservo-webrtc/src/lib.rs \
+          crates/mediaservo-codec/src/lib.rs crates/mediaservo-host/src/lib.rs crates/mediaservo-client/src/lib.rs && \
+    mkdir -p crates/mediaservo-media/examples crates/mediaservo-webrtc/examples && touch crates/mediaservo-media/examples/square-gen-egui.rs \
+          crates/mediaservo-media/examples/viewer.rs crates/mediaservo-media/examples/square-gen.rs \
+          crates/mediaservo-webrtc/examples/webrtc_loopback_egui.rs
 RUN cargo fetch
 RUN rm -rf crates/*/src
 COPY . .
@@ -74,30 +74,30 @@ WORKDIR /workspace
 
 # 1. Copy dependency manifests first (layer caching)
 COPY Cargo.toml Cargo.lock ./
-COPY crates/audemsp-common/Cargo.toml crates/audemsp-common/
-COPY crates/audemsp-media/Cargo.toml crates/audemsp-media/
-COPY crates/audemsp-webrtc/Cargo.toml crates/audemsp-webrtc/
-COPY crates/audemsp-codec/Cargo.toml crates/audemsp-codec/
-COPY crates/audemsp-server/Cargo.toml crates/audemsp-server/
-COPY crates/audemsp-host/Cargo.toml crates/audemsp-host/
-COPY crates/audemsp-client/Cargo.toml crates/audemsp-client/
+COPY crates/mediaservo-common/Cargo.toml crates/mediaservo-common/
+COPY crates/mediaservo-media/Cargo.toml crates/mediaservo-media/
+COPY crates/mediaservo-webrtc/Cargo.toml crates/mediaservo-webrtc/
+COPY crates/mediaservo-codec/Cargo.toml crates/mediaservo-codec/
+COPY crates/mediaservo-server/Cargo.toml crates/mediaservo-server/
+COPY crates/mediaservo-host/Cargo.toml crates/mediaservo-host/
+COPY crates/mediaservo-client/Cargo.toml crates/mediaservo-client/
 # PIT-76: vendored [patch] 依赖需要 manifest（fetch 阶段）
 COPY vendor/webrtc-sys/Cargo.toml vendor/webrtc-sys/
 
 # 2. Create dummy sources to build & cache dependencies (全部 member + media [[example]] 声明文件)
-RUN mkdir -p crates/audemsp-common/src && touch crates/audemsp-common/src/lib.rs && \
-    mkdir -p crates/audemsp-server/src && echo 'fn main() {}' > crates/audemsp-server/src/main.rs && \
-    mkdir -p crates/audemsp-media/src crates/audemsp-webrtc/src crates/audemsp-codec/src \
-             crates/audemsp-host/src crates/audemsp-client/src && \
-    touch crates/audemsp-media/src/lib.rs crates/audemsp-webrtc/src/lib.rs \
-          crates/audemsp-codec/src/lib.rs crates/audemsp-host/src/lib.rs crates/audemsp-client/src/lib.rs && \
-    mkdir -p crates/audemsp-media/examples crates/audemsp-webrtc/examples && touch crates/audemsp-media/examples/square-gen-egui.rs \
-          crates/audemsp-media/examples/viewer.rs crates/audemsp-media/examples/square-gen.rs \
-          crates/audemsp-webrtc/examples/webrtc_loopback_egui.rs
+RUN mkdir -p crates/mediaservo-common/src && touch crates/mediaservo-common/src/lib.rs && \
+    mkdir -p crates/mediaservo-server/src && echo 'fn main() {}' > crates/mediaservo-server/src/main.rs && \
+    mkdir -p crates/mediaservo-media/src crates/mediaservo-webrtc/src crates/mediaservo-codec/src \
+             crates/mediaservo-host/src crates/mediaservo-client/src && \
+    touch crates/mediaservo-media/src/lib.rs crates/mediaservo-webrtc/src/lib.rs \
+          crates/mediaservo-codec/src/lib.rs crates/mediaservo-host/src/lib.rs crates/mediaservo-client/src/lib.rs && \
+    mkdir -p crates/mediaservo-media/examples crates/mediaservo-webrtc/examples && touch crates/mediaservo-media/examples/square-gen-egui.rs \
+          crates/mediaservo-media/examples/viewer.rs crates/mediaservo-media/examples/square-gen.rs \
+          crates/mediaservo-webrtc/examples/webrtc_loopback_egui.rs
 
 # 3. Fetch and build dependencies (cached — only re-runs on Cargo.toml changes)
 RUN cargo fetch && \
-    cargo build --release --bin audemsp-server --features sfu-mediasoup
+    cargo build --release --bin mediaservo-server --features sfu-mediasoup
 # 4. Remove dummy sources
 RUN rm -rf crates/*/src
 
@@ -118,16 +118,16 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     cd / && rm -rf /workspace/www/node_modules
 
 # 6. Final build — only recompiles changed source（含正确 ADMIN_DIST_DIR）
-RUN cargo build --release --bin audemsp-server --features sfu-mediasoup
+RUN cargo build --release --bin mediaservo-server --features sfu-mediasoup
 
 # ---- Runtime: minimal Ubuntu 22.04 ----
 FROM ubuntu:22.04 AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 libuv1 ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd -m -s /bin/bash audemsp
-COPY --from=builder /workspace/target/release/audemsp-server /usr/local/bin/
-USER audemsp
+    && useradd -m -s /bin/bash mediaservo
+COPY --from=builder /workspace/target/release/mediaservo-server /usr/local/bin/
+USER mediaservo
 EXPOSE 9800 40000-40100/udp
 HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:9800/health || exit 1
-ENTRYPOINT ["audemsp-server"]
+ENTRYPOINT ["mediaservo-server"]

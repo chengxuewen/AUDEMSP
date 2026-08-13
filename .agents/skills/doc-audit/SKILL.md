@@ -5,7 +5,7 @@ description: "AUDESYS 项目文档与架构审计。并行检查架构文档、�
 
 # 文档架构审计 (Document & Architecture Audit)
 
-对 AUDEMSP 项目文档体系进行全面审计，覆盖文档一致性、决策验证、agent 基础设施、参考对标。
+对 MediaServo 项目文档体系进行全面审计，覆盖文档一致性、决策验证、agent 基础设施、参考对标。
 
 **哲学**: 审计不是找茬，是清债务。文档债务和代码债务一样危险。
 

@@ -6,7 +6,7 @@
 
 ## 概述
 
-录制与回放是 AUDEMSP 跨场景的基础能力，覆盖远程桌面、视频会议、监控相机、推拉流、遥操作五个产品领域。录制回放复用 PipelineEngine 的 `MediaSource → MediaProcessor → MediaSink` 模型——Recording 是 Sink 的一种实现，Playback 是 Source 的一种实现。
+录制与回放是 MediaServo 跨场景的基础能力，覆盖远程桌面、视频会议、监控相机、推拉流、遥操作五个产品领域。录制回放复用 PipelineEngine 的 `MediaSource → MediaProcessor → MediaSink` 模型——Recording 是 Sink 的一种实现，Playback 是 Source 的一种实现。
 
 ## 1. 录制位置三形态
 

@@ -6,7 +6,7 @@ import sys
 import websockets
 
 SERVER_URL = "ws://localhost:9800/ws"
-PSK = "audemsp-dev"
+PSK = "mediaservo-dev"
 ROOM_ID = "test-p2p-room"
 
 

@@ -1,4 +1,4 @@
-# AUDEMSP 参考文档索引
+# MediaServo 参考文档索引
 
 > 更新: 2026-08-06 | 组织原则: **Diátaxis 框架**（活参考 / 调研存档分离）
 > 活参考按**产品模块**镜像组织（reference mirror product structure）；调研存档独立于 `research/`（历史调研，不碍事）

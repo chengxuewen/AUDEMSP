@@ -1,4 +1,4 @@
-# AUDEMSP 产品参考文档
+# MediaServo 产品参考文档
 
 > Phase 0 → Phase 5 规划中 | 2026-07-20 | 决策数: 155+ (D1-D155)
 > MVP v2 中继模型 (D118) · Host 单进程 (D155) · 基于 [架构设计文档](../architecture.md)
@@ -32,11 +32,11 @@
 
 ## 概述
 
-AUDEMSP 是 AUDE 生态的多媒体基础设施，提供七大产品能力。核心 crate：audemsp-host（采集+编码+推流）、audemsp-client（拉流+解码+控制）、audemsp-server（信令+relay+监控）。Phase 1-2 采用 Host 单进程 (D155)，Phase 0-5 整体规划见架构文档。
+MediaServo 是 AUDE 生态的多媒体基础设施，提供七大产品能力。核心 crate：mediaservo-host（采集+编码+推流）、mediaservo-client（拉流+解码+控制）、mediaservo-server（信令+relay+监控）。Phase 1-2 采用 Host 单进程 (D155)，Phase 0-5 整体规划见架构文档。
 
 ```
 AUDESYS (工业控制) ──┐              ┌── AUDEBase (企业应用)
-                     ├── AUDEMSP ──┤
+                     ├── MediaServo ──┤
    引用 native crate │  多媒体核心   │ Docker 模块
 ```
 

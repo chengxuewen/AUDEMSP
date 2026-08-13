@@ -1,6 +1,6 @@
 ---
 name: code-simplification
-description: "Reduce complexity in AUDEMSP Rust/TS code. Chesterton's Fence analysis, Rule of 500 enforcement, dead code elimination, borrow checker simplification patterns. Complements ponytail for Rust-specific over-engineering. Use after ponytail-audit, before PRs, or when diagnosing complexity smells."
+description: "Reduce complexity in MediaServo Rust/TS code. Chesterton's Fence analysis, Rule of 500 enforcement, dead code elimination, borrow checker simplification patterns. Complements ponytail for Rust-specific over-engineering. Use after ponytail-audit, before PRs, or when diagnosing complexity smells."
 ---
 
 # code-simplification — 复杂度消减
@@ -69,7 +69,7 @@ find crates/ -name '*.rs' -exec wc -l {} + | sort -rn | head -20
 # 4. 验证: cargo clippy -- -D warnings && cargo test -p <crate>
 ```
 
-## AUDEMSP 特定模式
+## MediaServo 特定模式
 
 ### 借用检查器简化
 
@@ -157,7 +157,7 @@ git diff --stat | grep -E '\+[0-9]+.*-' | tail -5
 ```
 ## 简化报告
 
-文件: crates/audemsp-webrtc/src/backend/mod.rs
+文件: crates/mediaservo-webrtc/src/backend/mod.rs
 检测前: 487 行 → 检测后: 312 行 (-36%)
 
 ### 移除
@@ -173,7 +173,7 @@ git diff --stat | grep -E '\+[0-9]+.*-' | tail -5
 
 ### 验证
 ✅ cargo clippy -- -D warnings
-✅ cargo test -p audemsp-webrtc
+✅ cargo test -p mediaservo-webrtc
 ```
 
 ## 禁止

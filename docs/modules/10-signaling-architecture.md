@@ -164,7 +164,7 @@ impl SignalHandler for PairingRelay {
 
 ```protobuf
 syntax = "proto3";
-package audemsp.signaling;
+package mediaservo.signaling;
 
 // === 客户端 → 服务端 ===
 message ClientSignal {
