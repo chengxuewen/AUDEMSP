@@ -90,14 +90,27 @@ impl StreamInner {
         *self.slot.lock().expect("frame slot lock") = Some(frame);
         self.notify.notify_waiters();
     }
+
+    /// 关停（唤醒等待中的 recv 返回 None）。
+    pub(crate) fn shutdown(&self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
 }
 
 /// 帧流（latest-slot：慢消费者跳到最新帧，审核 H5）。
 ///
 /// FrameBus 后台线程每收到一帧经 [`StreamInner::deliver`] 替换槽内帧并通知；
 /// 消费者 [`Self::recv`] 等待通知后取最新帧。**禁用无界队列**（会重新引入积压）。
+#[derive(Clone)]
 pub struct FrameStream {
     inner: Arc<StreamInner>,
+}
+
+impl std::fmt::Debug for FrameStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FrameStream").finish()
+    }
 }
 
 impl FrameStream {
@@ -116,10 +129,9 @@ impl FrameStream {
         Arc::downgrade(&self.inner)
     }
 
-    /// 关停流（FrameBus::close 调用）：唤醒等待中的 recv 并返回 None。
-    pub(crate) fn shutdown(&self) {
-        self.inner.shutdown.store(true, Ordering::SeqCst);
-        self.inner.notify.notify_waiters();
+    /// 内部共享状态（FrameBus 用于 close 时 shutdown）。
+    pub(crate) fn inner(&self) -> Arc<StreamInner> {
+        Arc::clone(&self.inner)
     }
 
     /// 取最新帧；无帧时等待。慢消费者自动跳到最新（不积压）；关停后返回 None。

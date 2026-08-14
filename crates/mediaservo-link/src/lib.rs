@@ -9,6 +9,7 @@
 //! 不含 SignalClient（对 server 的 WS 信令）——拆到 Phase 1b。
 
 pub mod acl;
+pub mod bus;
 pub mod error;
 pub mod frame;
 pub mod id;
@@ -16,6 +17,7 @@ pub mod registry;
 pub mod token;
 
 pub use acl::{NodeAcl, Role};
+pub use bus::framebus::FrameBus;
 pub use registry::{NodeInfo, Registry, TopicInfo};
 pub use token::{CapabilityToken, Claims, Ed25519SigningKey, Ed25519VerifyingKey};
 pub use error::LinkError;
