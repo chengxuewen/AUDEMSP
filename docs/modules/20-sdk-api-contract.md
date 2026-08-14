@@ -57,17 +57,19 @@ pub enum AuthCredential { Psk(PskCredential), Jwt(JwtCredential) }
 
 ## 3. link — 连接面
 
-> **设备侧 IPC 专题**（FrameBus 总线 / Registry 注册 / ACL 权限 / 能力令牌）见 [21-link-ipc.md](/docs/modules/21-link-ipc.md)。本节为 link 对 server 的信令（SignalClient）与共享类型。
+> **设备侧 IPC 专题**（FrameBus 总线 / Registry 注册 / ACL 权限 / 能力令牌）**已实现**（iceoryx2），见 [21-link-ipc.md](/docs/modules/21-link-ipc.md)。本节为 link 对 server 的信令（SignalClient）与共享类型。
 
 ```rust
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum LinkError {
-    #[error("connect failed: {0}")] Connect(String),
-    #[error("send failed: {0}")]    Send(String),
-    #[error("bus error: {0}")]      Bus(String),
-    #[error("auth rejected")]       Auth,
-    #[error("closed")]              Closed,
+    #[error("attach failed: {0}")]          Attach(String),
+    #[error("acl denied: {topic}")]         AclDenied { topic: String },   // D237
+    #[error("topic has publisher: {topic}")] TopicConflict { topic: String }, // D239
+    #[error("token invalid: {0}")]          Token(String),                  // D238
+    #[error("registry error: {0}")]         Registry(String),
+    #[error("bus error: {0}")]              Bus(String),
+    #[error("closed")]                      Closed,
 }
 
 // ── 信令客户端（WS，复用 common SignalingMessage）────────────
@@ -93,20 +95,27 @@ pub enum SignalEvent {
     Error(LinkError),
 }
 
-// ── 帧总线（跨进程 SHM，Phase 3 定传输机制）────────────────
+// ── 帧总线（跨进程 SHM，iceoryx2，D242/D239/D235）────────
+// buffer_size=1 + enable_safe_overflow → latest-frame；max_publishers(1) → 单发布者
 pub struct FrameBus;
 impl FrameBus {
-    pub fn attach(endpoint: &str) -> Result<FrameBus, LinkError>;
-    pub fn publish(&self, topic: FrameTopic, frame: FrameRef) -> Result<(), LinkError>;
-    pub fn subscribe(&self, topic: FrameTopic) -> Result<FrameStream, LinkError>;
+    pub fn attach(endpoint: &str, token: &CapabilityToken, vk: &Ed25519VerifyingKey)
+        -> Result<FrameBus, LinkError>;                       // 验签→载ACL→register
+    pub fn publish(&self, topic: &FrameTopic, payload: &[u8], meta: &FrameMeta)
+        -> Result<(), LinkError>;                              // ACL+单发布者→send
+    pub fn subscribe(&self, topic: &FrameTopic) -> Result<FrameStream, LinkError>;
+    pub fn close(self) -> Result<(), LinkError>;
 }
 pub struct FrameTopic(String);
+pub struct FrameMeta { seq, width, height, format, version, is_keyframe, ts_mono_ns, ts_epoch_ns } // 定长 LE, D243
 
-// ── 节点注册/发现 ─────────────────────────────────────────
+// ── 节点注册/发现（iceoryx2 内建活性, 无 daemon）──────────
 pub struct Registry;
 impl Registry {
-    pub fn register(info: NodeInfo) -> Result<NodeId, LinkError>;
-    pub fn discover(kind: NodeKind) -> Result<Vec<NodeInfo>, LinkError>;
+    pub fn register(info: &NodeInfo) -> Result<(), LinkError>;
+    pub fn discover_topics(prefix: &str) -> Result<Vec<TopicInfo>, LinkError>;
+    pub fn discover_nodes(role: Role) -> Result<Vec<NodeInfo>, LinkError>;
+    pub fn topic_publisher(topic: &FrameTopic) -> Result<Option<NodeId>, LinkError>;
 }
 
 // ── DataChannel（Phase 2，webrtc-rs）─────────────────────
