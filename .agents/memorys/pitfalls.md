@@ -980,3 +980,17 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: git checkout 恢复全部污染文件; 保留面边界需**工具链强制**而非约定——建议: memorys/下文件加入 git hook 保护或文档标注 "禁止全局替换"
 - **验证**: `grep -rn "AUDEMSP" .agents/memorys/decisions.md` — D209 应为 "OMSPBase → AUDEMSP", D221 应为 "AUDEMSP → MediaServo"（非自指）
 - **教训**: 全仓替换类操作必须排除保留面目录（.agents/memorys/ + research 存档）; 发现历史记录语义反转（X→Y 变 X→Z）立即 git checkout 恢复
+
+## PIT-90: 重命名后旧名进程/容器残留占端口，新脚本管不到 (2026-08-14)
+- **症状**: D221 重命名后 `mediaservo.sh start host` 报 `Address already in use (9801)`；host 连信令 PSK auth failed；`stop server` 也释放不了 9800
+- **根因**: 重命名前的 `audesp-host` 进程 + `audesp-server-1` 容器（compose project=`audesp`）仍在运行，占着 9801/9800。新脚本按**新名**杀进程（`pkill -x mediaservo-host`）、且 `docker compose -f docker-compose.dev.yml stop server` **只管 `mediaservo` 这一个 compose project**——都碰不到旧名 `audesp` 的残留进程/容器
+- **解法**: `ss -tlnp | grep <port>` 定位占用者 → 旧进程按 PID `kill <pid>`（root/Docker 进程用 `docker stop <container>` 或 `docker compose -p <old-project> down`）→ 再启新服务
+- **验证**: `ss -tlnp | grep -E '9800|9801'` 应只剩新 mediaservo 进程；`docker ps -a | grep -i audesp` 应无 Up 容器
+- **教训**: 重命名后启动新服务前，先查旧名残留：`ps -eo pid,comm | grep <oldname>` + `docker ps -a | grep <oldname>`；**`docker compose stop` 只释放自己 project 内容器的端口，释放不了别的 project 容器占的端口**
+
+## PIT-91: admin dist 在 build.rs 跑过后才构建 → 不嵌入，需 cargo clean；"optional" 是假象 (2026-08-14)
+- **症状**: `pnpm build` 建好 `www/apps/admin/dist` 后，server 构建仍报 `admin dist/ not found` + `couldn't read .../out/embedded_admin_dist.rs: No such file` + `include!(...)` 编译错误
+- **根因**: build.rs 每构建只跑一次；它在 dist 存在**之前**就跑过（未生成 `embedded_admin_dist.rs`），cargo 缓存该结果并回放警告；而源码**无条件** `include!(concat!(env!("OUT_DIR"), "/embedded_admin_dist.rs"))` → 文件不存在即编译失败。**build.rs 注释自称 "admin SPA is optional (warn but don't fail)"，但 include! 无条件 → "optional" 意图实际是坏的：dist 缺失=构建必挂**
+- **解法**: `cargo clean -p mediaservo-server` 强制 build.rs 重跑（重跑后发现 dist、生成嵌入文件）；根治：先 `pnpm build` 再编 server，或把 include! 真正条件化修复 optional 假象
+- **验证**: `ls www/apps/admin/dist/index.html` 存在；server 日志无 `admin dist not found`；`curl /admin` 返回 200
+- **教训**: build.rs 生成文件 + 源码 include! 的组合，若生成条件（如 dist 存在）在构建中途才满足，必须 `cargo clean -p` 强制重跑；"optional" 必须让 include! 真正条件化，否则名不副实。关联 PIT-13（cargo clean -p 与 build script 缓存）
