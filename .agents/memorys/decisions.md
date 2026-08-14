@@ -525,3 +525,11 @@ C++ 全链路 gcc 10.5；② **Jetson H264/AV1 硬编码器可用**（人工验�
 **风险与缓解**: pre-1.0 API 可能变 → 锁 0.9.3 + FrameBus 薄层隔离；引入 ~40 传递 crate → cargo-deny 审计；latest-frame 需适配（iceoryx2 默认队列/buffer → buffer_size=1 或薄层取最新）；不合适则回退自研（spike 已跑通）。
 
 **影响**: Phase 1 link IPC 落到 iceoryx2 底座；FrameBus/Registry/ACL/能力令牌为其上薄层；iceoryx2 纳入依赖审计。
+
+## D243: link 帧元数据 — 定长 LE + format/version，FlatBuffers 推迟 (2026-08-14)
+
+**决策**: link IPC 的 `FrameMeta` 采用**定长 LE 编码**（seq/width/height/**format**/version/is_keyframe/ts_mono_ns/ts_epoch_ns），**FlatBuffers 推迟**（跨语言需求真正出现再上，靠 version 字段兼容演进）。
+
+**原因**: ① YAGNI/ponytail——MVP 仅 Rust 内消费，定长 LE 最简单、零依赖、零解析开销；② 补齐审核发现的 **format（像素格式）+ version（元数据版本）** 字段（原 plan/spec 缺失，订阅方无法解释 payload、无演进位）；③ FlatBuffers 的价值在跨语言（ROS C++/py 消费，D236），届时再引入不迟；④ 此为对 D242"FlatBuffers 帧元数据"字面的**有意偏离**，按 C9 记录为决策。
+
+**影响**: FrameMeta 定长 LE 含 format+version；跨语言 ROS 消费者按定长布局解析；未来上 FlatBuffers 时靠 version 字段平滑迁移。20-sdk-api-contract §3 与 21-link-ipc §4 同步（FrameStream 已改 latest-slot）。

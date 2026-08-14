@@ -92,7 +92,9 @@ impl FrameBus {
     pub fn close(self) -> Result<(), LinkError>;
 }
 pub struct FrameTopic(String);
-pub type FrameStream = UnboundedReceiver<FrameRef>;
+/// latest-slot：慢消费者跳到最新帧（Arc<Mutex<Option<FrameRef>>> + Notify，替换语义）。
+/// 禁用无界队列——无界会重新引入积压，违背 latest-frame 覆盖语义（H5 审核修正）。
+pub struct FrameStream { /* latest-slot */ }
 ```
 
 ## 5. Registry（去中心化 SHM，attach 即注册）
