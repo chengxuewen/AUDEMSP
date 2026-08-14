@@ -509,3 +509,19 @@ C++ 全链路 gcc 10.5；② **Jetson H264/AV1 硬编码器可用**（人工验�
 **原因**: ① 单动态库（D240）需明确版本/ABI 规则才能安全升级/多进程共享；② opaque handle + int 错误码（D109）天然支持 ABI 稳定；③ additive-only 与既有向后兼容纪律一致；④ Unix soname 惯例，集成方熟悉。
 
 **影响**: 车端镜像按 soname 装载；SDK 升级 MINOR/PATCH 可直接换 .so；破坏性变更走 MAJOR + 迁移指南；cbindgen 导出面受控。
+
+## D242: link IPC 传输底座 — iceoryx2 + FrameBus 薄层 (2026-08-14)
+
+**决策**: link IPC 的 SHM 传输底座采用 **iceoryx2**（crates.io 0.9.3，锁版本），**FrameBus 作为其上的薄层**（latest-frame 覆盖语义、topic 命名 `camera/*`、FlatBuffers 帧元数据、ACL 强制点、能力令牌 attach）。自研仅作回退备选（非单行道）。
+
+**Spike 实证**（/tmp/opencode/shm-spike，1080p I420=3,110,400B，两进程零拷贝，纯丢弃）：
+- 零拷贝成立：iceoryx2 `loan_slice_uninit`+`write_from_slice`+`send`，订阅方 `&*sample` 读 SHM 视图
+- 稳态延迟 @~100fps：iceoryx2 avg 0.98ms（min 0.32/max 2.4）；自研 avg 0.36ms（min 0.25/max 1.7）
+- 吞吐：iceoryx2 burst 684 MB/s / 220fps；pacing ~300 MB/s @100fps —— 对 30fps 遥操作（33ms 帧预算）绰绰有余
+- 性能非决定因素（两者都达标），选型看功能/维护
+
+**原因**: ① iceoryx2 白给最难最易错的部分——零拷贝 SHM 管理、无锁队列、**服务发现/注册/活性**（正是 D235 的 Registry）、多订阅者 fan-out；② 契合 C11/C18"成熟方案优先"与 D235（去中心化发现）；③ C/C++/Python 绑定现成，利于 ROS/多语言节点；④ 权限本就要自建（与底座无关），FrameBus 薄层承载 ACL/令牌。
+
+**风险与缓解**: pre-1.0 API 可能变 → 锁 0.9.3 + FrameBus 薄层隔离；引入 ~40 传递 crate → cargo-deny 审计；latest-frame 需适配（iceoryx2 默认队列/buffer → buffer_size=1 或薄层取最新）；不合适则回退自研（spike 已跑通）。
+
+**影响**: Phase 1 link IPC 落到 iceoryx2 底座；FrameBus/Registry/ACL/能力令牌为其上薄层；iceoryx2 纳入依赖审计。
