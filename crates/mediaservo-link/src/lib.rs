@@ -8,10 +8,12 @@
 //!
 //! 不含 SignalClient（对 server 的 WS 信令）——拆到 Phase 1b。
 
+pub mod acl;
 pub mod error;
 pub mod frame;
 pub mod id;
 
+pub use acl::{NodeAcl, Role};
 pub use error::LinkError;
 pub use frame::{FrameMeta, FrameRef, FrameStream};
 pub use id::{FrameTopic, NodeId};

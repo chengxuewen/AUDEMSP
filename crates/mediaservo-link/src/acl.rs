@@ -1,0 +1,79 @@
+//! 静态 ACL（D237：role 预置 + 节点覆盖；deny 审计日志）。
+
+use crate::id::{FrameTopic, NodeId};
+
+/// 节点角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
+pub enum Role {
+    /// 出图节点：发布相机帧。
+    Capture,
+    /// 处理节点：订阅相机帧、发布派生 topic（如拼接）。
+    Processor,
+    /// 推流节点：订阅帧、推 WebRTC（不进总线发布）。
+    Pusher,
+    /// 舱端拉流（本地总线无权限）。
+    Puller,
+    /// 录制节点：订阅帧、录制。
+    Recorder,
+    /// 控制节点：发布控制指令、订阅遥测/状态。
+    Control,
+    /// 感知节点：发布感知结果、订阅相机帧。
+    Perception,
+}
+
+/// 节点 ACL（静态，D237）。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NodeAcl {
+    pub node_id: NodeId,
+    pub role: Role,
+    /// 允许发布的 topic 通配模式（如 `"camera/*"`）。
+    pub publish_allow: Vec<String>,
+    /// 允许订阅的 topic 通配模式。
+    pub subscribe_allow: Vec<String>,
+}
+
+impl NodeAcl {
+    /// D237 权限矩阵预置。
+    pub fn for_role(node_id: NodeId, role: Role) -> Self {
+        let (publish_allow, subscribe_allow): (Vec<String>, Vec<String>) = match role {
+            Role::Capture => (vec!["camera/*".into()], vec![]),
+            Role::Processor => (vec!["video/*".into()], vec!["camera/*".into()]),
+            Role::Pusher => (vec![], vec!["camera/*".into(), "video/*".into()]),
+            Role::Puller => (vec![], vec![]),
+            Role::Recorder => (vec![], vec!["camera/*".into(), "video/*".into()]),
+            Role::Control => (
+                vec!["control/cmd".into()],
+                vec!["control/telemetry".into(), "status/*".into()],
+            ),
+            Role::Perception => (vec!["perception/*".into()], vec!["camera/*".into()]),
+        };
+        Self { node_id, role, publish_allow, subscribe_allow }
+    }
+
+    /// 是否允许发布该 topic；越权记审计日志（D237 + C15）。
+    pub fn can_publish(&self, topic: &FrameTopic) -> bool {
+        let ok = self.publish_allow.iter().any(|p| topic.matches(p));
+        if !ok {
+            tracing::warn!(
+                node = %self.node_id.as_str(),
+                topic = %topic.as_str(),
+                "ACL deny publish"
+            );
+        }
+        ok
+    }
+
+    /// 是否允许订阅该 topic；越权记审计日志（D237 + C15）。
+    pub fn can_subscribe(&self, topic: &FrameTopic) -> bool {
+        let ok = self.subscribe_allow.iter().any(|p| topic.matches(p));
+        if !ok {
+            tracing::warn!(
+                node = %self.node_id.as_str(),
+                topic = %topic.as_str(),
+                "ACL deny subscribe"
+            );
+        }
+        ok
+    }
+}
