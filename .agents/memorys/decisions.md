@@ -329,3 +329,183 @@ C++ 全链路 gcc 10.5；② **Jetson H264/AV1 硬编码器可用**（人工验�
 **范围**: T1 机械替换 259 文件/1436 行（env MEDIASERVO_* + 品牌 MediaServo + 小写 mediaservo + audemedia→mediaservo）+ 7 crate 目录/二进制/CLI 文件 git mv；T2 AUDE 生态剥离（README/AGENTS/docs 11 文件 80 处 → 中性平台表述）；T3 基础设施名（compose `name: mediaservo`、service 文件、pixi 名、audemsp_cli.py）；doc-audit 修复 H1-H3/M1-M3（decisions/status/conventions/AGENTS 同步）。
 
 **影响**: ① Cargo.lock 随 T1 同步（7/7 mediaservo, 0 audemsp）；② Docker 层缓存全失效一次性重编译；③ env 改名 `AUDEMSP_*`→`MEDIASERVO_*`（scripts 侧零残留）；④ 保留面: **仅 `.agents/`**（decisions/pitfalls/status/conventions 历史提及保留, 史实不可篡改）; `.sisyphus/.omo plans`（含 mediaservo-rename 对照记录）已随 2026-08-13 政策更新/清除（用户指令: 仅 .agents 保留, 弃用计划已清除）；⑤ 后续约定/检查命令统一 `mediaservo-*`（conventions C4-C22 同步）。
+
+## D222: 四 SDK 主架构 — link/field/client/deck (2026-08-13)
+
+**决策**: 设备侧第三方集成 SDK 定为**四个交付形态**：`mediaservo-link`（连接面: frame_bus/signal/auth/dc）、`mediaservo-field`（媒体会话面: push/pull）、`mediaservo-client`（舱端组合: 依赖 field + 渲染抽象/会话编排/控制绑定）、`mediaservo-deck`（媒体数据面: source/codec/record/playback）。命名: field=现场端（D67/D68 回归）、link=连接、deck=录放一体机（广播术语，record/play/trick 为原生语义）、client=主控侧（C4）。
+
+**原因**: ① 消费剖面四类（link-only 轻量 / deck-only 录放 / field 推拉流 / client 舱端全量），每类最小依赖；② 依赖正交——轻量消费者（ROS 节点/订阅帧/纯控制）不背 libwebrtc 媒体栈；③ 全单向无环依赖图：field→link(+deck[source])，client→field，deck 独立；④ 推翻 D65-D69/D82 的"field/client 双 facade 拆分"（IPC-only 轻量面与依赖不对称论据在 2026-08 架构下已失效——共享代码收敛在 common/webrtc/media，角色合并单 field 即可）。
+
+**影响**: 后续第三方 SDK 交付以四 crate 为准；host/client 二进制成为四 SDK 的消费方与吃狗粮验证；04-sdk-layers.md 同步重构；行业对标 LiveKit（单核心+薄绑定）、libmediasoupclient（单库 Device）、Janus/OBS（dlopen 插件）。
+
+## D223: field 采集归属 — 纯会话面 + deck[source] 静态依赖 (2026-08-13)
+
+**决策**: **field 不提供采集能力**（修正初版 spec 的"field 内建 GStreamer capture"倾向）；采集统一由 deck 的 source 域提供（GStreamer 动态，D64 v4l2src 实现）。field 编译期静态依赖 `deck[source]`（仅 GStreamer 采集切片，无 FFmpeg 符号），并 re-export deck 的 `MediaDevices`/`VideoSource` API（对标 getUserMedia 体验）；field 依赖 link（signal/frame_bus）+ mediaservo-webrtc（backend-webrtc-sys，C12: WebRTC 必经抽象层）。
+
+**原因**: ① 采集消费者多样（推流/录制/感知）→ 单一实现源避免分裂（deck 双形态下 source 切片可被静态联，full 切片走插件）；② GStreamer 动态插件 + Rust 默认不导出符号 → 与 libwebrtc(BoringSSL) 零静态冲突；③ field 纯会话面 = 最小面 + 与 LiveKit 对齐（核心 SDK 不做设备采集，VideoSource=帧注入源，LiveKit Python 音频采集用 sounddevice 同构）。
+
+**影响**: field 一行依赖即完整推流体验（传递 deck[source]）；采集唯一入口是 deck；桌面捕获（webrtc-sys desktop_capturer 已有）进 deck 后端矩阵备选。
+
+## D224: deck 双形态 — rlib 独立 + cdylib 插件 (2026-08-13)
+
+**决策**: `mediaservo-deck` `crate-type=["rlib","cdylib"]`；feature 切片：`source`（GStreamer 采集，可被 field 静态联）/ `ffmpeg·record·playback`（FFmpeg 静态，仅出现在①deck rlib 独立应用②deck-full.so 内）。**field/client 与 deck 同进程 = cdylib 插件形态**（D13 PluginManager 载体；接口 `deck_plugin_init/encode/record/playback` + version 握手；RTLD_LOCAL + 主进程不导出符号）；deck 也可被应用单独使用（rlib full）。deck-full.so 由 CI 独立构建交付。
+
+**原因**: ① FFmpeg 静态 OpenSSL × libwebrtc BoringSSL 静态链接冲突（**PIT-71 延续**：X509_PUBKEY_it duplicate symbol 链接必挂，C21 同因）→ 插件 ELF 符号空间隔离是结构性消解；② dlopen 插件=单进程组合便利但**丢崩溃隔离**（插件 C 崩溃拉崩宿主）→ 默认多进程、组合模式插件，二选一给消费者；③ Janus/OBS dlopen 插件先例。**关联 D13**（核心插件编译期 feature + 扩展插件运行时 dlopen）——deck 即"扩展插件"定位。
+
+**影响**: 链接冲突矩阵进 CI（field 独立/deck 独立/field+deck[source] 静态/field+deck-full 插件，每格 build+smoke）；deck 的 FFmpeg 后端禁开 openssl/network feature（本地处理无需 HTTPS）。
+
+## D225: 本地录制双编码架构（Phase 2 落地）(2026-08-13)
+
+**决策**: 本地录制与推流编码**各自独立（主/子码流）**；帧总线双 topic（`video_raw` I420 MVP / `video_enc` H264 Phase2+）；recorder-worker = link + deck（订阅帧→编码→mux 落盘），轻量独立于 field。**MVP 不实现录制**（YAGNI，先跑通推流链路）。
+
+**原因**: ① 推流随 BWE 动态降码率/分辨率，共享单编码会**污染录制质量**（弱网抖动拖累存储流）；② 双码流是监控行业标准（NVR 主码流存储、子码流网络）；③ webrtc-sys 无外部编码帧输入接口（无 VideoCaptureModule/注入桥）→ 推流保持 I420 输入零改动；④ Jetson MMAPI 多并发编码器可承载（C23 已验证硬编可用）。
+
+**影响**: 录制能力推迟 Phase 2；帧总线元数据需 is_keyframe 标志 + monotonic/epoch 双时钟戳（MP4 keyframe 对齐）。
+
+## D226: 控制面通道 — server relay 优先, DC 为 Phase 2 增强 (2026-08-13)
+
+**决策**: 控制/紧急/遥测消息 **Phase 1 走 server 房间 relay**（WS，`should_relay` 已实现验证）；DataChannel 为 Phase 2 低延迟增强（**webrtc-rs** 后端——backend 已存在且与 SFU e2e 4/4 通过；libdatachannel = 第四后端 + C++ 崩溃面，排除）。紧急通道独立 control-worker（link only），**不依赖媒体进程存活**。
+
+**原因**: ① 崩溃隔离动机（车端 #1）要求控制面不能绑媒体连接生死；② 07-protocols 四通道（control/telemetry/emergency/heartbeat）语义不变，仅承载面切换 relay→(可选 DC)；③ control-worker 只依赖 link（纯 Rust 轻量）。
+
+**影响**: MVP 无 DC 开发；libdatachannel 的定位=第三方 C++ 客户端的自选直连工具（同 FFmpeg/GStreamer 之于 broadcaster），不进 SDK 依赖树。
+
+## D227: 绑定体系 — c/cxx crate + py 双后端两步走 (2026-08-13)
+
+**决策**: 绑定命名族（D68 `-c` 惯例延续）：C=`-c`、C++=`-cxx`（ICEoryx2 同构先例 iceoryx2-c/iceoryx2-cxx）、Python=`-py`、未来安卓=`-jni`。**绑定位次**: `-c`（cbindgen 生成 + C 测试 + cargo-c 分发, 必要）/ `-cxx`（header-only RAII .hpp over C ABI + C++ 测试, 独立 crate, 分发可并入 -c 包）/ `-py` **两步走**: ① py = 纯 Python（ctypes 加载 cdylib, 普通场景, LiveKit 模式, 非 Rust crate）② pyo3 = 瓶颈触发的加速后端（iceoryx2 模式, maturin wheel）。py 双后端共享同一 Python API 层 + 自动探测回退 + 同一套行为测试双跑。
+
+**原因**: ① 覆盖两类消费者——普通场景全价快（ctypes 零编译）与性能路径（pyo3 numpy 零拷贝/GIL 控制）; ② 维护主体=Rust 团队, pyo3 写 Rust 优于手写 ctypes; ③ 瓶颈驱动不预埋（触发条件量化: 帧路径调用 >帧预算10% / GIL 拖累>20% / numpy 转换>5%）; ④ 修正 D79 的"pyo3 原生唯一路线"为两步走; ⑤ 跨语言对照测试（c/cxx/py/pyo3 同一操作序列断言一致）防 API 漂移。
+
+**影响**: 绑定 crate 体系 = c + cxx 两核; py 独立构建/包（同 repo, bindings/python/, 非 cargo member）; 未来 jni 复用 C ABI; pyo3 阶段 python 绑定才可能成为 workspace member（iceoryx2 同）。
+
+## D228: 项目目录布局 — crates/ + bindings/ 分区 (2026-08-13)
+
+**决策**: 根 workspace members 跨目录: `crates/*`（现有 7 + 新 SDK 核心 link/field/deck + client 升级 lib+bin 双 target）+ `bindings/c/*` + `bindings/cxx/*`; `bindings/python/` 非 cargo member（纯 Python, poetry 独立构建）。绑定目录只随 SDK 落地创建（当前文档预留, YAGNI）。
+
+**原因**: ① 单 repo 不分裂（D221 延续）——LiveKit 多 repo 带来版本同步成本, 不采用; ② cargo 能编的进 workspace 原子 CI（C/C++ 绑定是 Rust crate）; ③ python 构建系统异构（maturin/poetry）不阻塞 cargo 矩阵; ④ 与 ICEoryx2（全 member）与 LiveKit（python 独立 repo）的折中: c/cxx 全 member + python 独立。
+
+**影响**: 现有 7 crate 路径零破坏; mediaservo-client 已列为 lib+bin 双 target（SDK lib + GUI bin）; CI 增加绑定测试矩阵（C/C++ 编译器）与 python 构建分离。
+
+## D229: deck 与 codec 的关系 — 依赖不合并 (2026-08-13)
+
+**决策**: **deck 依赖 codec（facade）, codec 引擎保持独立 crate**——不替换/不合并。deck = codec 之上的媒体处理层（source 采集 + codec 编排 + record/playback 文件语义）。
+
+**原因**: ① **分层不能反转**——mediaservo-codec 唯一现有生产消费者是 mediaservo-webrtc 的 backend-webrtc-rs（解码）；deck 吞并则底层抽象反向依赖顶层 SDK（架构性错误）; ② FFmpeg 分库先例（libavcodec 引擎 / libavformat+libavdevice 封装——deck 的 record/playback 恰为后组角色）; ③ codec 94 道测试资产（stub 32/FFmpeg 35/GStreamer 27）不迁移; ④ 未来消费者（field GStreamer 采集、webrtc-rs 后端、独立转码）都指向引擎独立。
+
+**影响**: 依赖链 deck → codec + media + common 确认; 后移条款: deck 落地后若 facade 包 codec 产生两层 API 摩擦 → 优先 codec API 重构, crate 合并仅在 codec 失去全部非 deck 消费者时重评。
+
+## D230: field 组合 SDK 定位（修订 D223「纯会话面」表述）(2026-08-13)
+
+**决策**: field = **组合 SDK**：媒体（push/pull via mediaservo-webrtc, C12）+ 通信（re-export link 的 SignalClient/FrameBus/Registry/ControlSession/auth）+ 采集（re-export deck 的 MediaDevices/CameraSource/AudioSource/ScreenSource/VideoSource）。**一行依赖 field 即得 采集+信令+推流+总线 全链路闭环**。「纯」指实现归源（field 无自采/自编解码实现，单一事实源在 deck），非能力缺失。
+
+**原因**: ① 某些场景仅使用 field（相机采集+推流+信令）要求单依赖闭环（D69 facade 精神最终形态）; ② link/deck 仍是切片供轻量消费者（ROS/订阅/录放），field 是超集; ③ **re-export 白名单纪律**防 API 膨胀——只透会话级类型（SignalClient/FrameBus/MediaDevices/VideoSource/PushSession/PullSession 等），不透内部原语。
+
+**影响**: field 依赖（全静态）: webrtc + link + deck; 字段真实现全部来自 webrtc/link/deck 三源; 白名单变更过审。
+
+## D231: field→deck 静态直连默认, dlopen 后移（修订 D224）(2026-08-13)
+
+**决策**: field 对 deck 采用**静态 rlib 依赖为默认**（source 必需, full 可选）; dlopen 插件模式（原 D224 的默认机制）降级为 **OTA 独立升级/实现可替换需求出现时的可选演进**（D13 接口预留, MVP 不实现）。
+
+**原因**: ① PIT-71 冲突根源 = BoringSSL × 静态 OpenSSL 同类库共存; ② **实证**: ffmpeg-the-third 5.0.0 默认 features 不含 `build-lib-openssl` 且本项目未开启 → deck 的 FFmpeg 无 OpenSSL 符号 → 与 libwebrtc(BoringSSL) **零交集** → dlopen 的首要动机（静态符号隔离）在默认配置下消失; ③ 静态直连零插件机制复杂度（traits/发现路径/版本握手全免）; ④ 崩溃隔离靠多进程拓扑（同进程 dlopen 本就无隔离收益）。
+
+**影响**: 链接矩阵新增 **field+deck-full 静态**组合（新默认）; 纪律锁定: FFmpeg 禁 `build-lib-openssl`/`build-zlib` + zlib 系统动态 + x264/openh264/opus 交集逐项验证进 CI; deck-full.so 分发与 D105 tarball 关系 Phase2 定稿; 同步修订 spec §6/§7 与 04-sdk-layers。
+
+## D232: client 消费端定位（修订 D222 client 定义）(2026-08-13)
+
+**决策**: client ≠ 第二个会话 SDK; = **消费端编排 SDK**。独有能力 = VideoRenderer（GPU interop, D47）/ 多路会话编排（多屏, D66）/ Input Forward·遥测绑定（D18/D66）/ deck playback 集成（舱端回放）。依赖 field（含传递链）; 传输面复用 field 的 PullSession, 不重复实现。
+
+**原因**: ① 会话层能力 field 已齐（含 PullSession）——client 若无消费编排则无存在价值; ② 行业对照: 海康 PlayCtrl（消费端独立渲染回放库）有独立先例; LiveKit 渲染在平台层（Flutter/SwiftUI 零成本）而车机原生 GPU interop 是高成本, client 封装对第三方有真价值; ③ 后移条款防僵化。
+
+**影响**: MVP client 独有面 = VideoRenderer trait + 单路 PullSession 编排; **后移条款**: v2 独有内容 <~500 行有效代码 → VideoRenderer 转 field 的 render feature 并归档 client。
+
+## D233: SDK API 形态 — 单层会话型（选项 B）(2026-08-14)
+
+**决策**: field/client SDK 对外 API 采用**单层会话型**（`PushSession`/`PullSession`），**不暴露** mediasoup 细粒度对象（Device/Transport/Producer/Consumer）作为公开 API。高级需求用**富 Options** 承接（codec/simulcast/bitrate/encoder_backend）；真·底层控制走 **mediaservo-webrtc 直接依赖**（逃生舱，field 不 re-expose）。未来若出现 Options 表达不了的细粒度需求 → **加法式新增**（向后兼容，不返工）。
+
+**原因**: ① YAGNI/ponytail——细粒度对象需求当前为推测性（车端推流/舱端拉流/遥操作全是会话级），为推测需求建双层=过度设计；② **C18 范围解读**——C18 约束的是**内部协商机制**（标准 offer/answer、禁手搓 SDP/rtp_parameters，反 PIT-65），**不强制公开 mediasoup 对象形态**；单层会话型内部照做标准协商即合规；③ **逃生舱已有**——mediaservo-webrtc 是独立公开 crate，真需底层控制直接依赖它，field 无需 re-expose → 双层冗余；④ 富 Options 承接高级需求（LiveKit TrackPublishOptions 先例：codec/simulcast/encoding 全在 options）；⑤ 面最小 → Hyrum 暴露最小 → 最易守向后兼容；最贴"一行依赖完整闭环"组合 SDK 定位。
+
+**否决**: 双层 A（为推测需求付双倍维护成本、两套 API 致用户困惑、Hyrum 双层暴露）；单层 mediasoup C（简单场景被迫走 Device.Load→CreateTransport→Produce 全流程、违背一行闭环、与"信令内建"决策打架）。
+
+**影响**: field/client 公开 API 只含会话层；API 子细节（事件模型/品牌化 ID/帧 API）见后续 API 契约设计。
+
+## D234: SDK API 调用约定（事件/ID/错误/选项/帧）(2026-08-14)
+
+**决策**: 四 SDK 公开 API 统一调用约定：① Rust 全 async（tokio）返回 `Result<T, XxxError>`；② 事件模型 Rust 用 enum+channel/Stream、C/C++ 用回调函数指针；③ ID 品牌化（RoomId/PeerId/TrackId/SessionId/StreamId/NodeId/DeviceId）；④ 错误每 SDK 一个 thiserror enum + `#[non_exhaustive]`（LinkError/FieldError/DeckError/ClientError）；⑤ 选项纯 struct + Default（不用 builder）；⑥ 帧注入保留 `write_raw_i420_with_ts` 为注入点、deck source 对象产帧喂入。
+
+**原因**: ① 事件 enum+Stream 比 trait-listener 可组合（LiveKit Dispatcher 先例）；② 品牌化 ID 防串参（api-interface-design 技能）；③ thiserror 库错误约定 + RTCError 先例；④ 纯 struct 选项 = LiveKit 实证 + 我们 config 惯例，builder 属过度设计；⑤ `write_raw_i420_with_ts` 已用且对齐 LiveKit captureFrame。
+
+**影响**: 完整接口契约见 `docs/modules/20-sdk-api-contract.md`；向后兼容只加法（`#[non_exhaustive]`、新 variant 追加末尾、新字段 `Option<T>`）。
+
+## D235: link IPC 注册中心 — 去中心化 SHM + attach 即注册（B+C 融合）(2026-08-14)
+
+**决策**: link IPC 注册中心采用**去中心化 SHM service registry + attach 即注册，无专用 registry daemon**（B+C 融合）。数据面 SHM 零拷贝直连（发布写 SHM、订阅直读，不经 broker）；注册/发现/活性为控制面——节点 attach 时自描述注册（topic 声明 + role + capabilities），heartbeat/lease 活性，掉线自动摘除；权限经签名令牌在 attach 本地校验（不依赖中央裁决）。
+
+**原因**: ① 零拷贝帧硬需求锁定 SHM 数据面 → 排除 broker 型（A 数据路径前提不成立）；② 车端 7x24 可靠性 → 避免 registry daemon 单点故障；③ <10 节点规模，A 的强一致集中视图优势用不上、代价（SPOF+常驻进程）全吃；④ 权限可无中央强制（签名令牌 + attach 本地校验），化解去中心化最大劣势；⑤ iceoryx2 若采用则发现机制现成（C11）。
+
+**否决**: A 专用 registry daemon（SPOF + 常驻进程，规模用不上其优势）。
+
+**影响**: 数据面 SHM 零拷贝；注册去中心化；演进条款——未来节点规模/一致性需求上升可引入轻量 registry，现在不预埋。ROS 集成/权限细节见后续决策。
+
+## D236: link IPC ROS 集成 — 帧路径 ROS 节点直连 FrameBus（选项 1）(2026-08-14)
+
+**决策**: 需要低延迟帧的 ROS 节点（感知/拼接）**直接加入 FrameBus**（link link-SDK，`attach(endpoint, credential)` + role 令牌），不经桥接；不需要低延迟帧的 ROS 子系统可用桥接（保持纯 ROS）作逃生舱。ROS 节点从设备配置/环境变量/约定 SHM 路径取 bus endpoint。
+
+**原因**: ① 感知订阅相机帧、拼接订阅多路再发布——全是低延迟多路帧操作，SHM 零拷贝直连是唯一不牺牲性能的路径；② 桥接引入帧拷贝 + 延迟 + 额外组件，恰好伤在拼接/感知痛点；③ 拼接节点需同时"订阅多路 + 发布派生 topic"，直连零拷贝读多路 + 直接发布 `video/stitched`；④ 权限无缝：ROS 节点持 role 令牌、attach 本地校验 ACL，与 D235 去中心化权限自洽；⑤ 少一个组件（ponytail）。
+
+**否决**: 桥接为主（选项 2）——帧拷贝 + 延迟 + 潜在单点，伤在痛点。
+
+**影响**: ROS 节点双协议栈（ROS-DDS 对 ROS 内部 + FrameBus 对 MediaServo）；py 节点走 ctypes/pyo3（D227 两步走），C++ 走 cxx；桥接仅作非帧场景逃生舱。
+
+## D237: link IPC 权限载体 — 静态 ACL（role 预置 + 节点覆盖）(2026-08-14)
+
+**决策**: link IPC 权限采用**静态 ACL**：每个 role 一套预置 ACL（`publish_allow`/`subscribe_allow` topic 通配模式），允许按节点覆盖；`attach` 时校验凭证 + 载入 ACL，**每次 publish/subscribe 逐次查 ACL**，越权拒绝 + 审计日志。最小权限 + 隔离（感知节点不能 publish `control/cmd`）。
+
+**原因**: ① 与 D235 去中心化自洽——动态授权需中央授予方，与无 daemon 冲突；② 车端节点集合固定，不需运行时动态授权；③ 静态可审计（读配置即见全部权限）+ 可版本管理；④ attach 后离线自足，契合边缘设备；⑤ ponytail 不过度设计。
+
+**否决**: 动态授权（需中央权威，动摇 D235 去中心化）。
+
+**影响**: 权限变更走"改配置→重签→重启节点"（低频可接受）；ACL 配置纳入设备配置统一管理；演进——未来需运行时吊销可加轻量 revoke list，MVP 不预埋。令牌机制（ACL 携带形态 + 签发）见后续决策。
+
+## D238: link IPC 令牌机制 — 能力令牌（ACL 签进 JWT）(2026-08-14)
+
+**决策**: link IPC 采用**能力令牌（capability token）**：ACL（`publish_allow`/`subscribe_allow`）签进 JWT，**设备私钥签发、公钥校验**；ACL 源配置（role 预置 + 节点覆盖）作签发与审计源，令牌是签名快照。**复用 link JWT，不建独立节点证书 PKI**。PSK 不参与令牌签名（PSK 对称、用于对 server 认证，属另一关注点）；节点能力令牌用非对称 JWT（Ed25519/ES256），claims 含 `node_id/role/acl`。
+
+**原因**: ① 去中心化自洽——令牌自描述、本地验签，无中央、无配置分发依赖（D235）；② ROS 直连友好——ROS 节点一个签名令牌即接入（D236）；③ 复用 JWT 基建不新增 PKI（ponytail）；④ 非对称契合边缘——私钥集中设备权威、公钥广布各校验点；⑤ 可审计——ACL 源配置一处编写，令牌为签名快照。
+
+**否决**: 身份令牌+配置查询（bus 校验需配置分发，去中心化下不便）；独立节点证书 PKI（对固定节点集合过度设计）。
+
+**影响**: ACL 变更走"源配置→离线重签令牌→节点重启"；签发方=设备权威组件（provisioning/host supervisor）部署时离线签发。
+
+## D239: link IPC 派生 topic 治理 — 自由创建 + ACL 兜底 (2026-08-14)
+
+**决策**: processor 节点创建派生 topic 采用**自由创建 + ACL 兜底**：publish 时查能力令牌（ACL），落在 `publish_allow` 模式内即放行、越权拒绝 + 审计；SHM registry 仅**自描述登记**（供发现），不做批准；约定**单 topic 单发布者**（同名 topic 已有发布者则后到者拒绝）；派生 topic 层级命名规范。
+
+**原因**: ① 与 D235 去中心化自洽——无中央批准方，ACL 即闸门；② 不与 D237/D238 重复治理——ACL 已管"能否 publish"，再套批准冗余（ponytail）；③ processor 灵活产出派生流（拼接/感知），正是处理节点模式价值；④ registry 登记供发现、ACL 管权限，职责单一。
+
+**否决**: registry 显式批准（需批准方，动摇 D235 去中心化）。
+
+**影响**: 治理靠 ACL 模式 + 命名规范，无审批环节；topic 泛滥由 ACL 边界约束；演进——未来需更强治理可在 ACL 源配置加 topic 白名单/配额（仍静态、无中央运行时批准），MVP 不预埋。
+
+## D240: SDK 库交付形态 — 单动态库（.so/cdylib）为主 (2026-08-14)
+
+**决策**: 四 SDK 对外 C/C++ 绑定交付采用**单动态库（.so/cdylib）为主**，不预建静态库 .a。静态 .a 待确有"单一自包含二进制"的嵌入式集成需求出现时再加（additive：crate-type 加 `staticlib` + 补测试，不返工）。交付物：`link.so` / `field.so`（打包 link+deck）/ `client.so` / `deck.so`（+ `deck-full.so` OTA 插件）。Rust 内部消费者走 rlib，不受此决策影响。
+
+**原因**: ① 多进程车端拓扑（capture/push/control/recorder + ROS 节点）→ 动态共享内存（libwebrtc 不必每进程一份，车端 RAM 受限）；② 与 deck-full.so dlopen OTA 插件体系一致（D224/D231）；③ ponytail/YAGNI——单一形态最省构建/测试/维护，双格式为推测需求付双倍成本；④ LiveKit 先例（cdylib）；⑤ 易更新/OTA 对车端运维友好。
+
+**否决**: 双格式 .a+.so（双倍构建/测试/ABI 面，多数场景只用其一）；单静态（多进程内存重复、更新要重链、与 dlopen 插件方向相悖）。
+
+**影响**: `crate-type = ["cdylib"]`（外部）+ rlib（内部）；C++ 绑定 header-only RAII over .so；Python ctypes 加载 .so（D227）；车端镜像统一带 SDK .so（LD 路径固定）；需定 .so 版本/ABI 策略（soname + C ABI 稳定性，D109 opaque handle 奠基）；演进——嵌入式自包含需求出现加 staticlib，不预埋。修订早期双格式（.a+.so）取向。
+
+## D241: SDK .so 版本与 C ABI 稳定策略 (2026-08-14)
+
+**决策**:
+- **soname**: `libmediaservo_<sdk>.so.<MAJOR>`（如 `libmediaservo_field.so.1`）；实体文件 `libmediaservo_field.so.<MAJOR>.<MINOR>.<PATCH>`；开发 symlink `libmediaservo_field.so`
+- **MAJOR = C ABI 版本**：破坏性 ABI 变更才 bump MAJOR；MINOR/PATCH = additive/fix（不改 ABI）
+- **C ABI 稳定承诺**（within MAJOR）：① 只加法——新增函数可以，既有函数签名/语义不变；② opaque handle 隐藏内部布局 → 结构体演进不破 ABI；③ C ABI 只用 C 兼容类型（无 C++/Rust 类型泄漏）；④ 需演进的结构用 version/size 字段或新增 `_v2` 函数
+- **SDK semver 与 soname 对齐**：.so soname 取 SDK MAJOR
+- **兼容规则**：同 MAJOR 二进制兼容（可直接换 .so 免重链）；跨 MAJOR 需重链
+- **cbindgen 纪律**：只导出稳定 C ABI；Rust 内部 API 可 semver 演进，C ABI 面 within MAJOR 稳定
+
+**原因**: ① 单动态库（D240）需明确版本/ABI 规则才能安全升级/多进程共享；② opaque handle + int 错误码（D109）天然支持 ABI 稳定；③ additive-only 与既有向后兼容纪律一致；④ Unix soname 惯例，集成方熟悉。
+
+**影响**: 车端镜像按 soname 装载；SDK 升级 MINOR/PATCH 可直接换 .so；破坏性变更走 MAJOR + 迁移指南；cbindgen 导出面受控。

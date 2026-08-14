@@ -20,7 +20,7 @@ MediaServo 是可独立部署的多媒体基础设施，提供远程桌面、视
 | 车端推流 (Phase 1) | Phase 1 | 车辆摄像头推流到云端 | 车联网 |
 | 录制与回放 (Phase 2+) | Phase 2+ | 录制管理、存储与回放（D61: 推迟至 Phase 2） | 合规、审计 |
 
-> 注：WebRTC 遥操作、车端推流、舱内拉流三个子能力均属遥操作域（teleop domain），由 field/remote 双 SDK 承载。
+> 注：WebRTC 遥操作、车端推流、舱内拉流三个子能力均属遥操作域（teleop domain），由 field/client 等 SDK 承载（见 §7）。
 
 > 🔄 **D126-D155 增量 (2026-07-19)**: 三层逻辑抽象模型 (D126)、Component 架构 (D127-D134)、WebRTC 架构升级为 webrtc-sys RTP track (D137)、mediasoup SFU (D138)、统一 Gateway (D128)、多后端 feature gate (D139-D140, webrtc-sys/webrtc-rs/stub, str0m Phase 2+)、webrtc-kit 设计借鉴 (D144-D151)、Host 单体架构确认 (D155)。已实施完成（Phase 3）。
 
@@ -411,37 +411,32 @@ Phase 2+: 支持 Simulcast/SVC 多层编码 — 单一输入源产出多个质�
 
 > 📄 详见 [modules/04-sdk-layers.md](/docs/modules/04-sdk-layers.md)
 
-Phase 1 MVP 核心为 field/remote 双 SDK 模型 (D65-D69, D82)，分别对应车端（采集+编码+推流）和座舱（拉流+解码+控制）。mediaservo-common 微内核作为公共基础，Phase 2+ 扩展 streaming、conference、surveillance 等领域 SDK。
+四 SDK 主架构 (D222-D232)：**link**（连接）/ **field**（组合会话）/ **client**（舱端消费编排）/ **deck**（媒体数据）。替代早期 field/remote 双 facade 模型（D65-D69/D82 已废止）。
+
+- **link**（连接面，纯 Rust）：frame_bus 帧总线、signal WS 信令客户端、auth 集成（复用 common PSK/JWT）、dc（Phase2, webrtc-rs）
+- **field**（组合 SDK）：push/pull（webrtc-sys, C12）+ re-export link（信令/总线/auth）+ re-export deck（采集 MediaDevices/VideoSource）——一行依赖完整闭环；field→deck **静态直连默认**（D231，FFmpeg 无 openssl 实证）
+- **client**（舱端消费编排）：VideoRenderer 渲染、多路会话编排、Input Forward/遥测、deck playback 集成；依赖 field（D232）
+- **deck**（媒体数据面，双形态）：source 采集（GStreamer）/ codec（FFmpeg 静态）/ record / playback
+
+依赖全单向无环：`field→(webrtc, link, deck)`；`client→field`；`deck→(codec, media, common)`。mediaservo-common/webrtc/media/codec 为底层基础。
 
 ```
-                    ┌─────────────────┐
-                    │  mediaservo-common │  ← 微内核（所有场景共享）
-                    │  PluginManager  │
-                    │  LicenseManager │
-                    │  PipelineEngine │
-                    └────────┬────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        ▼                                         ▼
-┌───────────────────────┐            ┌───────────────────────┐
-│ mediaservo-field        │            │ mediaservo-client       │
-│ (车端 SDK)             │◄─ WebRTC ─►│ (座舱 SDK)             │
-├───────────────────────┤            ├───────────────────────┤
-│ CameraCapture (D64)    │            │ VideoDecode (D46)      │
-│ HardwareEncode (D43)   │            │ VideoRender (D47)      │
-│ WebRTC Push (D11)      │            │ WebRTC Pull (D11)      │
-│ RTCDataChannel (D65)      │            │ RTCDataChannel (D66)      │
-│ MQTT Telemetry (D74)   │            │ Input Forward (D18)    │
-└───────────────────────┘            └───────────────────────┘
-        │                                         │
-        ▼                                         ▼
-┌───────────────┐                      ┌───────────────┐
-│ field-c (C FFI)│                    │ remote-c (.a) │
-│ .a + .so (D83)│                    │ FFmpeg (D70)  │
-└───────────────┘                      └───────────────┘
-
-Phase 2+: mediaservo-streaming, mediaservo-conference, mediaservo-surveillance
+mediaservo-link（连接面, 纯 Rust）          mediaservo-deck（媒体数据面, 双形态）
+  ▲ rlib                                    ├─ rlib: 应用单独使用
+  │                                         ├─ rlib full: field 静态依赖（默认）
+mediaservo-webrtc（抽象层, C12）              └─ cdylib: deck-full.so（dlopen 可选, OTA）
+  ▲ backend-webrtc-sys / backend-webrtc-rs
+  │
+mediaservo-field（组合 SDK = webrtc + link + deck）
+  ├─ 媒体: push/pull（backend-webrtc-sys）
+  ├─ 通信: signal/frame_bus/auth（re-export link）
+  └─ 采集: MediaDevices/VideoSource（re-export deck[source]）
+      │ 静态依赖（构建期合并, 运行时自含）
+      ▼
+mediaservo-client（舱端消费编排）── 依赖 field ──（+ deck playback 集成）
 ```
+
+Phase 2+: 视频会议 / 直播 / 监控子场景在 field 会话面叠加场景 API；绑定体系 c/cxx/py 双后端（见 modules/04-sdk-layers.md §八）。
 
 ### 7.1 客户端 UI Module
 
