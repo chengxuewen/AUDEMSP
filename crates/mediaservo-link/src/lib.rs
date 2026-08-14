@@ -12,9 +12,11 @@ pub mod acl;
 pub mod error;
 pub mod frame;
 pub mod id;
+pub mod registry;
 pub mod token;
 
 pub use acl::{NodeAcl, Role};
+pub use registry::{NodeInfo, Registry, TopicInfo};
 pub use token::{CapabilityToken, Claims, Ed25519SigningKey, Ed25519VerifyingKey};
 pub use error::LinkError;
 pub use frame::{FrameMeta, FrameRef, FrameStream};

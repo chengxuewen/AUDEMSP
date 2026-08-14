@@ -1,6 +1,7 @@
 //! 帧元数据 + 帧引用 + 帧流（latest-slot）。
 
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, Weak};
 
 /// 帧元数据（定长 LE 编码，D243）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -58,7 +59,7 @@ impl FrameMeta {
     }
 }
 
-/// 帧引用（元数据 + payload）。Task 5 可演进为 iceoryx2 SHM 零拷贝视图。
+/// 帧引用（元数据 + payload）。Phase 2 可演进为 iceoryx2 SHM 零拷贝视图。
 pub struct FrameRef {
     meta: FrameMeta,
     payload: Vec<u8>,
@@ -76,38 +77,62 @@ impl FrameRef {
     }
 }
 
+/// 帧流内部状态（后台线程经 [`Weak`] 投递，流被丢弃时自动停线程）。
+pub(crate) struct StreamInner {
+    slot: Mutex<Option<FrameRef>>,
+    notify: tokio::sync::Notify,
+    shutdown: AtomicBool,
+}
+
+impl StreamInner {
+    /// 投递最新帧（替换旧帧）。
+    pub(crate) fn deliver(&self, frame: FrameRef) {
+        *self.slot.lock().expect("frame slot lock") = Some(frame);
+        self.notify.notify_waiters();
+    }
+}
+
 /// 帧流（latest-slot：慢消费者跳到最新帧，审核 H5）。
 ///
-/// 内部：`Arc<Mutex<Option<FrameRef>>>` + `tokio::sync::Notify`。
-/// FrameBus 后台线程每收到一帧调 [`Self::deliver`] 替换槽内帧并通知；
+/// FrameBus 后台线程每收到一帧经 [`StreamInner::deliver`] 替换槽内帧并通知；
 /// 消费者 [`Self::recv`] 等待通知后取最新帧。**禁用无界队列**（会重新引入积压）。
 pub struct FrameStream {
-    slot: Arc<Mutex<Option<FrameRef>>>,
-    notify: Arc<tokio::sync::Notify>,
+    inner: Arc<StreamInner>,
 }
 
 impl FrameStream {
     pub(crate) fn new() -> Self {
         Self {
-            slot: Arc::new(Mutex::new(None)),
-            notify: Arc::new(tokio::sync::Notify::new()),
+            inner: Arc::new(StreamInner {
+                slot: Mutex::new(None),
+                notify: tokio::sync::Notify::new(),
+                shutdown: AtomicBool::new(false),
+            }),
         }
     }
 
-    /// 投递最新帧（替换旧帧），由 FrameBus 后台线程调用。
-    pub(crate) fn deliver(&self, frame: FrameRef) {
-        *self.slot.lock().expect("frame slot lock") = Some(frame);
-        self.notify.notify_waiters();
+    /// 供后台线程获取弱引用（流被丢弃时线程自动退出）。
+    pub(crate) fn weak_inner(&self) -> Weak<StreamInner> {
+        Arc::downgrade(&self.inner)
     }
 
-    /// 取最新帧；无帧时等待。慢消费者自动跳到最新（不积压）。
+    /// 关停流（FrameBus::close 调用）：唤醒等待中的 recv 并返回 None。
+    pub(crate) fn shutdown(&self) {
+        self.inner.shutdown.store(true, Ordering::SeqCst);
+        self.inner.notify.notify_waiters();
+    }
+
+    /// 取最新帧；无帧时等待。慢消费者自动跳到最新（不积压）；关停后返回 None。
     pub async fn recv(&self) -> Option<FrameRef> {
         loop {
-            let notified = self.notify.notified();
+            let notified = self.inner.notify.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
-            if let Some(f) = self.slot.lock().expect("frame slot lock").take() {
+            if let Some(f) = self.inner.slot.lock().expect("frame slot lock").take() {
                 return Some(f);
+            }
+            if self.inner.shutdown.load(Ordering::SeqCst) {
+                return None; // 已关停且无帧
             }
             notified.await;
         }
@@ -128,9 +153,9 @@ mod tests {
     #[tokio::test]
     async fn latest_slot_skips_to_newest() {
         let s = FrameStream::new();
-        s.deliver(frame(1));
-        s.deliver(frame(2));
-        s.deliver(frame(3));
+        s.inner.deliver(frame(1));
+        s.inner.deliver(frame(2));
+        s.inner.deliver(frame(3));
         let f = s.recv().await.expect("frame");
         assert_eq!(f.meta().seq, 3, "慢消费者应跳到最新帧");
     }
@@ -144,7 +169,14 @@ mod tests {
             f.meta().seq
         });
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        s.deliver(frame(42));
+        s.inner.deliver(frame(42));
         assert_eq!(h.await.expect("join"), 42);
+    }
+
+    #[tokio::test]
+    async fn recv_returns_none_after_shutdown() {
+        let s = FrameStream::new();
+        s.shutdown();
+        assert!(s.recv().await.is_none(), "关停后 recv 应返回 None");
     }
 }
