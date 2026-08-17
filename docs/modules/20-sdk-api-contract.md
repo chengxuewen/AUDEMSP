@@ -1,6 +1,6 @@
 # SDK 接口契约（link / field / client / deck）
 
-> **状态**: 设计定稿（未实现）| **日期**: 2026-08-14
+> **状态**: link/deck/field 已实现（client 设计定稿）| **日期**: 2026-08-14（更新 2026-08-17）
 > **关联**: D233（API 形态=单层会话型）、D222-D232（四 SDK 架构）、04-sdk-layers.md、api-interface-design 技能
 > **边界**: 本文是四 SDK 的**公开 Rust 接口契约** + C ABI 绑定形态。内部协商遵循 mediasoup 标准 offer/answer（C18，反 PIT-65）。
 
@@ -31,6 +31,8 @@
 | 兼容 | **只加法**：新 variant 追加 enum 末尾、新字段 `Option<T>`、新方法默认实现；禁改/删既有签名 |
 
 ## 2. 共享类型（mediaservo-common / 约定）
+
+> ✅ `SignalingMessage`/`PeerRole`/`RoomId` 等在 mediaservo-common 已实现；link SignalClient 复用。
 
 ```rust
 // 品牌化 ID（防串参）—— #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -73,18 +75,21 @@ pub enum LinkError {
 }
 
 // ── 信令客户端（WS，复用 common SignalingMessage）────────────
+// ✅ 已实现 (D244, 2026-08-17): SignalClient/SignalSession + mock WS 测试
 pub struct SignalClient;
 impl SignalClient {
-    pub async fn connect(url: &str, auth: AuthCredential) -> Result<SignalSession, LinkError>;
+    // 实现: new(url, psk, room_id, role) + connect(&self)（PSK 认证 + RoomJoin 内建）
+    pub fn new(url: &str, psk: &str, room_id: &str, role: PeerRole) -> SignalClient;
+    pub async fn connect(&self) -> Result<SignalSession, LinkError>;
 }
 
 pub struct SignalSession;                       // Arc 内部
 impl SignalSession {
-    pub fn events(&self) -> UnboundedReceiver<SignalEvent>;
+    pub fn events(&self) -> broadcast::Receiver<SignalEvent>; // 实现为 tokio broadcast
     pub async fn send(&self, msg: SignalingMessage) -> Result<(), LinkError>;
-    pub async fn request(&self, msg: SignalingMessage) -> Result<SignalingMessage, LinkError>; // req/resp
-    pub fn room_id(&self) -> RoomId;
-    pub async fn close(self) -> Result<(), LinkError>;
+    // request() req/resp 尚未实现（Phase 2，信令无请求/响应对）
+    pub fn room_id(&self) -> &str;
+    pub async fn close(&self);                                   // 实现: close() 通道转发
 }
 
 #[non_exhaustive]
@@ -125,6 +130,12 @@ impl Registry {
 ---
 
 ## 4. field — 组合 SDK（会话 facade，唯一公开层）
+
+> 🟡 **MVP 已实现**（2026-08-17，4 tests）：error + re-export 闭环 + 会话类型骨架。
+> 差异：① `PushSession`/`PullSession` 的 `connect` 明确报"Phase 2 未实现"（防静默，
+> 避免调用方误以为已工作）；② `publish_video/audio`、`subscribe`、`control_channel`、
+> `stats` 等媒体方法未实现——需 webrtc-sys 真传输（Linux 构建注意）；③ 配置类型
+> `PushConfig/PullConfig` 尚未落地（connect 无参占位）。
 
 ```rust
 #[derive(Debug, thiserror::Error)]
@@ -247,6 +258,12 @@ impl Playback {
 ---
 
 ## 6. deck — 媒体数据面
+
+> ✅ **已实现**（source/record/playback 三域，2026-08-17，10 tests + ffprobe 实证）。
+> 差异：① 方法为 async（`recv()`/`record()` 等）；② `FrameStream` 为 deck 自有类型
+> （有界 channel latest 丢弃，非 link FrameStream）；③ `AudioSource`/`ScreenSource` 未实现
+> （MVP 仅 CameraSource stub）；④ `Recorder::record` 消费 `impl Frames` 而非具体 FrameStream
+> 类型参数；⑤ `Player::next_frame()` 同步逐帧；⑥ `SeekOptions`/`set_rate` 未实现（Phase 3）。
 
 ```rust
 #[derive(Debug, thiserror::Error)]
