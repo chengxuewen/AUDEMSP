@@ -4200,9 +4200,11 @@ name = "mediaservo-field"
 version = "0.1.0"
 dependencies = [
  "mediaservo-codec",
+ "mediaservo-common",
  "mediaservo-deck",
  "mediaservo-link",
  "mediaservo-webrtc",
+ "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
