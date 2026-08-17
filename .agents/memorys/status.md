@@ -1,6 +1,6 @@
 # MediaServo Status
 
-**生成**: 2026-08-17| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP || 373 commits | 22 skills | mediasoup 0.24.1 | PIT-96 | 分支: main (deck 三域 + field 组合门面) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-17| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP || 373 commits | 22 skills | mediasoup 0.24.1 | PIT-96 | 分支: main (T4/T5 基线验证✅) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | mediaservo-common | 72 | — | EncoderStatus 信令 + codec 字段 |
 | mediaservo-media | 107 | — | |
@@ -261,3 +261,17 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **顺带**: metis models 列表 premium→fast 对齐; apiKey 明文 `{env:NEW_API_KEY}` 脱敏
 - **生效前提**: `export NEW_API_KEY=...` + 重启 opencode（配置启动时加载）
 - **验证待办**: 重启后 oracle 一轮 → `grep '"type":"thinking"'` session 存储应为结构化 part；若无 → 网关别名侧拼接 content，下一层修网关
+
+## 重命名 T4/T5 基线验证完成 (2026-08-17)
+
+- **原生 check**: `pixi run check` 通过（3m58s, 33 警告无错误）— webrtc-sys 并行竞态未复发（PIT-95 磁盘 clean 后确认解除）
+- **server Docker**: 修 Dockerfile fetch 层缺 link/deck/field manifest（新增 8/9/10th member 未同步, dev/builder 两 stage）→ check-server 通过（4m16s）
+- **运行时**: e2e_sfu 4/4 + codec_prefs 6/6 全绿（host 原生 + Docker server, PSK=mediaservo-dev）— 重命名后首次运行时实证
+- commit 4d8aff8
+
+## 重命名 T4/T5 基线验证完成 (2026-08-17)
+
+- **原生 check**: `pixi run check` 通过（3m58s, 33 警告无错误）— webrtc-sys 并行竞态未复发（PIT-95 磁盘 clean 后确认解除）
+- **server Docker**: 修 Dockerfile fetch 层缺 link/deck/field manifest（新增 8/9/10th member 未同步, dev/builder 两 stage）→ check-server 通过（4m16s）
+- **运行时**: e2e_sfu 4/4 + codec_prefs 6/6 全绿（host 原生 + Docker server, PSK=mediaservo-dev）— 重命名后首次运行时实证
+- commit 4d8aff8
