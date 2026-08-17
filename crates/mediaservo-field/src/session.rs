@@ -112,7 +112,11 @@ impl PushSession {
             ));
         }
 
-        // 1. CreateWebRtcTransport (Send)
+        // 1. 先订阅信令事件（发送 CreateWebRtcTransport 前 — 避免 server 响应快于
+        // subscribe 导致 WebRtcTransportCreated 丢失；broadcast 无历史重放）
+        let mut transport_events = self.signal.events();
+
+        // 2. CreateWebRtcTransport (Send)
         let create_transport = SignalingMessage::CreateWebRtcTransport {
             room_id: cfg.room.clone(),
             peer_id: peer_id(&cfg.role),
@@ -120,11 +124,11 @@ impl PushSession {
         };
         self.signal.send(create_transport).await.map_err(FieldError::Link)?;
 
-        // 2. 等待 WebRtcTransportCreated（其余消息忽略/透传）
+        // 3. 等待 WebRtcTransportCreated（其余消息忽略/透传）
         let (transport_id, ice_parameters, dtls_parameters, ice_candidates) =
-            self.await_transport_created().await?;
+            self.await_transport_created(&mut transport_events).await?;
 
-        // 3. 建立 RTCPeerConnection（mediaservo-webrtc 抽象，C12）
+        // 4. 建立 RTCPeerConnection（mediaservo-webrtc 抽象，C12）
         let rtc_config = RTCConfiguration {
             ice_servers: Vec::<RTCIceServer>::new(), // SFU: mediasoup ICE-Lite，无需 STUN
             ice_transport_type: RTCIceTransportPolicy::All,
@@ -135,7 +139,7 @@ impl PushSession {
             .await
             .map_err(|e| FieldError::WebRtc(format!("create peer connection: {e}")))?;
 
-        // 4. 标准 answerer 协商：remote SDP → add_track → create_answer (P3 v2, C18)
+        // 5. 标准 answerer 协商：remote SDP → add_track → create_answer (P3 v2, C18)
         let sfu::CodecSpec {
             payload_type,
             name,
@@ -202,7 +206,7 @@ impl PushSession {
             None => tracing::warn!("sender not found for bitrate config: {track_id}"),
         }
 
-        // 5. ConnectWebRtcTransport（DTLS fingerprint 经 API，非解析 SDP）
+        // 6. ConnectWebRtcTransport（DTLS fingerprint 经 API，非解析 SDP）
         let fp_hex = pc
             .local_dtls_fingerprint()
             .ok_or_else(|| FieldError::WebRtc("no DTLS fingerprint".into()))?;
@@ -220,7 +224,7 @@ impl PushSession {
         };
         self.signal.send(connect).await.map_err(FieldError::Link)?;
 
-        // 6. Produce（从协商结果推导 rtp_parameters，P3 v2 官方路径）
+        // 7. Produce（从协商结果推导 rtp_parameters，P3 v2 官方路径）
         let rtp_params = pc
             .get_sending_rtp_parameters("video")
             .map_err(|e| FieldError::WebRtc(format!("get_sending_rtp_parameters: {e}")))?;
@@ -243,11 +247,12 @@ impl PushSession {
     }
 
     /// 消费信令直到 `WebRtcTransportCreated`；错误/断开则返回 Err。
+    /// `events` 必须在发送请求前已订阅（broadcast 无历史重放，先订阅防丢）。
     async fn await_transport_created(
         &self,
+        events: &mut tokio::sync::broadcast::Receiver<SignalEvent>,
     ) -> Result<(String, IceParameters, DtlsParameters, Option<Vec<IceCandidate>>), FieldError>
     {
-        let mut events = self.signal.events();
         loop {
             match events.recv().await {
                 Ok(SignalEvent::Message(SignalingMessage::WebRtcTransportCreated {
