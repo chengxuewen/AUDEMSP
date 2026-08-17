@@ -13,6 +13,11 @@ const projectRoot = join(__dirname, '..')
 const isWin = platform === 'win32'
 
 // 1. Verify pixi is available
+// opencode 启动环境 PATH 可能不含 ~/.pixi/bin（pixi 默认安装位置）→ 显式补充
+const homeBin = join(env.HOME || env.USERPROFILE || '', '.pixi', 'bin')
+if (!process.env.PATH?.includes(homeBin)) {
+  process.env.PATH = `${homeBin}:${process.env.PATH || ''}`
+}
 try {
   execSync('pixi --version', { cwd: projectRoot, stdio: 'pipe' })
 } catch {

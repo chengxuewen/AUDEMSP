@@ -2,7 +2,7 @@
   "$schema": "https://opencode.ai/config.json",
   "model": "new-api/deepseek-v4-pro",
   "compaction": { "auto": true, "tail_turns": 15 },
-  "enabled_providers": ["new-api", "deepseek"],
+  "enabled_providers": ["new-api"],
   "plugin": [
     "superpowers@git+https://github.com/obra/superpowers.git",
     "@dietrichgebert/ponytail",
@@ -30,6 +30,23 @@
     ".agents/rules/rust/hooks.md"
   ],
   "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true,
+      "timeout": 15000
+    },
+    "grep_app": {
+      "type": "remote",
+      "url": "https://mcp.grep.app",
+      "enabled": true,
+      "timeout": 15000
+    },
+    "websearch": {
+      "type": "remote",
+      "url": "https://websearch.opencode.ai",
+      "enabled": false
+    },
     "local-codegraph": {
       "type": "local",
       "enabled": true,
@@ -45,7 +62,7 @@
       "enabled": true,
       "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "{env:GITHUB_TOKEN}"
       }
     },
     "local-postgres": {
