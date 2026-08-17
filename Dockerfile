@@ -50,6 +50,9 @@ COPY crates/mediaservo-codec/Cargo.toml crates/mediaservo-codec/
 COPY crates/mediaservo-server/Cargo.toml crates/mediaservo-server/
 COPY crates/mediaservo-host/Cargo.toml crates/mediaservo-host/
 COPY crates/mediaservo-client/Cargo.toml crates/mediaservo-client/
+COPY crates/mediaservo-link/Cargo.toml crates/mediaservo-link/
+COPY crates/mediaservo-deck/Cargo.toml crates/mediaservo-deck/
+COPY crates/mediaservo-field/Cargo.toml crates/mediaservo-field/
 # PIT-76: vendored [patch] 依赖需要 manifest（fetch 阶段）
 COPY vendor/webrtc-sys/Cargo.toml vendor/webrtc-sys/
 # dummy src 全建 — cargo fetch 要求依赖 crate 有 targets（缺 src 报 no targets specified）
@@ -57,9 +60,11 @@ COPY vendor/webrtc-sys/Cargo.toml vendor/webrtc-sys/
 RUN mkdir -p crates/mediaservo-common/src && touch crates/mediaservo-common/src/lib.rs && \
     mkdir -p crates/mediaservo-server/src && echo 'fn main() {}' > crates/mediaservo-server/src/main.rs && \
     mkdir -p crates/mediaservo-media/src crates/mediaservo-webrtc/src crates/mediaservo-codec/src \
-             crates/mediaservo-host/src crates/mediaservo-client/src && \
+             crates/mediaservo-host/src crates/mediaservo-client/src \
+             crates/mediaservo-link/src crates/mediaservo-deck/src crates/mediaservo-field/src && \
     touch crates/mediaservo-media/src/lib.rs crates/mediaservo-webrtc/src/lib.rs \
-          crates/mediaservo-codec/src/lib.rs crates/mediaservo-host/src/lib.rs crates/mediaservo-client/src/lib.rs && \
+          crates/mediaservo-codec/src/lib.rs crates/mediaservo-host/src/lib.rs crates/mediaservo-client/src/lib.rs \
+          crates/mediaservo-link/src/lib.rs crates/mediaservo-deck/src/lib.rs crates/mediaservo-field/src/lib.rs && \
     mkdir -p crates/mediaservo-media/examples crates/mediaservo-webrtc/examples && touch crates/mediaservo-media/examples/square-gen-egui.rs \
           crates/mediaservo-media/examples/viewer.rs crates/mediaservo-media/examples/square-gen.rs \
           crates/mediaservo-webrtc/examples/webrtc_loopback_egui.rs
@@ -81,6 +86,9 @@ COPY crates/mediaservo-codec/Cargo.toml crates/mediaservo-codec/
 COPY crates/mediaservo-server/Cargo.toml crates/mediaservo-server/
 COPY crates/mediaservo-host/Cargo.toml crates/mediaservo-host/
 COPY crates/mediaservo-client/Cargo.toml crates/mediaservo-client/
+COPY crates/mediaservo-link/Cargo.toml crates/mediaservo-link/
+COPY crates/mediaservo-deck/Cargo.toml crates/mediaservo-deck/
+COPY crates/mediaservo-field/Cargo.toml crates/mediaservo-field/
 # PIT-76: vendored [patch] 依赖需要 manifest（fetch 阶段）
 COPY vendor/webrtc-sys/Cargo.toml vendor/webrtc-sys/
 
@@ -88,9 +96,11 @@ COPY vendor/webrtc-sys/Cargo.toml vendor/webrtc-sys/
 RUN mkdir -p crates/mediaservo-common/src && touch crates/mediaservo-common/src/lib.rs && \
     mkdir -p crates/mediaservo-server/src && echo 'fn main() {}' > crates/mediaservo-server/src/main.rs && \
     mkdir -p crates/mediaservo-media/src crates/mediaservo-webrtc/src crates/mediaservo-codec/src \
-             crates/mediaservo-host/src crates/mediaservo-client/src && \
+             crates/mediaservo-host/src crates/mediaservo-client/src \
+             crates/mediaservo-link/src crates/mediaservo-deck/src crates/mediaservo-field/src && \
     touch crates/mediaservo-media/src/lib.rs crates/mediaservo-webrtc/src/lib.rs \
-          crates/mediaservo-codec/src/lib.rs crates/mediaservo-host/src/lib.rs crates/mediaservo-client/src/lib.rs && \
+          crates/mediaservo-codec/src/lib.rs crates/mediaservo-host/src/lib.rs crates/mediaservo-client/src/lib.rs \
+          crates/mediaservo-link/src/lib.rs crates/mediaservo-deck/src/lib.rs crates/mediaservo-field/src/lib.rs && \
     mkdir -p crates/mediaservo-media/examples crates/mediaservo-webrtc/examples && touch crates/mediaservo-media/examples/square-gen-egui.rs \
           crates/mediaservo-media/examples/viewer.rs crates/mediaservo-media/examples/square-gen.rs \
           crates/mediaservo-webrtc/examples/webrtc_loopback_egui.rs
