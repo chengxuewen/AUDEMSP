@@ -69,22 +69,59 @@ def _cmd_build(target: str) -> None:
         _cmd_build_client()
 
 
-def _compose_env() -> dict[str, str]:
-    """docker compose 调用环境 — 确保 MEDIASERVO_SFU_ANNOUNCED_IP 有值。
-    PIT-79: CLI 启动 server 时若未注入，mediasoup 公告 0.0.0.0 → 浏览器拉流失败。
-    显式 env 优先，否则自动探测宿主机第一非 loopback IP。"""
-    env = {**os.environ}
-    if not env.get("MEDIASERVO_SFU_ANNOUNCED_IP"):
+# 排除的接口类型/名称：docker 网桥、VPN 隧道、虚拟接口（这些 IP 客户端不可达）
+_ANNOUNCED_IP_BLOCKED_IFACE = ("lo", "docker", "br-", "veth", "tun", "tap", "virbr", "vpn")
+
+
+def _detect_announced_ips() -> list[str]:
+    """探测宿主机全部真实网卡 IP（供容器内 mediasoup announced_address 使用）。
+
+    宿主 IP 会变且可能有多个（多网卡/DHCP）——返回全部真实 IP（逗号分隔），
+    由 server 侧为每个 IP 创建 ListenInfo（WebRtcServer 多 announced）。
+    按接口名过滤 docker 网桥(br-*)/VPN(tun*)/虚拟接口，仅保留物理/真实网卡。"""
+    ips: list[str] = []
+    try:
+        out = subprocess.run(
+            ["ip", "-o", "-4", "addr", "show"], capture_output=True, text=True, timeout=5, check=False
+        )
+        for line in out.stdout.splitlines():
+            # 格式: "2: ens32    inet 192.168.2.127/24 brd ... scope global ..."
+            parts = line.split()
+            if len(parts) < 4 or parts[2] != "inet":
+                continue
+            iface = parts[1].rstrip(":")
+            if any(iface.startswith(p) for p in _ANNOUNCED_IP_BLOCKED_IFACE):
+                continue
+            ip = parts[3].split("/")[0]
+            if ip.startswith("127."):
+                continue
+            if ip not in ips:
+                ips.append(ip)
+    except OSError:
+        # ip 命令不可用 → 回退 hostname -I（粗过滤）
         try:
             out = subprocess.run(
                 ["hostname", "-I"], capture_output=True, text=True, timeout=5, check=False
             )
-            ip = out.stdout.split()[0] if out.stdout.strip() else ""
-            if ip:
-                env["MEDIASERVO_SFU_ANNOUNCED_IP"] = ip
-                print(f"MEDIASERVO_SFU_ANNOUNCED_IP 自动探测: {ip}")
+            for ip in out.stdout.split():
+                ip = ip.strip()
+                if ip and not ip.startswith("127.") and ip not in ips:
+                    ips.append(ip)
         except OSError:
-            pass  # hostname 不可用时不注入，沿用 compose 默认
+            pass
+    return ips
+
+
+def _compose_env() -> dict[str, str]:
+    """docker compose 调用环境 — 确保 MEDIASERVO_SFU_ANNOUNCED_IP 有值。
+    PIT-79: CLI 启动 server 时若未注入，mediasoup 公告 0.0.0.0 → 浏览器拉流失败。
+    显式 env 优先，否则自动探测宿主机全部真实 IP（逗号分隔，多网卡支持）。"""
+    env = {**os.environ}
+    if not env.get("MEDIASERVO_SFU_ANNOUNCED_IP"):
+        ips = _detect_announced_ips()
+        if ips:
+            env["MEDIASERVO_SFU_ANNOUNCED_IP"] = ",".join(ips)
+            print(f"MEDIASERVO_SFU_ANNOUNCED_IP 自动探测: {env['MEDIASERVO_SFU_ANNOUNCED_IP']}")
     return env
 
 

@@ -34,10 +34,15 @@ mod imp {
         "0.0.0.0".to_string()
     }
 
-    /// PIT-58: announced_address 解析 — 优先环境变量 MEDIASERVO_SFU_ANNOUNCED_IP (宿主可达 IP),
-    /// fallback 容器内探测 (172.18.0.2 仅本机可用)。
-    fn announced_ip_from_env() -> String {
-        std::env::var("MEDIASERVO_SFU_ANNOUNCED_IP").unwrap_or_else(|_| detect_local_ip())
+    /// PIT-58: announced_address 解析 — 环境变量 MEDIASERVO_SFU_ANNOUNCED_IP，
+    /// 支持逗号分隔多 IP（宿主多网卡）。fallback: 容器内探测（172.18.0.2 仅本机可用，
+    /// 部署方应经 CLI/外部注入真实宿主 IP）。
+    fn announced_ips_from_env() -> Vec<String> {
+        let raw = std::env::var("MEDIASERVO_SFU_ANNOUNCED_IP").unwrap_or_else(|_| detect_local_ip());
+        raw.split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
     }
 
     /// Create RouterOptions with sensible default codecs (Opus + VP8 + H264).
@@ -192,24 +197,37 @@ mod imp {
             // 否则 candidate=0.0.0.0 对端无法 ICE；容器内探测本机 IP。
             // PIT-58: 容器内探测 = 172.18.0.2 (内网地址, 其他主机不可达 → Signal Lost);
             // 必须用宿主可达 IP — 环境变量 MEDIASERVO_SFU_ANNOUNCED_IP 配置 (宿主机网卡 IP)
-            let announced_ip = announced_ip_from_env();
+            // 多 announced IP（宿主多网卡）：每个 IP 一个 ListenInfo（listen 0.0.0.0:20000）
+            let announced_ips = announced_ips_from_env();
+            let mut listen_infos = WebRtcServerListenInfos::new(ListenInfo {
+                protocol: Protocol::Udp,
+                ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                announced_address: announced_ips.first().cloned(),
+                expose_internal_ip: false,
+                port: Some(20000),  // Fixed ICE port
+                port_range: None,
+                flags: None,
+                send_buffer_size: None,
+                recv_buffer_size: None,
+            });
+            for ip in &announced_ips[1..] {
+                listen_infos = listen_infos.insert(ListenInfo {
+                    protocol: Protocol::Udp,
+                    ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    announced_address: Some(ip.clone()),
+                    expose_internal_ip: false,
+                    port: Some(20000),
+                    port_range: None,
+                    flags: None,
+                    send_buffer_size: None,
+                    recv_buffer_size: None,
+                });
+            }
+            tracing::info!("WebRtcServer created on port 20000 (announced: {announced_ips:?})");
             let webrtc_server = worker
-                .create_webrtc_server(WebRtcServerOptions::new(WebRtcServerListenInfos::new(
-                    ListenInfo {
-                        protocol: Protocol::Udp,
-                        ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                        announced_address: Some(announced_ip),
-                        expose_internal_ip: false,
-                        port: Some(20000),  // Fixed ICE port
-                        port_range: None,
-                        flags: None,
-                        send_buffer_size: None,
-                        recv_buffer_size: None,
-                    },
-                )))
+                .create_webrtc_server(WebRtcServerOptions::new(listen_infos))
                 .await
                 .map_err(|e| format!("Failed to create WebRtcServer: {e}"))?;
-            tracing::info!("WebRtcServer created on port 20000");
 
             Ok(Self {
                 worker_manager,
@@ -360,6 +378,25 @@ mod imp {
                 producer_id, kind, peer_id, room_id
             );
 
+            // PIT 观测: Producer RTP trace（每包处理/丢弃原因）— 验证 push 帧是否到达 server
+            {
+                let pid = producer_id.clone();
+                producer.on_trace(move |trace: &mediasoup::producer::ProducerTraceEventData| {
+                    tracing::info!("PROD-TRACE {}: {:?}", pid, trace);
+                });
+                let _ = producer
+                    .enable_trace_event(vec![mediasoup::producer::ProducerTraceEventType::Rtp])
+                    .await;
+            }
+            // PIT 观测: Producer dump（rtp_streams score — 收包质量）
+            {
+                let pid = producer_id.clone();
+                if let Ok(dump) = producer.dump().await {
+                    let scores: Vec<u8> = dump.rtp_streams.iter().map(|s| s.score).collect();
+                    tracing::info!("PROD-DUMP {}: paused={} scores={:?}", pid, dump.paused, scores);
+                }
+            }
+
             peer.producers.push(producer);
 
             Ok(ProduceResult {
@@ -440,6 +477,24 @@ mod imp {
                     let scores: Vec<u8> = dump.rtp_streams.iter().map(|s| s.score).collect();
                     tracing::info!("CONS-DUMP {}: paused={} scores={:?}", cid, dump.paused, scores);
                 }
+            }
+
+            // PIT 观测: Consumer 周期 dump（每 2s 打 score — 验证 producer→consumer 转发）
+            {
+                let cid = consumer_id.clone();
+                let consumer_for_dump = consumer.clone();
+                tokio::spawn(async move {
+                    for _ in 0..15 {
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        if let Ok(dump) = consumer_for_dump.dump().await {
+                            let scores: Vec<u8> = dump.rtp_streams.iter().map(|s| s.score).collect();
+                            tracing::info!(
+                                "CONS-DUMP-PERIODIC {}: paused={} scores={:?}",
+                                cid, dump.paused, scores
+                            );
+                        }
+                    }
+                });
             }
 
             // PIT-76: consume 后立即请求关键帧 — 绕过 libwebrtc 99s GOP（x-google-
@@ -543,16 +598,29 @@ mod tests {
     /// PIT-58: announced_address 必须优先环境变量 (宿主可达 IP) —
     /// 容器内探测 (172.18.0.2) 仅本机可用, 其他主机 ICE 不可达 → Signal Lost。
     #[test]
-    fn announced_ip_prefers_env_and_falls_back() {
+    fn announced_ips_prefers_env_and_falls_back() {
         // env 优先 (宿主 IP 场景)
         // SAFETY: 测试内串行设置/恢复, 无并发读
         unsafe { std::env::set_var("MEDIASERVO_SFU_ANNOUNCED_IP", "192.168.2.127"); }
-        assert_eq!(announced_ip_from_env(), "192.168.2.127");
+        assert_eq!(announced_ips_from_env(), vec!["192.168.2.127".to_string()]);
+
+        // 多 IP 逗号分隔
+        // SAFETY: 同上
+        unsafe { std::env::set_var("MEDIASERVO_SFU_ANNOUNCED_IP", "192.168.2.127,10.0.0.5"); }
+        assert_eq!(
+            announced_ips_from_env(),
+            vec!["192.168.2.127".to_string(), "10.0.0.5".to_string()]
+        );
+
+        // 逗号 + 空格容错
+        // SAFETY: 同上
+        unsafe { std::env::set_var("MEDIASERVO_SFU_ANNOUNCED_IP", " 192.168.2.127 , 10.0.0.5 "); }
+        assert_eq!(announced_ips_from_env().len(), 2);
 
         // fallback 探测 (未配置场景)
         // SAFETY: 同上
         unsafe { std::env::remove_var("MEDIASERVO_SFU_ANNOUNCED_IP"); }
-        let fallback = announced_ip_from_env();
+        let fallback = announced_ips_from_env();
         assert!(!fallback.is_empty(), "fallback 探测应返回非空 IP");
 
         // 恢复环境, 避免污染其他测试
