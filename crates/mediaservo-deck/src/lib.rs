@@ -6,6 +6,7 @@
 //! - [`playback`]: 回放（Player，demux + decode）— Phase 3
 
 pub mod error;
+pub mod playback;
 pub mod record;
 pub mod source;
 
