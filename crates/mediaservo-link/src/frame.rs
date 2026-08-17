@@ -188,7 +188,7 @@ mod tests {
     #[tokio::test]
     async fn recv_returns_none_after_shutdown() {
         let s = FrameStream::new();
-        s.shutdown();
+        s.inner().shutdown();
         assert!(s.recv().await.is_none(), "关停后 recv 应返回 None");
     }
 }
