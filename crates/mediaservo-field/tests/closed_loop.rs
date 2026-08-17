@@ -27,16 +27,21 @@ fn link_error_flows_into_field_error() {
 }
 
 #[tokio::test]
-async fn session_stub_reports_phase2() {
-    // MVP 阶段 PushSession/PullSession::connect 明确失败（避免调用方静默）
-    match mediaservo_field::PushSession::connect().await {
-        Err(FieldError::InvalidState(msg)) if msg.contains("Phase 2") => {}
-        other => panic!("expected InvalidState(Phase 2), got {other:?}"),
-    }
-    match mediaservo_field::PullSession::connect().await {
-        Err(FieldError::InvalidState(msg)) if msg.contains("Phase 2") => {}
-        other => panic!("expected InvalidState(Phase 2), got {other:?}"),
-    }
+async fn session_connect_requires_cfg() {
+    // connect 现在需要 PushConfig/PullConfig（信令连接必须知道 server/房间）
+    use mediaservo_field::{PullConfig, PushConfig};
+
+    let push_cfg = PushConfig::new("ws://127.0.0.1:9800/ws", "psk", "room");
+    assert_eq!(push_cfg.width, 1280);
+    assert_eq!(push_cfg.framerate, 30);
+
+    let pull_cfg = PullConfig::default();
+    assert!(pull_cfg.auto_subscribe);
+
+    // 连接失败路径: 无 server 时 LinkError（非 InvalidState Phase 2）
+    let err = mediaservo_field::PushSession::connect(push_cfg).await;
+    assert!(matches!(err, Err(FieldError::Link(_))), "got {err:?}");
+    let _ = pull_cfg;
 }
 
 #[test]

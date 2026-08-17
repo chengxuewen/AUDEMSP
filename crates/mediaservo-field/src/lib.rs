@@ -7,10 +7,14 @@
 //!
 //! 依赖方向（C21 单向无环）：`field → webrtc + link + deck`。
 
+pub mod config;
 pub mod error;
 pub mod session;
+pub mod sfu;
 
+pub use config::{PublishOptions, PullConfig, PushConfig};
 pub use error::FieldError;
+
 pub use session::{PullSession, PushSession, SessionEvent, SessionEvents};
 
 // ── 组合 re-export（契约 §4: 一行依赖闭环）────────────────
