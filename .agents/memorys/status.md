@@ -1,6 +1,6 @@
 # MediaServo Status
 
-**生成**: 2026-08-17| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP || 373 commits | 22 skills | mediasoup 0.24.1 | PIT-96 | 分支: main (T4/T5 基线验证✅) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-17| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP || 373 commits | 22 skills | mediasoup 0.24.1 | PIT-96 | 分支: main (field Push/Pull 协商全通 + SFU 多 IP) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | mediaservo-common | 72 | — | EncoderStatus 信令 + codec 字段 |
 | mediaservo-media | 107 | — | |
@@ -275,3 +275,51 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **server Docker**: 修 Dockerfile fetch 层缺 link/deck/field manifest（新增 8/9/10th member 未同步, dev/builder 两 stage）→ check-server 通过（4m16s）
 - **运行时**: e2e_sfu 4/4 + codec_prefs 6/6 全绿（host 原生 + Docker server, PSK=mediaservo-dev）— 重命名后首次运行时实证
 - commit 4d8aff8
+
+## field PushSession 推流链路完成 (2026-08-17, 3 slices)
+
+- **Slice 1** (0078f9c): PushConfig/PullConfig/PublishOptions 落地 + connect(cfg) 信令建连 + 事件桥 + sfu.rs 协商纯函数
+- **Slice 2** (777b588): publish_video 全链路（transport→answer→Connect→Produce）+ push_e2e 3/3（外部 server, C21）
+  - 修复 broadcast 竞态: 先订阅 signal.events() 再发 CreateWebRtcTransport（否则 server 响应快于 subscribe 丢消息）
+- **Slice 3** (5487a1a): start_video_frames/stop_video_frames — VideoFrameGenerator→WebRtcTrackSink→TrackSender
+  - PIT-81 遵守: frame_generator owned 存会话字段; e2e D4 sender stats 实证 bytes_sent>0 + frames_encoded>0
+- field 测试: sfu 3 + 单测 4 + push_e2e 4 = 11 全绿
+- 下一步: PullSession 消费链路（subscribe→consume→FrameStream）+ field C ABI 绑定
+
+## MCP 服务器修复 (2026-08-17, 3 commits)
+
+- **context7/grep_app 405 根因**: opencode 1.18 对 remote MCP 走 SSE(GET)，context7 v4/grep.app 只接受 streamable HTTP(POST)
+  → 本地桥 `init-mcp-streamable-bridge.mjs`: stdio↔streamable HTTP 转发（SDK 从 oh-my-opencode 包内解析, 零新增依赖）
+  · 实测 context7 2 tools + grep_app 1 tool 全通
+- **local-github 超时**: `${GITHUB_TOKEN}` 是错误插值语法（opencode 用 `{env:}`）→ 空 token 认证挂起 → 改 `{env:GITHUB_TOKEN}`
+- **local-openspace**: 脚本 execSync('pixi') 找不到 → PATH 显式补 ~/.pixi/bin；剩余 pip install github 网络受限（环境性）
+- **websearch**: 无 TAVILY_API_KEY → enabled: false
+- commits 3d089a2/01c28cd/f9461db
+
+## field PushSession 推流链路完成 (2026-08-17, 3 slices)
+
+- **Slice 1** (0078f9c): PushConfig/PullConfig/PublishOptions 落地 + connect(cfg) 信令建连 + 事件桥 + sfu.rs 协商纯函数
+- **Slice 2** (777b588): publish_video 全链路（transport→answer→Connect→Produce）+ push_e2e 3/3（外部 server, C21）
+  - 修复 broadcast 竞态: 先订阅 signal.events() 再发 CreateWebRtcTransport
+- **Slice 3** (5487a1a): start_video_frames/stop_video_frames — VideoFrameGenerator→WebRtcTrackSink→TrackSender
+  - PIT-81 遵守: frame_generator owned 存会话字段; e2e D4 sender stats 实证 bytes_sent>0 + frames_encoded>0
+- field 测试: sfu 3 + 单测 4 + push_e2e 4 = 11 全绿
+
+## PullSession 消费链路 (2026-08-17, 2e356af — 协商完成, 收帧待续)
+
+- webrtc-sys: 实现 add_transceiver(kind) 版（add_transceiver_for_media, recvonly 纯接收）— 之前 NotSupported
+- PullSession::subscribe: Recv transport → 标准 answerer → Connect → Consume → Consumed
+  · on_track 必须在 set_remote_description 前注册（remote sendonly m-line 触发即丢）
+  · transport_connected 确认消息跳过（server 惯例, 非真错误）
+- sfu.rs: build_remote_sdp 方向参数化（RemoteDirection: ServerSendonly/ServerRecvonly）
+- **遗留**: 协商全通 (PC=Connected ICE=Completed on_track 触发) 但帧未达 FrameSink —
+  媒体路径待深挖（push 侧帧达 server 已实证 ReceiveRtpPacket key frame; consumer 转发待验证）
+- 诊断工具: push_observe/pull_observe examples + server producer on_trace/dump 观测
+
+## SFU 多 announced IP (2026-08-17, db88829)
+
+- server: MEDIASERVO_SFU_ANNOUNCED_IP 支持逗号分隔多 IP（宿主多网卡）→ 每个 IP 一个 WebRtcServer ListenInfo
+- CLI: ip -o addr 按接口名过滤 docker 网桥(br-*)/VPN(tun*)/虚拟接口，仅真实网卡
+  · 实测 3 网卡只报 ens32 (192.168.2.127)，排除 docker0/br-*/tun0
+- compose: 注释更新（CLI 自动注入; 直接 compose 需手动设 env）
+- 不写死要求: 宿主 IP 变化/多 IP 全动态
