@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/mediaservo-host", "crates/mediaservo-client", "crates/mediaservo-server", "crates/mediaservo-common", "crates/mediaservo-webrtc", "crates/mediaservo-media", "crates/mediaservo-codec", "crates/mediaservo-link"]
+members = ["crates/mediaservo-host", "crates/mediaservo-client", "crates/mediaservo-server", "crates/mediaservo-common", "crates/mediaservo-webrtc", "crates/mediaservo-media", "crates/mediaservo-codec", "crates/mediaservo-link", "crates/mediaservo-deck"]
 resolver = "3"
 
 [workspace.package]

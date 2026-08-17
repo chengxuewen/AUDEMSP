@@ -390,7 +390,8 @@ impl VideoTransform for NativeTransform {
                     | PixelFormat::I422
                     | PixelFormat::I444
                     | PixelFormat::NV12
-                    | PixelFormat::I010 => {
+                    | PixelFormat::I010
+                    | PixelFormat::P010 => {
                         return Err(MediaError::UnsupportedFormat(fmt));
                     }
                 }
