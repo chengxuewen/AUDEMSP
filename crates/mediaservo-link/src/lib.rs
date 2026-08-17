@@ -14,11 +14,13 @@ pub mod error;
 pub mod frame;
 pub mod id;
 pub mod registry;
+pub mod signal;
 pub mod token;
 
 pub use acl::{NodeAcl, Role};
 pub use bus::framebus::FrameBus;
 pub use registry::{NodeInfo, Registry, TopicInfo};
+pub use signal::{SignalClient, SignalEvent, SignalSession};
 pub use token::{CapabilityToken, Claims, Ed25519SigningKey, Ed25519VerifyingKey};
 pub use error::LinkError;
 pub use frame::{FrameMeta, FrameRef, FrameStream};

@@ -28,6 +28,10 @@ pub enum LinkError {
     #[error("bus error: {0}")]
     Bus(String),
 
+    /// 信令错误（WS 连接/认证/收发）。
+    #[error("signal error: {0}")]
+    Signal(String),
+
     /// 已关闭。
     #[error("closed")]
     Closed,
