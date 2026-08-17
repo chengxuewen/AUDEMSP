@@ -120,7 +120,8 @@
         "fallback_models": [
           "new-api/fast-1",
           "new-api/fast-2"
-        ]
+        ],
+        "reasoningEffort": "low"
       },
       "explore": {
         "temperature": 0.1,
@@ -134,21 +135,23 @@
         "fallback_models": [
           "new-api/fast-1",
           "new-api/fast-2"
-        ]
+        ],
+        "reasoningEffort": "low"
       },
       "metis": {
         "temperature": 0.1,
         "models": [
-          "new-api/premium",
-          "new-api/premium",
-          "new-api/premium-1",
-          "new-api/premium-2"
+          "new-api/fast",
+          "new-api/fast",
+          "new-api/fast-1",
+          "new-api/fast-2"
         ],
         "model": "new-api/fast",
         "fallback_models": [
           "new-api/fast-1",
           "new-api/fast-2"
-        ]
+        ],
+        "reasoningEffort": "low"
       },
       "momus": {
         "temperature": 0.3,
@@ -176,7 +179,8 @@
         "fallback_models": [
           "new-api/fast-1",
           "new-api/fast-2"
-        ]
+        ],
+        "reasoningEffort": "low"
       },
       "multimodal-looker": {
         "temperature": 0.1,
@@ -265,7 +269,8 @@
         "fallback_models": [
           "new-api/fast-1",
           "new-api/fast-2"
-        ]
+        ],
+        "reasoningEffort": "low"
       },
       "quick": {
         "temperature": 0,
@@ -279,7 +284,8 @@
         "fallback_models": [
           "new-api/fast-1",
           "new-api/fast-2"
-        ]
+        ],
+        "reasoningEffort": "low"
       },
       "unspecified-low": {
         "temperature": 0.2,
@@ -292,7 +298,8 @@
         "fallback_models": [
           "new-api/fast-1",
           "new-api/fast-2"
-        ]
+        ],
+        "reasoningEffort": "low"
       },
       "writing": {
         "temperature": 0.3,
@@ -305,7 +312,8 @@
         "fallback_models": [
           "new-api/fast-1",
           "new-api/fast-2"
-        ]
+        ],
+        "reasoningEffort": "low"
       }
     },
     "background_task": {

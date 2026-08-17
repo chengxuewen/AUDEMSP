@@ -560,3 +560,11 @@ ts_mono_ns/1000），若 time_base=1/fps 会把 µs 当 tick → duration=117s �
 
 **影响**: deck 后续 record/playback 同构（demux/解码也走 ffmpeg-the-third）；codec crate 的 encoder/decoder
 facade 仍是纯编解码（不吞 mux，D229）；后续如果 playback 落地复用同版本单 FFmpeg。
+
+## D246: reasoning_content 处理 — supportsReasoning 标注 + 分层推理控制 (2026-08-17)
+
+**决策**: ① 全局 OpenCode provider 配置中 5 个推理模型（premium-max/-1/-2, deepseek-v4-pro, deepseek-v4-flash）`supportsReasoning: false→true`——适配器据此后将 `reasoning_content` 解析为结构化 thinking part，而非摊进 content 文本；② fast 层 8 个 agent（librarian/explore/metis/sisyphus-junior/artistry/quick/writing/unspecified-low）显式 `reasoningEffort: "low"`；③ 项目配置 `compaction: { auto: true, tail_turns: 15 }` 保留最近 15 轮原文；④ metis models 列表 premium→fast 对齐；⑤ apiKey 改 `{env:NEW_API_KEY}` 脱敏。
+
+**原因**: 推理模型双通道输出（reasoning_content 思考 + content 答案）与对话历史只认 content 的矛盾（转换机制）；OMO 多 agent 混合模型（6 模型 1024K）放大上下文爆炸 + 格式串扰 + 错误锚定；`supportsReasoning: false` 与 OMO 层 `reasoningEffort: "high"` 配置直接矛盾（根因）；fast 层无 reasoningEffort 导致网关默认全量 thinking 输出。
+
+**影响**: 分层策略 "展示全量、存储分离、注入限量、按模型裁剪、续写特例"；后续若 session 存储仍无 thinking part（网关侧拼接 content），下一层修网关别名配置。配置生效需重启 opencode（启动时加载）。

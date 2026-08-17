@@ -177,3 +177,13 @@ grep -c "重复模式" <file>    # 期望 1；>1 = edit 重复插入
 **验证**: 任何 fmt 操作后 `git diff --stat | wc -l` 必须 == 预期文件数（通常 1）；`git status --short` 无意外文件。
 
 **阻塞条件**: 试图用 cargo fmt 做单文件格式化；fmt 后未验证 diff 范围。
+
+### 13. 批量 edit 遇 hash mismatch → 完整 re-read 再重试，禁止用错误输出的部分 tags 拼接 (2026-08-17)
+
+**规则**: 批量 edit 报 "hash mismatch" 后，**先完整 re-read 目标文件再重试**；禁止直接用错误输出中更新的部分 LINE#ID 拼接第二次调用（未变化行仍用旧 tag → 再次失败，浪费 2 轮）。对全局配置（`~/.config/opencode/*.jsonc`）等 opencode 运行中可能被改写的文件，**编辑前必须现场 re-read**（会话早段读取的 tags 会失效）。
+
+**先例**: 2026-08-17 omo.jsonc 批量 edit 第 1 次 8 行 mismatch → 用错误提示更新 tags 重试仍失败 → 完整 re-read 167-347 行后才成功（3 轮 vs 2 轮）。
+
+**验证**: edit 后 `python3 -m json.tool <file>`（json）或 `grep -c '"reasoningEffort": "low"' .omo/omo.jsonc`（jsonc 目标字段）确认生效。
+
+**阻塞条件**: 未 re-read 直接拼接错误输出的部分 tags 重试；JSON 替换后未做语法校验。

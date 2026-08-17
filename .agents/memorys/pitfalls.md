@@ -1029,3 +1029,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: `cargo clean` (释放 17G → 84% 使用率) 后重跑。预防: 定期清理旧 target;
   CI 用 dev 镜像预构建 (D207) 避免本地重复构建
 - **验证**: `df -h /` 可用 >10G; cargo test --workspace 无 linker 错误
+
+## PIT-96: supportsReasoning 标注错误 → reasoning_content 被摊进 content 文本 (2026-08-17)
+
+- **症状**: 推理模型的思考过程以 `<thinking>` 标签形式混入 content 存储，快模型（fast 层）读历史时消费到推理模型的完整思维链，上下文膨胀 + 格式串扰；多轮后 token 成倍燃烧。
+- **根因**: provider 模型定义 `supportsReasoning: false`（premium-max/deepseek-v4-pro 等）与 OMO 层 `reasoningEffort: "high"` 直接矛盾——适配器被告知"此模型不支持推理"→ 不将 `reasoning_content` 解析为结构化 thinking part，降级为普通文本处理；且 fast 层未显式设 low，网关默认全量输出 thinking。
+- **解法**: ① `supportsReasoning` 与模型实际能力对齐（5 个推理模型 false→true）；② fast 层 8 agent 显式 `reasoningEffort: "low"`；③ `compaction.tail_turns: 15` 保留尾部原文；④ 验证：session 存储应出现 `"type":"thinking"` part 而非 content 内 `<thinking>` 文本。
+- **验证**: `grep '"supportsReasoning"' ~/.config/opencode/opencode.jsonc`（推理模型=true）；`grep -c '"type":"thinking"' ~/.local/share/opencode/storage/session/*.json`（结构化 part 存在）。

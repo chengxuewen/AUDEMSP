@@ -1,6 +1,6 @@
 # MediaServo Status
 
-**生成**: 2026-08-17| 决策: 49 条目 (D196-D244, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP || 373 commits | 22 skills | mediasoup 0.24.1 | PIT-95 | 分支: main (deck 三域 + field 组合门面) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-17| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP || 373 commits | 22 skills | mediasoup 0.24.1 | PIT-96 | 分支: main (deck 三域 + field 组合门面) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | mediaservo-common | 72 | — | EncoderStatus 信令 + codec 字段 |
 | mediaservo-media | 107 | — | |
@@ -252,3 +252,12 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **依赖方向**: field → webrtc(默认 stub) + link + deck (C21 单向无环); webrtc 无 feature 时回落 stub (零外部依赖)
 - 4 tests: re-export 一行依赖闭环 / 错误代理 / session stub / 令牌 API
 - 下一步: PushSession/PullSession 接 host 推流链路 (webrtc-sys Linux 构建注意)
+
+## OMO/OpenCode reasoning 治理 (2026-08-17, D246 + PIT-96)
+
+- **根因修复**: 全局 provider 5 个推理模型 `supportsReasoning: false→true`（premium-max/-1/-2, deepseek-v4-pro, deepseek-v4-flash）→ reasoning_content 走结构化 thinking part（不进 content）
+- **源头抑制**: fast 层 8 agent（librarian/explore/metis/sisyphus-junior/artistry/quick/writing/unspecified-low）显式 `reasoningEffort: "low"`（覆盖 80% 调用量）
+- **压缩治理**: 项目 `compaction: { auto: true, tail_turns: 15 }` 保留最近 15 轮思维链 verbatim
+- **顺带**: metis models 列表 premium→fast 对齐; apiKey 明文 `{env:NEW_API_KEY}` 脱敏
+- **生效前提**: `export NEW_API_KEY=...` + 重启 opencode（配置启动时加载）
+- **验证待办**: 重启后 oracle 一轮 → `grep '"type":"thinking"'` session 存储应为结构化 part；若无 → 网关别名侧拼接 content，下一层修网关

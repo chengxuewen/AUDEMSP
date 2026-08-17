@@ -411,3 +411,11 @@ conda 交叉编译器（会 PIT-85 复发）。
 **检查**: `ls /dev/shm/iox2_* 2>/dev/null | wc -l` 应为 0（跑测试前）；link 测试失败先清残留再重跑。
 
 **来源**: PIT 2026-08-14 Phase 1 测试轮（残留 service 导致 multi-proc 测试间歇失败）。
+
+## C26: reasoning 分层 — thinking 不摊进 content，按模型级裁剪 (2026-08-17)
+
+**约束**: ① **cf. D246**: 推理模型（supportsReasoning=true 的模型）的 `reasoning_content` 必须走结构化 thinking part 存储/展示，**禁止被适配器拼进 content 文本**——快模型不得消费推理模型的思维链；② fast 层 agent（librarian/explore/metis/sisyphus-junior/artistry/quick/writing/unspecified-low）必须显式 `reasoningEffort: "low"`，premium-max 层才有权 high；③ `supportsReasoning` 标注必须与模型实际能力一致（gateway 别名映射修改时同步检查）；④ 会话压缩必须保留 tail_turns（最近轮次思维链 verbatim），压缩摘要不得把 thinking 揉进 content。
+
+**检查**: `grep -c '"type":"thinking"' storage/session/*.json` — 应为结构化 part（非 content 内 `<thinking>` 文本）；`grep 'supportsReasoning' ~/.config/opencode/opencode.jsonc` — 推理模型应为 true；`grep -c '"reasoningEffort": "low"' .omo/omo.jsonc` — 应为 8。
+
+**来源**: D246 (2026-08-17)，OMO 多 agent 多模型上下文治理（延续 D213）
