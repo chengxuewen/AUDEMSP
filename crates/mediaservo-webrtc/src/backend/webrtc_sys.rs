@@ -565,6 +565,52 @@ impl PcBackend for WebrtcSysPc {
         Ok(out)
     }
 
+    /// W3C addTransceiver(kind, init) — 无 track 版（消费侧 recvonly 必需）。
+    /// libwebrtc 原生 AddTransceiver(MediaType, init) 支持 recvonly 纯接收。
+    fn add_transceiver(&self, kind: crate::track::TrackKind, init: &crate::rtp::RTCRtpTransceiverInit) -> Result<crate::rtp::RTCRtpTransceiver, RTCError> {
+        use webrtc_sys::rtp_transceiver::ffi::RtpTransceiverDirection as SysDir;
+        use webrtc_sys::webrtc::ffi::MediaType;
+        let sys_dir = match init.direction {
+            crate::rtp::RTCRtpTransceiverDirection::Sendrecv => SysDir::SendRecv,
+            crate::rtp::RTCRtpTransceiverDirection::Sendonly => SysDir::SendOnly,
+            crate::rtp::RTCRtpTransceiverDirection::Recvonly => SysDir::RecvOnly,
+            crate::rtp::RTCRtpTransceiverDirection::Inactive => SysDir::Inactive,
+        };
+        let media_type = match kind {
+            crate::track::TrackKind::Video => MediaType::Video,
+            crate::track::TrackKind::Audio => MediaType::Audio,
+        };
+        let sys_init = webrtc_sys::rtp_transceiver::ffi::RtpTransceiverInit {
+            direction: sys_dir,
+            stream_ids: init.stream_ids.clone(),
+            send_encodings: vec![],
+        };
+        let tc = self
+            .pc
+            .add_transceiver_for_media(media_type, sys_init)
+            .map_err(|e| RTCError::RTCPeerConnection(e.what().to_owned()))?;
+        let mid = tc.mid().ok();
+        let kind2 = kind;
+        let receiver = crate::rtp::RTCRtpReceiver::new(crate::track::TrackRef::Receiver(
+            crate::track::TrackReceiver::new(
+                format!("sys-recv-{}", mid.as_deref().unwrap_or("")), kind2,
+            ),
+        ));
+        // 无 track → 无 sender
+        let sender = crate::rtp::RTCRtpSender::new(crate::track::TrackRef::Receiver(
+            crate::track::TrackReceiver::new(format!("sys-send-{}", mid.as_deref().unwrap_or("")), kind2),
+        ));
+        Ok(crate::rtp::RTCRtpTransceiver::new(
+            mid,
+            init.direction,
+            Some(init.direction),
+            false,
+            sender,
+            receiver,
+            kind2,
+        ))
+    }
+
     fn add_transceiver_with_track(&self, track: &crate::track::TrackSender, init: &crate::rtp::RTCRtpTransceiverInit) -> Result<crate::rtp::RTCRtpTransceiver, RTCError> {
         use webrtc_sys::rtp_transceiver::ffi::RtpTransceiverDirection as SysDir;
         // 从 staged 队列取出 media_track（create_track_sender 时 stage 的）

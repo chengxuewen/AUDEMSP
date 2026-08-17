@@ -20,6 +20,7 @@ use mediaservo_media::pipeline::generator::{
 };
 use mediaservo_media::pipeline::sink::VideoSinkWants;
 use mediaservo_media::pipeline::source::VideoSource;
+use mediaservo_webrtc::rtp::{RTCRtpTransceiverDirection, RTCRtpTransceiverInit};
 use mediaservo_webrtc::{
     RTCPeerConnection, RTCPeerConnectionFactory, RTCConfiguration, RTCIceServer,
     RTCIceTransportPolicy, RTCSessionDescription, RTCSdpType, TrackKind, TrackRef,
@@ -41,6 +42,8 @@ pub enum SessionEvent {
     Message(SignalingMessage),
     /// 推流会话：track 发布成功。
     TrackPublished { track: String },
+    /// 拉流会话：订阅成功。
+    TrackSubscribed { track: String },
     /// 连接断开。
     Disconnected { reason: String },
     /// 错误。
@@ -162,6 +165,7 @@ impl PushSession {
             name,
             clock_rate,
             fmtp,
+            sfu::RemoteDirection::ServerRecvonly,
         );
         let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
         pc.set_remote_description(&remote_desc)
@@ -254,48 +258,13 @@ impl PushSession {
         Ok(track_id)
     }
 
-    /// 消费信令直到 `WebRtcTransportCreated`；错误/断开则返回 Err。
-    /// `events` 必须在发送请求前已订阅（broadcast 无历史重放，先订阅防丢）。
+    /// 消费信令直到 `WebRtcTransportCreated`（内部委托自由函数）。
     async fn await_transport_created(
         &self,
         events: &mut tokio::sync::broadcast::Receiver<SignalEvent>,
     ) -> Result<(String, IceParameters, DtlsParameters, Option<Vec<IceCandidate>>), FieldError>
     {
-        loop {
-            match events.recv().await {
-                Ok(SignalEvent::Message(SignalingMessage::WebRtcTransportCreated {
-                    transport_id,
-                    ice_parameters,
-                    dtls_parameters,
-                    ice_candidates,
-                    ..
-                })) => {
-                    return Ok((
-                        transport_id,
-                        ice_parameters,
-                        dtls_parameters,
-                        ice_candidates,
-                    ));
-                }
-                Ok(SignalEvent::Message(SignalingMessage::Error { code, message })) => {
-                    return Err(FieldError::WebRtc(format!(
-                        "SFU error [{code}]: {message}"
-                    )));
-                }
-                Ok(SignalEvent::Disconnected { reason }) => {
-                    return Err(FieldError::InvalidState(format!(
-                        "signal disconnected during transport create: {reason}"
-                    )));
-                }
-                Ok(SignalEvent::Connected { .. }) => {}
-                Ok(_) => {} // 其余消息忽略（NewProducer/RoomLeave 等，PIT-59/65 同类）
-                Err(_) => {
-                    return Err(FieldError::InvalidState(
-                        "signal event stream closed during transport create".into(),
-                    ));
-                }
-            }
-        }
+        await_transport_created_msg(events).await
     }
 
     /// 获取底层 PeerConnection（escape hatch 用途；None 表示尚未 publish）。
@@ -371,15 +340,26 @@ impl std::fmt::Debug for PushSession {
 }
 
 /// 拉流会话（订阅→解码→出帧）。
-#[derive(Debug)]
 pub struct PullSession {
     signal: SignalSession,
+    /// 已建立的 PeerConnection（subscribe 时惰性初始化）。
+    pc: Option<RTCPeerConnection>,
     events: EventSender,
-    _closed: Arc<AtomicBool>,
+    closed: Arc<AtomicBool>,
+}
+
+/// 拉流输出的解码帧（I420 planar: Y + U + V）。
+#[derive(Debug)]
+pub struct PullFrame {
+    pub width: u32,
+    pub height: u32,
+    pub data: Vec<u8>,
+    /// 单调时钟微秒时间戳（C17 语义）。
+    pub ts_us: i64,
 }
 
 impl PullSession {
-    /// 连接信令、加入房间（消费/解码链路 Phase 2+）。
+    /// 连接信令、加入房间（消费/解码链路）。
     pub async fn connect(cfg: PullConfig) -> Result<(Self, SessionEvents), FieldError> {
         let client = SignalClient::new(&cfg.url, &cfg.psk, &cfg.room, cfg.role.clone());
         let signal = client.connect().await.map_err(FieldError::Link)?;
@@ -397,7 +377,7 @@ impl PullSession {
                         SessionEvent::Error(FieldError::Link(mediaservo_link::LinkError::Signal(e)))
                     }
                     SignalEvent::Connected { .. } => continue,
-                    _ => continue, // 其余信号事件忽略（non_exhaustive 兜底）
+                    _ => continue,
                 };
                 if events_tx_bridge.send(bridge).is_err() {
                     break;
@@ -407,15 +387,284 @@ impl PullSession {
 
         let session = Self {
             signal,
+            pc: None,
             events: events_tx,
-            _closed: Arc::new(AtomicBool::new(false)),
+            closed: Arc::new(AtomicBool::new(false)),
         };
         Ok((session, events_rx))
     }
 
+    /// 订阅一路 producer 视频流：Recv transport → 标准 answerer 协商 →
+    /// Connect → Consume → Consumed → on_track 帧接收。
+    ///
+    /// 返回解码帧流接收端（`recv()` 取 I420 帧；latest 语义由 channel 容量保证）。
+    pub async fn subscribe(
+        &mut self,
+        cfg: &PullConfig,
+        producer_id: &str,
+    ) -> Result<tokio::sync::mpsc::Receiver<PullFrame>, FieldError> {
+        if self.closed.load(Ordering::Relaxed) {
+            return Err(FieldError::Closed);
+        }
+        if self.pc.is_some() {
+            return Err(FieldError::InvalidState(
+                "MVP PullSession 支持单路订阅 — 已存在 active subscription".into(),
+            ));
+        }
+
+        // 1. 先订阅信令事件（防 broadcast 竞态，同 PushSession）
+        let mut transport_events = self.signal.events();
+
+        // 2. CreateWebRtcTransport (Recv)
+        self.signal
+            .send(SignalingMessage::CreateWebRtcTransport {
+                room_id: cfg.room.clone(),
+                peer_id: peer_id(&cfg.role),
+                direction: TransportDirection::Recv,
+            })
+            .await
+            .map_err(FieldError::Link)?;
+
+        tracing::info!("PullSession CreateWebRtcTransport(Recv) sent, waiting transport");
+        // 3. 等待 WebRtcTransportCreated（自由函数，Push/Pull 共用）
+        let (transport_id, ice_parameters, dtls_parameters, ice_candidates) =
+            await_transport_created_msg(&mut transport_events).await?;
+        tracing::info!("PullSession transport created: {transport_id}");
+
+        // 4. 建立 RTCPeerConnection（mediaservo-webrtc 抽象，C12）
+        let rtc_config = RTCConfiguration {
+            ice_servers: Vec::<RTCIceServer>::new(),
+            ice_transport_type: RTCIceTransportPolicy::All,
+        };
+        let factory = RTCPeerConnectionFactory::new();
+        let pc = factory
+            .create_peer_connection(rtc_config)
+            .await
+            .map_err(|e| FieldError::WebRtc(format!("create peer connection: {e}")))?;
+
+        // 诊断: ICE/PC 连接状态
+        {
+            let pc_dbg = pc.clone();
+            pc.on_ice_connection_state_change(move |s| {
+                tracing::info!("PullSession ICE state: {:?}", s);
+            });
+            let _ = pc_dbg;
+            let pc_dbg2 = pc.clone();
+            pc.on_peer_connection_state_change(move |s| {
+                tracing::info!("PullSession PC state: {:?}", s);
+            });
+            let _ = pc_dbg2;
+        }
+
+        // 帧接收：on_track 必须在 set_remote_description 之前注册！
+        // （remote sendonly m-line → libwebrtc setRemoteDescription 时即触发 on_track，
+        //   晚注册会丢失首 track）
+        let (frame_tx, frame_rx) = tokio::sync::mpsc::channel::<PullFrame>(3);
+        let frame_tx_for_cb = frame_tx.clone();
+        pc.on_track(move |receiver| {
+            let tx = frame_tx_for_cb.clone();
+            tracing::info!("PullSession on_track: kind={:?} id={}", receiver.kind, receiver.track_id);
+            if let TrackRef::Receiver(r) = receiver.track {
+                tracing::info!("PullSession attaching FrameSink to receiver {}", r.id);
+                r.set_frame_sink(Box::new(PullFrameSink { tx }));
+            }
+        });
+
+        // 5. 标准 answerer 协商：remote SDP → add_transceiver(recvonly) → answer
+        let codec = sfu::codec_spec("vp8"); // 消费侧默认 VP8（与 produce 默认一致）
+        let remote_sdp = sfu::build_remote_sdp(
+            &ice_parameters,
+            &dtls_parameters,
+            ice_candidates.as_ref(),
+            codec.payload_type,
+            codec.name,
+            codec.clock_rate,
+            codec.fmtp,
+            sfu::RemoteDirection::ServerSendonly,
+        );
+        let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
+        pc.set_remote_description(&remote_desc)
+            .await
+            .map_err(|e| FieldError::WebRtc(format!("set remote description: {e}")))?;
+
+        // kind 版 add_transceiver（webrtc-sys 后端已支持，recvonly 纯接收）
+        pc.add_transceiver(
+            TrackKind::Video,
+            RTCRtpTransceiverInit {
+                direction: RTCRtpTransceiverDirection::Recvonly,
+                ..Default::default()
+            },
+        )
+        .map_err(|e| FieldError::WebRtc(format!("add_transceiver: {e}")))?;
+
+        let answer = pc
+            .create_answer(&mediaservo_webrtc::RTCAnswerOptions::default())
+            .await
+            .map_err(|e| FieldError::WebRtc(format!("create answer: {e}")))?;
+        tracing::info!("PullSession answer SDP:\n{}", answer.sdp);
+        pc.set_local_description(&answer)
+            .await
+            .map_err(|e| FieldError::WebRtc(format!("set local description: {e}")))?;
+
+        // 6. ConnectWebRtcTransport（DTLS fingerprint）
+        let fp_hex = pc
+            .local_dtls_fingerprint()
+            .ok_or_else(|| FieldError::WebRtc("no DTLS fingerprint".into()))?;
+        self.signal
+            .send(SignalingMessage::ConnectWebRtcTransport {
+                room_id: cfg.room.clone(),
+                peer_id: peer_id(&cfg.role),
+                transport_id: transport_id.clone(),
+                dtls_parameters: DtlsParameters {
+                    fingerprints: vec![Fingerprint {
+                        algorithm: "sha-256".to_string(),
+                        value: fp_hex,
+                    }],
+                    role: "client".to_string(),
+                },
+            })
+            .await
+            .map_err(FieldError::Link)?;
+
+        // 7. Consume（rtp_capabilities 透传，对齐 e2e D2）
+        self.signal
+            .send(SignalingMessage::Consume {
+                room_id: cfg.room.clone(),
+                peer_id: peer_id(&cfg.role),
+                producer_id: producer_id.to_string(),
+                rtp_capabilities: serde_json::json!({
+                    "codecs": [{"mimeType": "video/VP8", "clockRate": 90000, "kind": "video"}],
+                    "headerExtensions": []
+                }),
+            })
+            .await
+            .map_err(FieldError::Link)?;
+
+        // 8. 等待 Consumed 确认
+        self.await_consumed(&mut transport_events).await?;
+
+
+
+        let pc_state = pc.connection_state();
+        let ice_state = pc.ice_connection_state();
+        self.pc = Some(pc);
+        let _ = self.events.send(SessionEvent::TrackSubscribed {
+            track: producer_id.to_string(),
+        });
+        tracing::info!(
+            "PullSession subscribed to producer {producer_id} (pc={pc_state:?} ice={ice_state:?})"
+        );
+        Ok(frame_rx)
+    }
+
+    /// 消费信令直到 `Consumed` 确认。
+    async fn await_consumed(
+        &self,
+        events: &mut tokio::sync::broadcast::Receiver<SignalEvent>,
+    ) -> Result<(), FieldError> {
+        loop {
+            match events.recv().await {
+                Ok(SignalEvent::Message(SignalingMessage::Consumed {
+                    producer_id, ..
+                })) => {
+                    tracing::info!("PullSession consumer created for {producer_id}");
+                    return Ok(());
+                }
+                // transport_connected 是 Connect 确认（非真错误）
+                Ok(SignalEvent::Message(SignalingMessage::Error { code: 0, message }))
+                    if message == "transport_connected" => {}
+                Ok(SignalEvent::Message(SignalingMessage::Error { code, message })) => {
+                    return Err(FieldError::WebRtc(format!(
+                        "SFU error [{code}]: {message}"
+                    )));
+                }
+                Ok(SignalEvent::Disconnected { reason }) => {
+                    return Err(FieldError::InvalidState(format!(
+                        "signal disconnected during consume: {reason}"
+                    )));
+                }
+                Ok(_) => {} // 其余消息忽略（NewProducer/TransportCreated 等）
+                Err(_) => {
+                    return Err(FieldError::InvalidState(
+                        "signal event stream closed during consume".into(),
+                    ));
+                }
+            }
+        }
+    }
+
+    /// 获取底层 PeerConnection（escape hatch）。
+    pub fn peer_connection(&self) -> Option<&RTCPeerConnection> {
+        self.pc.as_ref()
+    }
+
     /// 关闭会话。
     pub async fn close(self) -> Result<(), FieldError> {
+        self.closed.store(true, Ordering::Relaxed);
         self.signal.close().await.map_err(FieldError::Link)
+    }
+}
+
+/// FrameSink 实现：on_track 的 I420 帧 → bounded channel（满则丢 = latest）。
+struct PullFrameSink {
+    tx: tokio::sync::mpsc::Sender<PullFrame>,
+}
+
+impl mediaservo_webrtc::track::FrameSink for PullFrameSink {
+    fn on_frame(&self, data: &[u8], width: u32, height: u32) {
+        let _ = self.tx.try_send(PullFrame {
+            width,
+            height,
+            data: data.to_vec(),
+            ts_us: 0, // 解码帧无时间戳源（webrtc-sys 未暴露）；上层按到达序消费
+        });
+    }
+}
+
+/// 从 deck/link 错误便捷转换为 FieldError（供后续 slice 使用）。
+
+/// 消费信令直到 `WebRtcTransportCreated`（Push/Pull 共用）。
+/// `events` 必须在发送请求前已订阅（broadcast 无历史重放，先订阅防丢）。
+async fn await_transport_created_msg(
+    events: &mut tokio::sync::broadcast::Receiver<SignalEvent>,
+) -> Result<(String, IceParameters, DtlsParameters, Option<Vec<IceCandidate>>), FieldError> {
+    loop {
+        match events.recv().await {
+            Ok(SignalEvent::Message(SignalingMessage::WebRtcTransportCreated {
+                transport_id,
+                ice_parameters,
+                dtls_parameters,
+                ice_candidates,
+                ..
+            })) => {
+                return Ok((
+                    transport_id,
+                    ice_parameters,
+                    dtls_parameters,
+                    ice_candidates,
+                ));
+            }
+            // transport_connected 是 ConnectWebRtcTransport 的确认（非真错误，server 惯例）
+            Ok(SignalEvent::Message(SignalingMessage::Error { code, message }))
+                if message == "transport_connected" => {}
+            Ok(SignalEvent::Message(SignalingMessage::Error { code, message })) => {
+                return Err(FieldError::WebRtc(format!(
+                    "SFU error [{code}]: {message}"
+                )));
+            }
+            Ok(SignalEvent::Disconnected { reason }) => {
+                return Err(FieldError::InvalidState(format!(
+                    "signal disconnected during transport create: {reason}"
+                )));
+            }
+            Ok(SignalEvent::Connected { .. }) => {}
+            Ok(_) => {} // 其余消息忽略（NewProducer/RoomLeave 等，PIT-59/65 同类）
+            Err(_) => {
+                return Err(FieldError::InvalidState(
+                    "signal event stream closed during transport create".into(),
+                ));
+            }
+        }
     }
 }
 
@@ -428,7 +677,6 @@ fn peer_id(role: &PeerRole) -> String {
     }
 }
 
-/// 从 deck/link 错误便捷转换为 FieldError（供后续 slice 使用）。
 pub(crate) fn deck_err(e: DeckError) -> FieldError {
     FieldError::Deck(e)
 }

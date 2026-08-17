@@ -11,8 +11,18 @@
 
 use std::time::Duration;
 
+// 诊断: 测试内初始化 tracing（否则日志不可见）
+fn init_tracing() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_test_writer()
+        .try_init();
+}
+
 use mediaservo_common::protocol::PeerRole;
-use mediaservo_field::{FieldError, PublishOptions, PushConfig, PushSession, SessionEvent};
+use mediaservo_field::{
+    FieldError, PublishOptions, PullConfig, PullSession, PushConfig, PushSession, SessionEvent,
+};
 use mediaservo_webrtc::traits::PeerConnectionApi;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -175,4 +185,94 @@ async fn field_push_session_video_frames_flow() {
     session.stop_video_frames(); // 二次调用无副作用
 
     session.close().await.expect("close failed");
+}
+
+/// D5-field: PullSession 消费 — Push 推帧 → Pull 订阅 → 解码帧流出。
+///
+/// 同一房间内: PushSession publish + start_video_frames → PullSession subscribe
+/// （producer_id 来自 NewProducer 广播）→ on_track → FrameSink → PullFrame 接收。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn field_pull_session_consumes_video() {
+    init_tracing();
+    use mediaservo_common::protocol::SignalingMessage;
+
+    let room = format!(
+        "field-pull-test-{}-{:?}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let push_cfg = PushConfig::new(ws_url(), psk(), room.clone());
+    let pull_cfg = PullConfig {
+        url: ws_url(),
+        psk: psk(),
+        room,
+        role: PeerRole::Consumer,
+        auto_subscribe: true,
+    };
+
+    // 1. Pull 先入房（Consumer 角色）— 保证 push publish 的 NewProducer 广播必达
+    let (mut pull, mut pull_events) = PullSession::connect(pull_cfg.clone())
+        .await
+        .expect("pull connect");
+
+    // 2. Push 侧: 连接 + publish + 帧生成（广播给房间内已有 peer = Pull）
+    let (mut push, mut push_events) = PushSession::connect(push_cfg.clone())
+        .await
+        .expect("push connect");
+    let opts = PublishOptions::default();
+    let track = tokio::time::timeout(CONNECT_TIMEOUT, push.publish_video(&push_cfg, &opts))
+        .await
+        .expect("push publish timeout")
+        .expect("push publish failed");
+    push.start_video_frames(&push_cfg).expect("start frames");
+
+    // 3. 等待 NewProducer 广播（Push 的 producer）
+    let producer_id = tokio::time::timeout(CONNECT_TIMEOUT, async {
+        loop {
+            match pull_events.recv().await {
+                Some(SessionEvent::Message(SignalingMessage::NewProducer { producer_id, .. })) => {
+                    return producer_id;
+                }
+                Some(SessionEvent::Error(e)) => panic!("pull session error: {e:?}"),
+                _ => continue,
+            }
+        }
+    })
+    .await
+    .expect("NewProducer timeout");
+
+    // 4. 订阅 + 收帧
+    let mut frames = tokio::time::timeout(CONNECT_TIMEOUT, pull.subscribe(&pull_cfg, &producer_id))
+        .await
+        .expect("subscribe timeout")
+        .expect("subscribe failed");
+
+    // 5. 等待解码帧流出（≤15s; WebRtcTrackSink 推帧 → SFU relay → 解码 → FrameSink）
+    let mut got_frame = false;
+    for _ in 0..30 {
+        tokio::time::timeout(Duration::from_secs(1), frames.recv())
+            .await
+            .map(|opt| {
+                if let Some(f) = opt {
+                    assert!(f.width > 0 && f.height > 0, "frame dims");
+                    assert!(!f.data.is_empty(), "frame data");
+                    tracing::info!("pull frame: {}x{} ({} bytes)", f.width, f.height, f.data.len());
+                    got_frame = true;
+                }
+            });
+        if got_frame {
+            break;
+        }
+    }
+    assert!(got_frame, "no decoded frame within 15s");
+
+    // 清理
+    push.stop_video_frames();
+    push.close().await.expect("push close");
+    pull.close().await.expect("pull close");
+    let _ = track;
+    let _ = push_events;
 }

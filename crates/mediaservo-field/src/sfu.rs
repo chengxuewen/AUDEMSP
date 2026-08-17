@@ -50,6 +50,17 @@ pub fn codec_spec(codec: &str) -> CodecSpec {
 
 /// 用 mediasoup transport 参数构造 remote SDP (ICE-Lite server offer)。
 /// PIT-48: a=candidate 行必须位于 m= 行之后（media section 内）。
+/// remote SDP 的 media 方向。
+/// - `ServerSendonly`（默认）: server 发送、本地接收（Pull 消费侧）
+/// - `ServerRecvonly`（push）: server 接收、本地发送（Push 推流侧）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteDirection {
+    /// server 侧 a=sendonly（我们接收）
+    ServerSendonly,
+    /// server 侧 a=recvonly（我们发送）
+    ServerRecvonly,
+}
+
 pub fn build_remote_sdp(
     ice_parameters: &IceParameters,
     dtls_parameters: &DtlsParameters,
@@ -58,6 +69,7 @@ pub fn build_remote_sdp(
     codec_name: &str,
     clock_rate: u32,
     fmtp: Option<&str>,
+    direction: RemoteDirection,
 ) -> String {
     let fp = &dtls_parameters.fingerprints[0];
     let conn_ip = ice_candidates
@@ -90,7 +102,10 @@ pub fn build_remote_sdp(
         // transport-cc + abs-capture-time extmap（BWE 反馈链路必需，id 3/5 对齐官方惯例）
         "a=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01".to_string(),
         "a=extmap:5 http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time".to_string(),
-        "a=recvonly".to_string(),
+        match direction {
+            RemoteDirection::ServerSendonly => "a=sendonly".to_string(),
+            RemoteDirection::ServerRecvonly => "a=recvonly".to_string(),
+        },
         format!("a=rtpmap:{} {}/{}", payload_type, codec_name, clock_rate),
         format!("a=rtcp-fb:{} nack", payload_type),
         format!("a=rtcp-fb:{} nack pli", payload_type),
@@ -275,6 +290,7 @@ mod tests {
             "VP8",
             90000,
             None,
+            RemoteDirection::ServerRecvonly,
         );
         assert!(sdp.contains("a=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"));
         assert!(sdp.contains("a=rtcp-fb:96 nack pli"));

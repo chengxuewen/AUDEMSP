@@ -18,3 +18,6 @@ mediaservo-link = { path = "../mediaservo-link" }
 mediaservo-deck = { path = "../mediaservo-deck" }
 mediaservo-webrtc = { path = "../mediaservo-webrtc", features = ["backend-webrtc-sys"] }
 mediaservo-codec = { path = "../mediaservo-codec" }
+
+[dev-dependencies]
+tracing-subscriber = "0.3"
