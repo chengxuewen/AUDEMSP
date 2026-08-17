@@ -218,7 +218,8 @@ fn mux_worker(
     enc.set_width(w);
     enc.set_height(h);
     enc.set_format(ffmpeg::format::Pixel::YUV420P);
-    enc.set_time_base(ffmpeg::Rational(1, fps));
+    // pts 单位为 µs（输入帧 pts 源自 ts_mono_ns/1000）
+    enc.set_time_base(ffmpeg::Rational(1, 1_000_000));
     enc.set_gop(opts.keyframe_interval);
     enc.set_max_b_frames(0);
     enc.set_bit_rate(2_000_000);
@@ -232,15 +233,18 @@ fn mux_worker(
         .add_stream(ffmpeg::codec::Id::H264)
         .map_err(|e| DeckError::Codec(format!("add stream: {e}")))?;
     stream.copy_parameters_from_context(&enc.0);
-    stream.set_time_base(ffmpeg::Rational(1, fps));
+    stream.set_time_base(ffmpeg::Rational(1, 1_000_000));
     out.write_header()
         .map_err(|e| DeckError::Codec(format!("write header: {e}")))?;
 
-    encode_and_mux(&mut enc, &mut out, &first)?;
+    // pts 锚定首帧基准（generator/source 的 pts 是 epoch 大值 →
+    // 不加权会得到 duration= 117s 的假长文件）
+    let base_pts = first.pts;
+    encode_and_mux(&mut enc, &mut out, &first, base_pts)?;
 
     while running.load(Ordering::SeqCst) {
         match next_frame(rx, running, None) {
-            Ok(f) => encode_and_mux(&mut enc, &mut out, &f)?,
+            Ok(f) => encode_and_mux(&mut enc, &mut out, &f, base_pts)?,
             Err(e) => {
                 tracing::info!("recorder stopping: {e}");
                 break;
@@ -301,6 +305,7 @@ fn encode_and_mux(
     enc: &mut ffmpeg_the_third::encoder::Video,
     out: &mut ffmpeg_the_third::format::context::Output,
     frame: &VideoFrame,
+    base_pts: u64,
 ) -> Result<(), DeckError> {
     use ffmpeg_the_third as ffmpeg;
     let w = frame.format.width as usize;
@@ -313,7 +318,7 @@ fn encode_and_mux(
             dst[..n].copy_from_slice(&src[..n]);
         }
     }
-    avframe.set_pts(Some(frame.pts as i64));
+    avframe.set_pts(Some(frame.pts.saturating_sub(base_pts) as i64));
     enc.send_frame(&avframe)
         .map_err(|e| DeckError::Codec(format!("send frame: {e}")))?;
     loop {
