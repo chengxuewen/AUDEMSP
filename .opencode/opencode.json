@@ -1,8 +1,13 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "new-api/deepseek-v4-pro",
-  "compaction": { "auto": true, "tail_turns": 15 },
-  "enabled_providers": ["new-api"],
+  "compaction": {
+    "auto": true,
+    "tail_turns": 15
+  },
+  "enabled_providers": [
+    "new-api"
+  ],
   "plugin": [
     "superpowers@git+https://github.com/obra/superpowers.git",
     "@dietrichgebert/ponytail",
@@ -31,10 +36,13 @@
   ],
   "mcp": {
     "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp",
+      "type": "local",
       "enabled": true,
-      "timeout": 15000
+      "command": [
+        "node",
+        ".opencode/init-mcp-context7.mjs"
+      ],
+      "timeout": 30000
     },
     "grep_app": {
       "type": "remote",
@@ -50,17 +58,27 @@
     "local-codegraph": {
       "type": "local",
       "enabled": true,
-      "command": ["node", ".opencode/init-mcp-codegraph.mjs"]
+      "command": [
+        "node",
+        ".opencode/init-mcp-codegraph.mjs"
+      ]
     },
     "local-playwright": {
       "type": "local",
       "enabled": false,
-      "command": ["node", ".opencode/init-mcp-playwright.mjs"]
+      "command": [
+        "node",
+        ".opencode/init-mcp-playwright.mjs"
+      ]
     },
     "local-github": {
       "type": "local",
       "enabled": true,
-      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "command": [
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "{env:GITHUB_TOKEN}"
       }
@@ -68,26 +86,54 @@
     "local-postgres": {
       "type": "local",
       "enabled": false,
-      "command": ["node", ".opencode/init-mcp-postgres.mjs"]
+      "command": [
+        "node",
+        ".opencode/init-mcp-postgres.mjs"
+      ]
     },
     "local-openspace": {
       "type": "local",
       "enabled": true,
-      "command": ["node", ".opencode/init-mcp-openspace.mjs"]
+      "command": [
+        "node",
+        ".opencode/init-mcp-openspace.mjs"
+      ]
     }
   },
   "lsp": {
     "rust-analyzer": {
-      "command": ["node", ".opencode/init-lsp-wrap.mjs", "rust-analyzer"],
-      "extensions": ["rs"]
+      "command": [
+        "node",
+        ".opencode/init-lsp-wrap.mjs",
+        "rust-analyzer"
+      ],
+      "extensions": [
+        "rs"
+      ]
     },
     "bash-language-server": {
-      "command": ["node", ".opencode/init-lsp-wrap.mjs", "bash-language-server", "start"],
-      "extensions": ["sh", "bash"]
+      "command": [
+        "node",
+        ".opencode/init-lsp-wrap.mjs",
+        "bash-language-server",
+        "start"
+      ],
+      "extensions": [
+        "sh",
+        "bash"
+      ]
     },
     "remark-language-server": {
-      "command": ["node", ".opencode/init-lsp-wrap.mjs", "remark-language-server", "--stdio"],
-      "extensions": ["md", "markdown"]
+      "command": [
+        "node",
+        ".opencode/init-lsp-wrap.mjs",
+        "remark-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        "md",
+        "markdown"
+      ]
     }
   }
 }
