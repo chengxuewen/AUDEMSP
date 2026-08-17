@@ -1,0 +1,17 @@
+[package]
+name = "mediaservo-field"
+version.workspace = true
+edition.workspace = true
+description = "MediaServo Field — 组合 SDK (field = webrtc + link + deck): 推流/拉流会话门面 + 一行依赖闭环"
+license.workspace = true
+
+[dependencies]
+thiserror = "2"
+tracing = "0.1"
+tokio = { version = "1", features = ["sync"] }
+
+# 组合: 信令+帧总线 (link) + 采集/录制/回放 (deck) + WebRTC 抽象 (webrtc, 默认 stub)
+mediaservo-link = { path = "../mediaservo-link" }
+mediaservo-deck = { path = "../mediaservo-deck" }
+mediaservo-webrtc = { path = "../mediaservo-webrtc" }
+mediaservo-codec = { path = "../mediaservo-codec" }

@@ -11,4 +11,8 @@ pub mod record;
 pub mod source;
 
 pub use error::DeckError;
-pub use source::{CameraSource, CaptureOptions, FrameStream, MediaDevices, MediaDeviceKind};
+pub use playback::Player;
+pub use record::{Container, Recorder, RecordOptions, VideoCodec};
+pub use source::{
+    CameraSource, CaptureOptions, DeviceId, FrameStream, MediaDevices, MediaDeviceKind,
+};

@@ -4196,6 +4196,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mediaservo-field"
+version = "0.1.0"
+dependencies = [
+ "mediaservo-codec",
+ "mediaservo-deck",
+ "mediaservo-link",
+ "mediaservo-webrtc",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "mediaservo-host"
 version = "0.1.0"
 dependencies = [
