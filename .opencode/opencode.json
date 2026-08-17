@@ -40,15 +40,24 @@
       "enabled": true,
       "command": [
         "node",
-        ".opencode/init-mcp-context7.mjs"
+        ".opencode/init-mcp-streamable-bridge.mjs"
       ],
+      "environment": {
+        "STREAMABLE_MCP_URL": "https://mcp.context7.com/mcp"
+      },
       "timeout": 30000
     },
     "grep_app": {
-      "type": "remote",
-      "url": "https://mcp.grep.app",
+      "type": "local",
       "enabled": true,
-      "timeout": 15000
+      "command": [
+        "node",
+        ".opencode/init-mcp-streamable-bridge.mjs"
+      ],
+      "environment": {
+        "STREAMABLE_MCP_URL": "https://mcp.grep.app"
+      },
+      "timeout": 30000
     },
     "websearch": {
       "type": "remote",

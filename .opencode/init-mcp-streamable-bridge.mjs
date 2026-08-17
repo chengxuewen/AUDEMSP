@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// init-mcp-context7.mjs — context7 本地桥: stdio (opencode) ↔ streamable HTTP (context7 v4)
+// init-mcp-streamable-bridge.mjs — 通用本地桥: stdio (opencode) ↔ streamable HTTP (MCP v4 服务)
+// context7 / grep_app 共用。上游经环境变量 STREAMABLE_MCP_URL 指定。
 //
 // 背景: opencode 1.18 对 remote MCP 走 SSE(GET)，而 context7 v4 只接受
 // streamable HTTP(POST) → 405。本脚本作为 local MCP server 启动，
@@ -19,7 +20,7 @@ const candidates = [
 ]
 const sdkRoot = candidates.find(existsSync)
 if (!sdkRoot) {
-  console.error('[context7-bridge] MCP SDK not found; run: npm i @modelcontextprotocol/sdk in .opencode/')
+  console.error('[mcp-bridge] MCP SDK not found; run: npm i @modelcontextprotocol/sdk in .opencode/')
   process.exit(1)
 }
 const sdk = (p) => join(sdkRoot, 'dist/esm', p)
@@ -29,7 +30,7 @@ const { Server } = await import(sdk('server/index.js'))
 const { StdioServerTransport } = await import(sdk('server/stdio.js'))
 const { ListToolsRequestSchema, CallToolRequestSchema } = await import(sdk('types.js'))
 
-const UPSTREAM = process.env.CONTEXT7_URL || 'https://mcp.context7.com/mcp'
+const UPSTREAM = process.env.STREAMABLE_MCP_URL || process.env.CONTEXT7_URL || 'https://mcp.context7.com/mcp'
 const API_KEY = process.env.CONTEXT7_API_KEY || ''
 
 async function main() {
@@ -68,11 +69,11 @@ async function main() {
     }
   })
 
-  console.error(`[context7-bridge] connected, ${toolsResult.tools.length} tools from ${UPSTREAM}`)
+  console.error(`[mcp-bridge] connected, ${toolsResult.tools.length} tools from ${UPSTREAM}`)
   await server.connect(new StdioServerTransport())
 }
 
 main().catch((e) => {
-  console.error('[context7-bridge] fatal:', e.message ?? e)
+  console.error('[mcp-bridge] fatal:', e.message ?? e)
   process.exit(1)
 })
