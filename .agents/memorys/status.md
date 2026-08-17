@@ -1,6 +1,6 @@
 # MediaServo Status
 
-**生成**: 2026-08-13| 决策: 222 (D1-D221, 含跳号)| Phase: 3 完成 || 346 commits | 22 skills | mediasoup 0.24.1 | PIT-88 | 分支: main (重命名 MediaServo + 编码双轨 + 5 codec + Web stats + BWE 恢复) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-14| 决策: 48 条目 (D196-D243, 含跳号)| Phase: 3 完成 + 设备侧 SDK 设计 || 364 commits | 22 skills | mediasoup 0.24.1 | PIT-91 | 分支: main (link IPC Phase 1 + SignalClient Phase 1b) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | mediaservo-common | 72 | — | EncoderStatus 信令 + codec 字段 |
 | mediaservo-media | 107 | — | |
@@ -13,6 +13,7 @@
 | mediaservo-server | 67 | 32 (27 e2e + 5 integration) | +3 SFU E2E (Linux only) |
 | mediaservo-host | — | E2E 脚本 9/9 ✅ | macOS native |
 | mediaservo-client | — | E2E 脚本 9/9 ✅ | macOS native |
+| mediaservo-link | 32 | 跨进程 e2e 4 | 设备侧 SDK: FrameBus/Registry/ACL/令牌 + SignalClient |
 
 ### macOS E2E 验证 (2026-07-24)
 ```
@@ -32,6 +33,9 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | macOS E2E 验证 | ✅ |
 | Admin Dashboard (P1-P5) | ✅ |
 | Admin Dashboard (P6) | 🟡 |
+| 设备侧四 SDK 设计 (D222-D243) | ✅ |
+| link IPC Phase 1 (FrameBus/Registry/ACL/令牌) | ✅ |
+| link Phase 1b (SignalClient WS 信令) | ✅ |
 | OpenCode 配置优化 | ✅ |
 | Doc-Audit 完整审计 | ✅ |
 | OMO 插件版本审计 | ✅ (4.19.2→4.19.3 patch) |
@@ -61,6 +65,11 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | D213 | Agent 上下文爆炸治理 — instructions 瘦身 + 六模型 1024K + .agents 精简 | ✅ | Config |
 | D214 | audemsp-webrtc 补全 W3C API 面 + Host SFU 标准协商（C18） | ✅ | WebRTC |
 | D215 | client P2P 迁移到通用 W3C API — 修复 feature 不匹配 | ✅ | WebRTC |
+| D222-D226 | 设备侧四 SDK 主架构 (link/field/client/deck) + API 单层会话型 | ✅ | SDK |
+| D235-D239 | link IPC: 去中心化 SHM 注册/静态 ACL/能力令牌 Ed25519/派生 topic | ✅ | SDK |
+| D240-D241 | 交付单动态库 + soname/ABI 纪律 (additive-only) | ✅ | SDK |
+| D242 | link 底座选 iceoryx2 0.9.3 (spike 实证 684MB/s) | ✅ | SDK |
+| D243 | FrameMeta 定长 LE + format/version, FlatBuffers 推迟 | ✅ | SDK |
 
 ## Admin Dashboard 测试
 
@@ -190,3 +199,22 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **doc-audit 三轮**: ① 9 项发现全修复（D221/conventions/status/AGENTS/技能）② 外部 16:10:58 批量替换污染 33 文件 → 恢复保留面（PIT-89）③ 回归闭环（仅 commits 漂移同步）
 - **D221 修订**: 保留面 memorys/plans/research → 仅 .agents/; .sisyphus/.omo plans 已清除
 - 遗留: gitee 仓库改名（外部）、T4/T5 待完成（webrtc-sys workspace build + 运行时验证）
+
+## link IPC Phase 1 + SignalClient Phase 1b (2026-08-14)
+
+### 设计落盘（D222-D243）
+- 四 SDK 主架构: `docs/architecture.md §7` + `docs/modules/04-sdk-layers.md`（Rust crate 静态链接 / napi / C++ 绑定三角取舍）
+- API 契约: `docs/modules/20-sdk-api-contract.md`（单层会话型; link=attach(frame,header)-per-session/publish/subscribe/close）
+- link IPC 专题: `docs/modules/21-link-ipc.md`（五决策 + 风险登记表）
+- 计划: `docs/superpowers/plans/2026-08-14-link-ipc-phase1.md`
+
+### mediaservo-link 实现（8th member, 32 tests 全绿）
+- **FrameBus** (iceoryx2 0.9.3, D242): topic_service 统一 `subscriber_max_buffer_size(1)+enable_safe_overflow(true)+max_publishers(1)`;
+  open_or_create SystemInFlux 重试; publisher 缓存持防交付丢失; subscribe 后台线程 latest-slot; attach=验签→ACL→registry
+- **Registry** (D235): 进程本地 NODES+PUBLISHERS 表, attach 即注册, mark_publisher 活跃追踪; 跨进程发现留 Phase 2
+- **静态 ACL** (D237): Role(Capture/Processor/Pusher/Recorder/Control/Perception/Puller) 矩阵 + 通配 `camera/*` + deny 审计日志
+- **能力令牌** (D238/D243): Ed25519 非对称签发/验签 (leeway=0), FrameMeta 定长 LE=36B (seq/w/h/format/version/is_keyframe/ts_mono/ts_epoch)
+- **e2e** (T6): capture→processor 拼接→pusher 三进程零拷贝 (1080p 3.1MB) + ACL/单发布者负例
+- **SignalClient Phase 1b**: WS 信令复用 common SignalingMessage/PeerRole; PSK 认证→RoomJoin→RoomJoined;
+  SignalSession::events(broadcast)/send/close; LinkError::Signal; mock WS server 测试 2 个
+- 多进程测试: framebus_pub 子进程 (tests/framebus_multiproc.rs); 跑 link 测试前需 `rm -f /dev/shm/iox2_*` 清残留

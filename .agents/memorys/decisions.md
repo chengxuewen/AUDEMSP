@@ -533,3 +533,16 @@ C++ 全链路 gcc 10.5；② **Jetson H264/AV1 硬编码器可用**（人工验�
 **原因**: ① YAGNI/ponytail——MVP 仅 Rust 内消费，定长 LE 最简单、零依赖、零解析开销；② 补齐审核发现的 **format（像素格式）+ version（元数据版本）** 字段（原 plan/spec 缺失，订阅方无法解释 payload、无演进位）；③ FlatBuffers 的价值在跨语言（ROS C++/py 消费，D236），届时再引入不迟；④ 此为对 D242"FlatBuffers 帧元数据"字面的**有意偏离**，按 C9 记录为决策。
 
 **影响**: FrameMeta 定长 LE 含 format+version；跨语言 ROS 消费者按定长布局解析；未来上 FlatBuffers 时靠 version 字段平滑迁移。20-sdk-api-contract §3 与 21-link-ipc §4 同步（FrameStream 已改 latest-slot）。
+
+## D244: SignalClient 连接面 — connect(url, psk, room_id, role) + broadcast events (2026-08-14)
+
+**决策**: link Phase 1b 的 WS 信令客户端采用 **connect(url, psk, room_id, role) → SignalSession** 形态；
+`SignalSession::{events()/send()/room_id()/close()}`，事件走 `tokio::sync::broadcast`（`SignalEvent` 派生 Clone）；
+复用 common crate 的 `SignalingMessage`/`PeerRole`（与 host/client 同协议），新增 `LinkError::Signal` 变体。
+
+**原因**: ① 单层会话型 API（D224）在连接面上的具体化——把 WS 生命周期封装为 session，用户只拿 receiver + send；②
+复用 SignalingMessage 避免第三套协议（host/client/server 已用），Phase 2 信号中继可直接对接；③ broadcast 天然支持多消费者，
+future（断线重连/多路订阅）无需改 API；④ connect 内完成 PSK→Error{code:0}→RoomJoin→RoomJoined 握手，失败返回明确的 LinkError。
+
+**影响**: SignalClient 是 field/deck/client SDK 的信令基座；PSK 凭据从配置/环境注入（不硬编码）；mock WS server 测试模式
+（tests/signal.rs）可复用到其他 SDK 的信令测试。
