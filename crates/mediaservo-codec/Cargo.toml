@@ -10,7 +10,7 @@ thiserror = "2"
 tracing = "0.1"
 
 # FFmpeg backend (static link, Remote default) — ffmpeg-the-third: active fork, safer API
-ffmpeg-the-third = { version = "5", optional = true }
+ffmpeg-the-third = { version = "6", optional = true }
 
 # GStreamer backend (dynamic link, Host default)
 gstreamer = { version = "0.23", optional = true }

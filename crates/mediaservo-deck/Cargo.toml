@@ -20,7 +20,7 @@ mediaservo-codec = { path = "../mediaservo-codec" }
 mediaservo-link = { path = "../mediaservo-link" }
 
 # FFmpeg mux（Recorder）
-ffmpeg-the-third = { version = "5", optional = true }
+ffmpeg-the-third = { version = "6", optional = true }
 
 [features]
 default = []
