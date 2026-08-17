@@ -12,11 +12,15 @@ use crate::DeckError;
 /// 回放器：打开媒体文件，逐帧产出解码帧。
 pub struct Player {
     path: PathBuf,
+    #[cfg(feature = "backend-ffmpeg")]
     inner: Option<PlayerInner>,
+    #[cfg(not(feature = "backend-ffmpeg"))]
+    inner: Option<()>,
 }
 
 impl Player {
     /// 打开媒体文件（demux 初始化 + 首个视频流解码器就绪）。
+    #[cfg(feature = "backend-ffmpeg")]
     pub fn open(path: impl Into<PathBuf>) -> Result<Self, DeckError> {
         let path = path.into();
         if !path.exists() {
@@ -30,6 +34,7 @@ impl Player {
     }
 
     /// 取下一帧；None = 文件解码完毕。
+    #[cfg(feature = "backend-ffmpeg")]
     pub fn next_frame(&mut self) -> Result<Option<VideoFrame>, DeckError> {
         match self.inner.as_mut() {
             Some(inner) => inner.next_frame(),
@@ -38,15 +43,32 @@ impl Player {
     }
 
     /// 文件时长（秒）。
+    #[cfg(feature = "backend-ffmpeg")]
     pub fn duration_secs(&self) -> Result<f64, DeckError> {
         self.inner
             .as_ref()
             .ok_or_else(|| DeckError::InvalidState("not open".into()))?
             .duration_secs()
     }
+
+    /// 打开媒体文件（无 FFmpeg 后端时明确报错）。
+    #[cfg(not(feature = "backend-ffmpeg"))]
+    pub fn open(path: impl Into<PathBuf>) -> Result<Self, DeckError> {
+        let path = path.into();
+        if !path.exists() {
+            return Err(DeckError::NotFound(format!(
+                "media file {} does not exist",
+                path.display()
+            )));
+        }
+        Err(DeckError::Codec(
+            "playback requires backend-ffmpeg feature".into(),
+        ))
+    }
 }
 
 /// 播放器内部状态（demux + decoder）。
+#[cfg(feature = "backend-ffmpeg")]
 struct PlayerInner {
     input: ffmpeg_the_third::format::context::Input,
     stream_index: usize,
@@ -55,6 +77,7 @@ struct PlayerInner {
     height: u32,
 }
 
+#[cfg(feature = "backend-ffmpeg")]
 impl PlayerInner {
     fn open(path: &PathBuf) -> Result<Self, DeckError> {
         use ffmpeg_the_third as ffmpeg;

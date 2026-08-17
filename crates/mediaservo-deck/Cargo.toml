@@ -11,7 +11,7 @@ tracing = "0.1"
 tokio = { version = "1", features = ["sync"] }
 
 # 帧源生成（CameraSource stub）— VideoFrameGenerator
-mediaservo-media = { path = "../mediaservo-media", default-features = false, features = ["backend-native"] }
+mediaservo-media = { path = "../mediaservo-media" }
 
 # 编解码 facade（D229: deck 依赖 codec，不合并）
 mediaservo-codec = { path = "../mediaservo-codec" }
