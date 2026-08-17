@@ -546,3 +546,17 @@ future（断线重连/多路订阅）无需改 API；④ connect 内完成 PSK�
 
 **影响**: SignalClient 是 field/deck/client SDK 的信令基座；PSK 凭据从配置/环境注入（不硬编码）；mock WS server 测试模式
 （tests/signal.rs）可复用到其他 SDK 的信令测试。
+
+## D245: deck Recorder — FFmpeg 直依赖 + copy_parameters_from_context + µs time_base (2026-08-17)
+
+**决策**: deck 的 Recorder 直接依赖 `ffmpeg-the-third 6.0`（与 codec 同版本，单 ffmpeg-sys 防双符号冲突），
+不经过 codec 的 Encoder facade；流参数用 `copy_parameters_from_context(enc.0)`（含 SPS/PPS extradata，
+手动填 codecpar 会 codec_name=unknown）；time_base 用 1/1_000_000（µs 标尺）匹配输入帧 pts 单位。
+
+**原因**: ① ffmpeg-the-third 6.0 支持 5.1-9.0（Linux pixi=9.0, macOS=8.1 双平台），5.0 绑定编译失败——
+统一升级 codec+deck 单版本，避免双 ffmpeg-sys 符号冲突（PIT-71 教训延伸）；② ctx 被 `encoder()` consume，
+官方 muxing.c 的 avcodec_parameters_from_context 不可复用 → 从 open 后的上下文手动复制；③ pts 是 µs（源帧
+ts_mono_ns/1000），若 time_base=1/fps 会把 µs 当 tick → duration=117s 假时长（实证 PIT 记录）。
+
+**影响**: deck 后续 record/playback 同构（demux/解码也走 ffmpeg-the-third）；codec crate 的 encoder/decoder
+facade 仍是纯编解码（不吞 mux，D229）；后续如果 playback 落地复用同版本单 FFmpeg。

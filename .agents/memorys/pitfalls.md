@@ -994,3 +994,27 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: `cargo clean -p mediaservo-server` 强制 build.rs 重跑（重跑后发现 dist、生成嵌入文件）；根治：先 `pnpm build` 再编 server，或把 include! 真正条件化修复 optional 假象
 - **验证**: `ls www/apps/admin/dist/index.html` 存在；server 日志无 `admin dist not found`；`curl /admin` 返回 200
 - **教训**: build.rs 生成文件 + 源码 include! 的组合，若生成条件（如 dist 存在）在构建中途才满足，必须 `cargo clean -p` 强制重跑；"optional" 必须让 include! 真正条件化，否则名不副实。关联 PIT-13（cargo clean -p 与 build script 缓存）
+
+## PIT-92: Recorder worker 残留代码段 — 重复编码首帧导致无 trailer (2026-08-17)
+
+- **症状**: 闭环测试生成的 MP4 ffprobe 报 "moov atom not found"（文件不完整）
+- **根因**: python 批量替换时残留了旧 while 循环 → worker 完成正常循环后再次 `encode_and_mux(first)`
+  把首帧二次编码 → muxer 遇时间戳倒退写失败 → 函数提前 Err 返回 → **write_trailer 从未执行**
+- **解法**: 删除重复段；确保 worker 收尾路径（flush→trailer）唯一
+- **验证**: `ffprobe -v error file.mp4` 无 moov 报错；`ffmpeg -v error -i file -f null -` 解码零错误
+
+## PIT-93: codecpar 手动填缺 extradata — codec_name=unknown (2026-08-17)
+
+- **症状**: MP4 文件可打开但 ffprobe `codec_name=unknown`，无法解码
+- **根因**: 手动填 `codecpar{codec_id,width,height,format}` 未复制 **SPS/PPS extradata**（编码器运行时才生成）
+- **解法**: 复制完整参数 `stream.copy_parameters_from_context(&enc.0)`（ffmpeg-the-third 的 Encoder(pub Context)
+  保留 avctx 指针，open 后仍可访问）；官方 muxing.c 模式如此
+- **验证**: `ffprobe -show_entries stream=codec_name` 输出 `h264`；`decode_exit=0`
+
+## PIT-94: FFmpeg time_base 单位不匹配 — duration 假时长 (2026-08-17)
+
+- **症状**: MP4 duration=117s（实际 1.8s），r_frame_rate=0/0
+- **根因**: encoder/stream time_base=1/fps=1/30，但喂给 avframe 的 pts 是 **µs**（源帧 ts_mono_ns/1000）——
+  FFmpeg 把 µs 值当 30fps tick 解释 → 每帧 64s 巨额 pts
+- **解法**: time_base 统一 `Rational(1, 1_000_000)`（µs 标尺）与 pts 单位一致
+- **验证**: `ffprobe -show_entries format=duration` = 1.799s（55帧@30fps ≈ 1.83s）✓

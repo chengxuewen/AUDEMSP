@@ -1,6 +1,6 @@
 # MediaServo Status
 
-**生成**: 2026-08-14| 决策: 48 条目 (D196-D243, 含跳号)| Phase: 3 完成 + 设备侧 SDK 设计 || 364 commits | 22 skills | mediasoup 0.24.1 | PIT-91 | 分支: main (link IPC Phase 1 + SignalClient Phase 1b) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-17| 决策: 49 条目 (D196-D244, 含跳号)| Phase: 3 完成 + 设备侧 SDK 设计→deck Phase 2 最小闭环 || 369 commits | 22 skills | mediasoup 0.24.1 | PIT-91 | 分支: main (link IPC Phase 1/1b + deck Phase 2 闭环) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | mediaservo-common | 72 | — | EncoderStatus 信令 + codec 字段 |
 | mediaservo-media | 107 | — | |
@@ -14,6 +14,7 @@
 | mediaservo-host | — | E2E 脚本 9/9 ✅ | macOS native |
 | mediaservo-client | — | E2E 脚本 9/9 ✅ | macOS native |
 | mediaservo-link | 32 | 跨进程 e2e 4 | 设备侧 SDK: FrameBus/Registry/ACL/令牌 + SignalClient |
+| mediaservo-deck | 8 | — | 采集(source stub)+录制(FFmpeg mux) + 闭环 e2e |
 
 ### macOS E2E 验证 (2026-07-24)
 ```
@@ -36,6 +37,7 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | 设备侧四 SDK 设计 (D222-D243) | ✅ |
 | link IPC Phase 1 (FrameBus/Registry/ACL/令牌) | ✅ |
 | link Phase 1b (SignalClient WS 信令) | ✅ |
+| deck Phase 2 最小闭环 (采集→FrameBus→落盘) | ✅ |
 | OpenCode 配置优化 | ✅ |
 | Doc-Audit 完整审计 | ✅ |
 | OMO 插件版本审计 | ✅ (4.19.2→4.19.3 patch) |
@@ -218,3 +220,12 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **SignalClient Phase 1b**: WS 信令复用 common SignalingMessage/PeerRole; PSK 认证→RoomJoin→RoomJoined;
   SignalSession::events(broadcast)/send/close; LinkError::Signal; mock WS server 测试 2 个
 - 多进程测试: framebus_pub 子进程 (tests/framebus_multiproc.rs); 跑 link 测试前需 `rm -f /dev/shm/iox2_*` 清残留
+
+## deck Phase 2 最小闭环 (2026-08-17)
+
+- **mediaservo-deck** (9th member): MediaDevices/CameraSource(stub 彩条, VideoFrameGenerator 复用) + FrameStream(有界 chan latest)
+- **Recorder**: I420→x264→MP4 mux (ffmpeg-the-third 6.0, spawn_blocking worker, StopSignal 共享 running)
+- **闭环 e2e** (closed_loop.rs): Capture 发布 I420 → FrameBus 传输 → Pusher 订阅 → Recorder 落盘 → ffprobe 实证 h264/55帧/1.80s/解码零错误
+- **环境/依赖变更**: codec ffmpeg-the-third 5→6 (FFmpeg 9.0 Linux pixi + 8.1 macOS 双平台; 5.0 绑定编译失败); media backend-native 首次编译暴露 P010 未覆盖 match (顺手修)
+- **关键踩坑**: ① Recorder worker 残留重复循环段 → first 帧二次编码 → muxer 报错无 trailer (moov 缺失) ② codecpar 手动填缺 SPS/PPS extradata → codec_name=unknown → 改 copy_parameters_from_context(enc.0) ③ pts 单位: time_base 必须 1/1_000_000 (µs 标尺) 否则 µs 值当 tick → duration=117s 假时长
+- FrameBus 非 Clone → 发布泵 Arc 共享; iceoryx2 跑前 `rm -f /dev/shm/iox2_*`
