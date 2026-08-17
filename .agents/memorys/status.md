@@ -1,6 +1,6 @@
 # MediaServo Status
 
-**生成**: 2026-08-17| 决策: 49 条目 (D196-D244, 含跳号)| Phase: 3 完成 + deck Phase 2 三域闭环 || 372 commits | 22 skills | mediasoup 0.24.1 | PIT-95 | 分支: main (deck source/record/playback 三域) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-17| 决策: 49 条目 (D196-D244, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP || 373 commits | 22 skills | mediasoup 0.24.1 | PIT-95 | 分支: main (deck 三域 + field 组合门面) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | mediaservo-common | 72 | — | EncoderStatus 信令 + codec 字段 |
 | mediaservo-media | 107 | — | |
@@ -15,6 +15,7 @@
 | mediaservo-client | — | E2E 脚本 9/9 ✅ | macOS native |
 | mediaservo-link | 32 | 跨进程 e2e 4 | 设备侧 SDK: FrameBus/Registry/ACL/令牌 + SignalClient |
 | mediaservo-deck | 10 | — | source(采集 stub)+record(MP4 mux)+playback(回放) 三域 + 闭环 e2e |
+| mediaservo-field | 4 | — | 组合 SDK: re-export link+deck + Push/PullSession 门面 (Phase 2 webrtc) |
 
 ### macOS E2E 验证 (2026-07-24)
 ```
@@ -39,6 +40,7 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | link Phase 1b (SignalClient WS 信令) | ✅ |
 | deck Phase 2 最小闭环 (采集→FrameBus→落盘) | ✅ |
 | deck playback 域 (Player demux+decode) | ✅ |
+| field MVP (组合门面, 10th member) | ✅ |
 | OpenCode 配置优化 | ✅ |
 | Doc-Audit 完整审计 | ✅ |
 | OMO 插件版本审计 | ✅ (4.19.2→4.19.3 patch) |
@@ -241,3 +243,12 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
   (无 backend-ffmpeg 时明确报错) ③ yuv-sys 需 `LIBCLANG_PATH=$PIXI/lib`
 - **磁盘教训**: target/debug 16G + 根分区 99% 满 → `ld: Bus error` (collect2 signal 7),
   全量回归假失败; `cargo clean` 释放 17G 后恢复 (PIT-95)
+
+## field 组合 SDK MVP (2026-08-17)
+
+- **mediaservo-field** (10th member): FieldError(From<LinkError>/From<DeckError>) + re-export 闭环
+- **组合 re-export**: link(SignalClient/FrameBus/CapabilityToken/NodeAcl/Role/FrameTopic) + deck(CameraSource/Recorder/Player/Container/DeviceId)
+- **会话门面**: PushSession/PullSession + SessionEvent 类型; connect 明确报 Phase 2 (避免静默)
+- **依赖方向**: field → webrtc(默认 stub) + link + deck (C21 单向无环); webrtc 无 feature 时回落 stub (零外部依赖)
+- 4 tests: re-export 一行依赖闭环 / 错误代理 / session stub / 令牌 API
+- 下一步: PushSession/PullSession 接 host 推流链路 (webrtc-sys Linux 构建注意)
