@@ -122,3 +122,57 @@ async fn field_push_session_peer_connection_available() {
 
     session.close().await.expect("close failed");
 }
+/// D4-field: 帧发布 — start_video_frames 后 sender 应产生编码帧（bytes_sent/frames_encoded 增长）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn field_push_session_video_frames_flow() {
+    let cfg = test_config();
+    let (mut session, _events) = PushSession::connect(cfg.clone())
+        .await
+        .expect("connect failed");
+
+    let opts = PublishOptions::default();
+    tokio::time::timeout(CONNECT_TIMEOUT, session.publish_video(&cfg, &opts))
+        .await
+        .expect("publish timeout")
+        .expect("publish failed");
+
+    // 帧发布前: 无生成器
+    assert!(session.peer_connection().is_some(), "PC after publish");
+
+    // 启动帧生成
+    session
+        .start_video_frames(&cfg)
+        .expect("start_video_frames failed");
+    // 重复启动应报 InvalidState
+    let dup = session.start_video_frames(&cfg).unwrap_err();
+    assert!(matches!(dup, FieldError::InvalidState(_)), "got {dup:?}");
+
+    // 轮询 sender stats: 帧编码应启动（等待 ≤10s 出帧）
+    let pc = session.peer_connection().expect("pc");
+    let mut observed_frames = false;
+    for _ in 0..20 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let stats = pc.sender_get_stats("video");
+        if let Some(o) = stats.iter().find_map(|s| match s {
+            mediaservo_webrtc::stats::RTCStats::OutboundRtp(o) => Some(o),
+            _ => None,
+        }) {
+            if o.bytes_sent > 0 && o.frames_encoded > 0 {
+                tracing::info!(
+                    "frames flowing: bytes_sent={} frames_encoded={}",
+                    o.bytes_sent,
+                    o.frames_encoded
+                );
+                observed_frames = true;
+                break;
+            }
+        }
+    }
+    assert!(observed_frames, "no outbound frames observed within 10s");
+
+    // 停止帧生成（幂等）
+    session.stop_video_frames();
+    session.stop_video_frames(); // 二次调用无副作用
+
+    session.close().await.expect("close failed");
+}

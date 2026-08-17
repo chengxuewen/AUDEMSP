@@ -14,10 +14,16 @@ use mediaservo_common::protocol::{
 use mediaservo_deck::DeckError;
 use mediaservo_link::{SignalClient, SignalEvent, SignalSession};
 use mediaservo_webrtc::traits::PeerConnectionApi;
+use mediaservo_media::pipeline::generator::{
+    Anchor, BitmapFont, ColorStrategy, PatternMode, SquaresConfig, TextBurner, TimestampFormat,
+    TimestampOverlay, VideoFrameGenerator,
+};
+use mediaservo_media::pipeline::sink::VideoSinkWants;
+use mediaservo_media::pipeline::source::VideoSource;
 use mediaservo_webrtc::{
     RTCPeerConnection, RTCPeerConnectionFactory, RTCConfiguration, RTCIceServer,
     RTCIceTransportPolicy, RTCSessionDescription, RTCSdpType, TrackKind, TrackRef,
-    TrackSender,
+    TrackSender, WebRtcTrackSink,
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -48,13 +54,14 @@ pub type SessionEvents = UnboundedReceiver<SessionEvent>;
 pub(crate) type EventSender = UnboundedSender<SessionEvent>;
 
 /// 推流会话（采集→编码→webrtc 推流）。
-#[derive(Debug)]
 pub struct PushSession {
     signal: SignalSession,
     /// 已建立的 PeerConnection（首个 track 发布时惰性初始化）。
     pc: Option<RTCPeerConnection>,
     /// 已发布的 video sender（当前 MVP 单视频轨）。
     video_sender: Option<TrackSender>,
+    /// 帧生成器（PIT-81: 必须 owned 存活——Drop 即停线程；stop_video_frames 显式停）。
+    frame_generator: Option<VideoFrameGenerator>,
     events: EventSender,
     closed: Arc<AtomicBool>,
 }
@@ -90,6 +97,7 @@ impl PushSession {
             signal,
             pc: None,
             video_sender: None,
+            frame_generator: None,
             events: events_tx,
             closed: Arc::new(AtomicBool::new(false)),
         };
@@ -295,10 +303,70 @@ impl PushSession {
         self.pc.as_ref()
     }
 
+    /// 启动视频帧生成（Squares 彩条 + 时间戳水印）→ WebRtcTrackSink → TrackSender。
+    /// 对齐 host B5 链路（C17: 锚定单调时间戳 + 绝对时间轴帧循环由 generator 内建）。
+    /// 需先 `publish_video`；重复调用返回 InvalidState。
+    pub fn start_video_frames(&mut self, cfg: &PushConfig) -> Result<(), FieldError> {
+        if self.closed.load(Ordering::Relaxed) {
+            return Err(FieldError::Closed);
+        }
+        if self.frame_generator.is_some() {
+            return Err(FieldError::InvalidState("frames already running".into()));
+        }
+        let sender = self.video_sender.clone().ok_or_else(|| {
+            FieldError::InvalidState("publish_video first (no video track)".into())
+        })?;
+
+        let fps = cfg.framerate.max(1);
+        let (width, height) = (cfg.width, cfg.height);
+
+        // 时间戳水印（对齐 host: TopLeft + DateTime+FrameCount）
+        let burner = TextBurner::new(BitmapFont::new(), false, Anchor::TopLeft);
+        let overlay = TimestampOverlay::new(burner, TimestampFormat::Combined);
+        let squares = SquaresConfig {
+            count: 40,
+            min_size: 20,
+            max_size: 300,
+            motion_speed: 10,
+            color_strategy: ColorStrategy::default(),
+        };
+
+        let generator = VideoFrameGenerator::new();
+        let sink = WebRtcTrackSink::new(sender)
+            .map_err(|e| FieldError::WebRtc(format!("WebRtcTrackSink: {e}")))?;
+        generator.add_or_update_sink(Box::new(sink), VideoSinkWants::default());
+        generator.start(fps, PatternMode::Squares(squares), Some(overlay), width, height);
+
+        // PIT-81: generator 必须 owned 存活（Drop 停线程）
+        self.frame_generator = Some(generator);
+        tracing::info!("PushSession frames started {width}x{height}@{fps}fps");
+        Ok(())
+    }
+
+    /// 停止帧生成（幂等；多次调用无副作用）。
+    pub fn stop_video_frames(&mut self) {
+        if let Some(g) = self.frame_generator.take() {
+            g.stop();
+            tracing::info!("PushSession frames stopped");
+        }
+    }
+
     /// 关闭会话：关闭信令 + 标记 closed（媒体发送由帧任务负责停止）。
     pub async fn close(self) -> Result<(), FieldError> {
         self.closed.store(true, Ordering::Relaxed);
         self.signal.close().await.map_err(FieldError::Link)
+    }
+}
+
+impl std::fmt::Debug for PushSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PushSession")
+            .field("signal", &self.signal)
+            .field("pc", &self.pc)
+            .field("video_sender", &self.video_sender)
+            .field("frames_running", &self.frame_generator.is_some())
+            .field("closed", &self.closed)
+            .finish()
     }
 }
 

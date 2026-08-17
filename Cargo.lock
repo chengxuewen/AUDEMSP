@@ -4203,6 +4203,7 @@ dependencies = [
  "mediaservo-common",
  "mediaservo-deck",
  "mediaservo-link",
+ "mediaservo-media",
  "mediaservo-webrtc",
  "serde_json",
  "thiserror 2.0.18",

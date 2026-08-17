@@ -13,6 +13,7 @@ serde_json = "1"
 
 # 组合: 信令+帧总线 (link) + 采集/录制/回放 (deck) + WebRTC 抽象 (webrtc, backend-webrtc-sys)
 mediaservo-common = { path = "../mediaservo-common" }
+mediaservo-media = { path = "../mediaservo-media" }
 mediaservo-link = { path = "../mediaservo-link" }
 mediaservo-deck = { path = "../mediaservo-deck" }
 mediaservo-webrtc = { path = "../mediaservo-webrtc", features = ["backend-webrtc-sys"] }
