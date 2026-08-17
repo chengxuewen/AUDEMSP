@@ -1018,3 +1018,14 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
   FFmpeg 把 µs 值当 30fps tick 解释 → 每帧 64s 巨额 pts
 - **解法**: time_base 统一 `Rational(1, 1_000_000)`（µs 标尺）与 pts 单位一致
 - **验证**: `ffprobe -show_entries format=duration` = 1.799s（55帧@30fps ≈ 1.83s）✓
+
+## PIT-95: 磁盘满致 ld Bus error — workspace 回归假失败 (2026-08-17)
+
+- **症状**: `cargo test --workspace` 多 crate 报 `error: linking with cc failed: collect2:
+  fatal error: ld terminated with signal 7 [Bus error], core dumped`
+- **根因**: 根分区 99% 满 (仅 1.1G 可用) — target/debug/deps 11G + build 2.7G; ld 写临时
+  文件失败触发 bus error。深层原因: deck 引入 ffmpeg-the-third 双版本链 + 全量测试二进
+  制膨胀, 复现早前 (mediaservo-rename T4) 的"疑磁盘/并行竞态"
+- **解法**: `cargo clean` (释放 17G → 84% 使用率) 后重跑。预防: 定期清理旧 target;
+  CI 用 dev 镜像预构建 (D207) 避免本地重复构建
+- **验证**: `df -h /` 可用 >10G; cargo test --workspace 无 linker 错误
