@@ -4196,6 +4196,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mediaservo-deck-c"
+version = "0.1.0"
+dependencies = [
+ "mediaservo-codec",
+ "mediaservo-deck",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "mediaservo-deck-cxx"
+version = "0.1.0"
+
+[[package]]
 name = "mediaservo-field"
 version = "0.1.0"
 dependencies = [
@@ -4219,6 +4233,10 @@ dependencies = [
  "mediaservo-field",
  "tokio",
 ]
+
+[[package]]
+name = "mediaservo-field-cxx"
+version = "0.1.0"
 
 [[package]]
 name = "mediaservo-host"
@@ -4267,6 +4285,20 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
 ]
+
+[[package]]
+name = "mediaservo-link-c"
+version = "0.1.0"
+dependencies = [
+ "mediaservo-common",
+ "mediaservo-link",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "mediaservo-link-cxx"
+version = "0.1.0"
 
 [[package]]
 name = "mediaservo-media"

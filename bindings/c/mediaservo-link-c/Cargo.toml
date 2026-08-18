@@ -1,0 +1,17 @@
+[package]
+name = "mediaservo-link-c"
+build = "build.rs"
+version.workspace = true
+edition.workspace = true
+description = "MediaServo link C ABI — ms_link_* opaque handle bindings (信令 + 帧总线)"
+license.workspace = true
+
+[lib]
+name = "mediaservo_link"
+crate-type = ["cdylib"]
+
+[dependencies]
+mediaservo-common = { path = "../../../crates/mediaservo-common" }
+mediaservo-link = { path = "../../../crates/mediaservo-link" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde_json = "1"
