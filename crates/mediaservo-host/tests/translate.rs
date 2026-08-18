@@ -10,4 +10,8 @@ fn to_oxfile_emits_all_placeholder_apps() {
     }
     assert!(ox.contains("host-capturer --camera cam0")); // 参数化实例
     assert!(ox.contains("host-streamer --stream cam0-stream"));
+    // [defaults] 固定字段（A2 审查 M4 补强）
+    assert!(ox.contains("version = 1"));
+    assert!(ox.contains("namespace = \"host\""));
+    assert!(ox.contains("restart_policy = \"always\""));
 }

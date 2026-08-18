@@ -8,6 +8,8 @@
 //! - `host stop --dir <dir>`  — `oxmgr stop run/oxfile.toml` + `oxmgr delete run/oxfile.toml`
 //!   （config 目标解析 oxfile 内全部 app，幂等；动词见 OxMgr docs/CLI.md）
 //! - `host status --dir <dir>`— `oxmgr list --json` 过滤 `namespace == "host"` 输出状态表
+//! - `host doctor --dir <dir>`— 环境诊断（oxmgr 可用 / host.toml 解析 / oxfile 生成），
+//!   退出码 = 失败检查数
 //! - `host version`           — 打印版本号
 //!
 //! OxMgr 动词核对（C11/C18，来源 .refinfo/OxMgr/docs/CLI.md + SKILL.md）：
@@ -54,6 +56,7 @@ fn main() {
         "start" => cmd_start(&mut args),
         "stop" => cmd_stop(&mut args),
         "status" => cmd_status(&mut args),
+        "doctor" => cmd_doctor(&mut args),
         "version" => {
             println!("mediaservo-host {}", env!("CARGO_PKG_VERSION"));
             0
@@ -243,6 +246,51 @@ fn cmd_status(args: &mut impl Iterator<Item = String>) -> i32 {
     }
     0
 }
+/// `host doctor --dir <dir>`: 环境诊断。三项检查：
+/// ① oxmgr 可执行（PATH 内）② etc/host.toml 可解析 ③ host.toml → oxfile 可生成。
+/// 退出码 = 失败检查数（0..=3）。
+fn cmd_doctor(args: &mut impl Iterator<Item = String>) -> i32 {
+    let Some(dir) = parse_dir(args) else {
+        return 2;
+    };
+    let mut failed = 0;
+
+    match Command::new("oxmgr").arg("--version").output() {
+        Ok(_) => println!("[ok] oxmgr 可用"),
+        Err(e) => {
+            println!("[fail] oxmgr 不可用: {e} — 请先安装并加入 PATH（npm install -g oxmgr）");
+            failed += 1;
+        }
+    }
+
+    let cfg_path = dir.join("etc").join("host.toml");
+    let cfg = match std::fs::read_to_string(&cfg_path) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            println!("[fail] 读取 {} 失败: {e} — 先运行 host init <dir>", cfg_path.display());
+            return failed + 2; // ②③ 均因无配置失败
+        }
+    };
+    match toml::from_str::<toml::Value>(&cfg) {
+        Ok(_) => println!("[ok] host.toml 可解析"),
+        Err(e) => {
+            println!("[fail] host.toml 解析失败: {e}");
+            failed += 1;
+        }
+    }
+    match mediaservo_host::translate::to_oxfile(&cfg) {
+        Ok(_) => println!("[ok] oxfile 生成成功"),
+        Err(e) => {
+            println!("[fail] oxfile 生成失败: {e}");
+            failed += 1;
+        }
+    }
+    if failed == 0 {
+        println!("doctor: 全部通过（{}）", cfg_path.display());
+    }
+    failed
+}
+
 
 /// 代理 oxmgr CLI；oxmgr 不在 PATH 时报清晰错误并提示安装。
 fn run_oxmgr(args: &[&str]) -> i32 {
