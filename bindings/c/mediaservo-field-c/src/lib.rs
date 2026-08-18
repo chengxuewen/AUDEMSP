@@ -9,16 +9,16 @@
 //!
 //! # C ABI 面（cbindgen 导出, MAJOR 内稳定）
 //! ```c
-//! typedef struct ms_field_push_t ms_field_push_t;   /* opaque */
-//! typedef int ms_err_t;                              /* 0=ok, <0=error */
+//! typedef struct mediaservo_field_push_t mediaservo_field_push_t;   /* opaque */
+//! typedef int mediaservo_err_t;                              /* 0=ok, <0=error */
 //!
-//! ms_err_t ms_field_push_connect(const ms_push_config_t* cfg, ms_field_push_t** out);
-//! ms_err_t ms_field_push_publish_video(ms_field_push_t* s, ms_track_id_t* out_track);
-//! ms_err_t ms_field_push_start_video_frames(ms_field_push_t* s);
-//! void     ms_field_push_stop_video_frames(ms_field_push_t* s);
-//! ms_err_t ms_field_push_close(ms_field_push_t* s);
-//! ms_err_t ms_field_last_error(char* buf, size_t len);   /* ms_last_error 为 deprecated 别名 */
-//! ms_err_t ms_field_version(char* buf, size_t len);
+//! mediaservo_err_t mediaservo_field_push_connect(const mediaservo_push_config_t* cfg, mediaservo_field_push_t** out);
+//! mediaservo_err_t mediaservo_field_push_publish_video(mediaservo_field_push_t* s, mediaservo_track_id_t* out_track);
+//! mediaservo_err_t mediaservo_field_push_start_video_frames(mediaservo_field_push_t* s);
+//! void     mediaservo_field_push_stop_video_frames(mediaservo_field_push_t* s);
+//! mediaservo_err_t mediaservo_field_push_close(mediaservo_field_push_t* s);
+//! mediaservo_err_t mediaservo_field_last_error(char* buf, size_t len);   /* mediaservo_last_error 为 deprecated 别名 */
+//! mediaservo_err_t mediaservo_field_version(char* buf, size_t len);
 //! ```
 
 use std::ffi::{CStr, CString};
@@ -29,20 +29,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use mediaservo_field::{PublishOptions, PushConfig, PushSession};
 
-/// 错误码（<0；0 = ok）。MS_FIELD_ERR_* 为现行前缀，MS_ERR_* 保留兼容别名。
-pub const MS_OK: c_int = 0;
-pub const MS_ERR_INVALID_ARG: c_int = -1;
-pub const MS_ERR_CONNECT: c_int = -2;
-pub const MS_ERR_PUBLISH: c_int = -3;
-pub const MS_ERR_STATE: c_int = -4;
-pub const MS_ERR_INTERNAL: c_int = -5;
-pub const MS_FIELD_ERR_INVALID_ARG: c_int = -1;
-pub const MS_FIELD_ERR_CONNECT: c_int = -2;
-pub const MS_FIELD_ERR_PUBLISH: c_int = -3;
-pub const MS_FIELD_ERR_STATE: c_int = -4;
-pub const MS_FIELD_ERR_INTERNAL: c_int = -5;
+/// 错误码（<0；0 = ok）。MEDIASERVO_FIELD_ERR_* 为现行前缀，MEDIASERVO_ERR_* 保留兼容别名。
+pub const MEDIASERVO_OK: c_int = 0;
+pub const MEDIASERVO_ERR_INVALID_ARG: c_int = -1;
+pub const MEDIASERVO_ERR_CONNECT: c_int = -2;
+pub const MEDIASERVO_ERR_PUBLISH: c_int = -3;
+pub const MEDIASERVO_ERR_STATE: c_int = -4;
+pub const MEDIASERVO_ERR_INTERNAL: c_int = -5;
+pub const MEDIASERVO_FIELD_ERR_INVALID_ARG: c_int = -1;
+pub const MEDIASERVO_FIELD_ERR_CONNECT: c_int = -2;
+pub const MEDIASERVO_FIELD_ERR_PUBLISH: c_int = -3;
+pub const MEDIASERVO_FIELD_ERR_STATE: c_int = -4;
+pub const MEDIASERVO_FIELD_ERR_INTERNAL: c_int = -5;
 
-/// 全局最近错误信息（ms_field_last_error 读取）。
+/// 全局最近错误信息（mediaservo_field_last_error 读取）。
 static LAST_ERROR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 fn set_last_error(msg: impl Into<String>) {
@@ -53,11 +53,11 @@ fn set_last_error(msg: impl Into<String>) {
 
 /// 推流配置（C 结构 — 与 PushConfig 一一映射）。
 ///
-/// 首字段 `struct_size`（审核 R3）：调用方填 `sizeof(ms_push_config_t)`，
+/// 首字段 `struct_size`（审核 R3）：调用方填 `sizeof(mediaservo_push_config_t)`，
 /// 库校验 `>= sizeof(已知结构)`、超长忽略 —— 结构演进不破坏二进制兼容。
-#[allow(non_camel_case_types)] // C ABI 命名（C6 例外：ms_* 前缀）
+#[allow(non_camel_case_types)] // C ABI 命名（C6 例外：mediaservo_* 前缀）
 #[repr(C)]
-pub struct ms_push_config_t {
+pub struct mediaservo_push_config_t {
     pub struct_size: usize,
     /// 信令 WS 地址（如 "ws://host:9800/ws"）。
     pub url: *const c_char,
@@ -78,12 +78,12 @@ pub struct ms_push_config_t {
 }
 
 /// C 结构已知前缀尺寸（版本演进时的最小合法值）。
-pub const MS_PUSH_CONFIG_MIN_SIZE: usize = size_of::<ms_push_config_t>();
+pub const MEDIASERVO_PUSH_CONFIG_MIN_SIZE: usize = size_of::<mediaservo_push_config_t>();
 
-impl Default for ms_push_config_t {
+impl Default for mediaservo_push_config_t {
     fn default() -> Self {
         Self {
-            struct_size: MS_PUSH_CONFIG_MIN_SIZE,
+            struct_size: MEDIASERVO_PUSH_CONFIG_MIN_SIZE,
             url: ptr::null(),
             psk: ptr::null(),
             room: ptr::null(),
@@ -97,7 +97,7 @@ impl Default for ms_push_config_t {
 }
 
 /// 推流会话 opaque handle。
-pub struct ms_field_push_t {
+pub struct mediaservo_field_push_t {
     inner: std::sync::Mutex<Option<PushSession>>,
     cfg: PushConfig,
     /// 共享 multi_thread runtime（审核 R1）：session 后台任务（WS 读循环）
@@ -109,9 +109,9 @@ pub struct ms_field_push_t {
 }
 
 // SAFETY: handle 内部为 Mutex<Option<PushSession>>（线程安全）+ 不可变 cfg + Send runtime。
-unsafe impl Send for ms_field_push_t {}
+unsafe impl Send for mediaservo_field_push_t {}
 // SAFETY: 所有方法经 Mutex 序列化访问内部会话。
-unsafe impl Sync for ms_field_push_t {}
+unsafe impl Sync for mediaservo_field_push_t {}
 
 // ── 内部辅助 ──
 
@@ -137,26 +137,26 @@ fn new_runtime() -> tokio::runtime::Runtime {
 /// 连接信令并创建推流会话（阻塞）。
 ///
 /// `cfg` 不可为 null；`url/psk/room` 必填；`cfg.struct_size` 必须
-/// `>= sizeof(ms_push_config_t)`（旧头文件编译的调用方会得到明确错误）。
-/// 成功后 `*out` 指向新 handle（调用方负责 `ms_field_push_close`）。
+/// `>= sizeof(mediaservo_push_config_t)`（旧头文件编译的调用方会得到明确错误）。
+/// 成功后 `*out` 指向新 handle（调用方负责 `mediaservo_field_push_close`）。
 #[unsafe(no_mangle)]
-pub extern "C" fn ms_field_push_connect(
-    cfg: *const ms_push_config_t,
-    out: *mut *mut ms_field_push_t,
+pub extern "C" fn mediaservo_field_push_connect(
+    cfg: *const mediaservo_push_config_t,
+    out: *mut *mut mediaservo_field_push_t,
 ) -> c_int {
     catch_unwind(AssertUnwindSafe(|| {
         if cfg.is_null() || out.is_null() {
-            set_last_error("ms_field_push_connect: null cfg/out");
-            return MS_FIELD_ERR_INVALID_ARG;
+            set_last_error("mediaservo_field_push_connect: null cfg/out");
+            return MEDIASERVO_FIELD_ERR_INVALID_ARG;
         }
         let cfg_ref = unsafe { &*cfg };
-        if cfg_ref.struct_size < MS_PUSH_CONFIG_MIN_SIZE {
+        if cfg_ref.struct_size < MEDIASERVO_PUSH_CONFIG_MIN_SIZE {
             set_last_error(format!(
-                "ms_field_push_connect: cfg.struct_size {} < {} (rebuild with current header)",
+                "mediaservo_field_push_connect: cfg.struct_size {} < {} (rebuild with current header)",
                 cfg_ref.struct_size,
-                MS_PUSH_CONFIG_MIN_SIZE
+                MEDIASERVO_PUSH_CONFIG_MIN_SIZE
             ));
-            return MS_FIELD_ERR_INVALID_ARG;
+            return MEDIASERVO_FIELD_ERR_INVALID_ARG;
         }
         let (url, psk, room) = match (
             cstr(cfg_ref.url),
@@ -165,20 +165,20 @@ pub extern "C" fn ms_field_push_connect(
         ) {
             (Ok(Some(u)), Ok(Some(p)), Ok(Some(r))) => (u, p, r),
             (Ok(None), _, _) => {
-                set_last_error("ms_field_push_connect: url required");
-                return MS_FIELD_ERR_INVALID_ARG;
+                set_last_error("mediaservo_field_push_connect: url required");
+                return MEDIASERVO_FIELD_ERR_INVALID_ARG;
             }
             (_, Ok(None), _) => {
-                set_last_error("ms_field_push_connect: psk required");
-                return MS_FIELD_ERR_INVALID_ARG;
+                set_last_error("mediaservo_field_push_connect: psk required");
+                return MEDIASERVO_FIELD_ERR_INVALID_ARG;
             }
             (_, _, Ok(None)) => {
-                set_last_error("ms_field_push_connect: room required");
-                return MS_FIELD_ERR_INVALID_ARG;
+                set_last_error("mediaservo_field_push_connect: room required");
+                return MEDIASERVO_FIELD_ERR_INVALID_ARG;
             }
             _ => {
-                set_last_error("ms_field_push_connect: invalid UTF-8 in config");
-                return MS_FIELD_ERR_INVALID_ARG;
+                set_last_error("mediaservo_field_push_connect: invalid UTF-8 in config");
+                return MEDIASERVO_FIELD_ERR_INVALID_ARG;
             }
         };
 
@@ -202,24 +202,24 @@ pub extern "C" fn ms_field_push_connect(
         let rt = new_runtime();
         match rt.block_on(PushSession::connect(push_cfg.clone())) {
             Ok((session, _events)) => {
-                let handle = Box::new(ms_field_push_t {
+                let handle = Box::new(mediaservo_field_push_t {
                     inner: std::sync::Mutex::new(Some(session)),
                     cfg: push_cfg,
                     rt,
                     closed: AtomicBool::new(false),
                 });
                 unsafe { *out = Box::into_raw(handle) };
-                MS_OK
+                MEDIASERVO_OK
             }
             Err(e) => {
-                set_last_error(format!("ms_field_push_connect: {e}"));
-                MS_FIELD_ERR_CONNECT
+                set_last_error(format!("mediaservo_field_push_connect: {e}"));
+                MEDIASERVO_FIELD_ERR_CONNECT
             }
         }
     }))
     .unwrap_or_else(|_| {
-        set_last_error("ms_field_push_connect: panic");
-        MS_FIELD_ERR_INTERNAL
+        set_last_error("mediaservo_field_push_connect: panic");
+        MEDIASERVO_FIELD_ERR_INTERNAL
     })
 }
 
@@ -227,31 +227,31 @@ pub extern "C" fn ms_field_push_connect(
 ///
 /// `out_track` 需至少 `out_track_len` 字节（track id 短, 64 足够）。
 #[unsafe(no_mangle)]
-pub extern "C" fn ms_field_push_publish_video(
-    s: *mut ms_field_push_t,
+pub extern "C" fn mediaservo_field_push_publish_video(
+    s: *mut mediaservo_field_push_t,
     out_track: *mut c_char,
     out_track_len: usize,
 ) -> c_int {
     catch_unwind(AssertUnwindSafe(|| {
         if s.is_null() || out_track.is_null() {
-            set_last_error("ms_field_push_publish_video: null handle/out_track");
-            return MS_FIELD_ERR_INVALID_ARG;
+            set_last_error("mediaservo_field_push_publish_video: null handle/out_track");
+            return MEDIASERVO_FIELD_ERR_INVALID_ARG;
         }
         let handle = unsafe { &*s };
         if handle.closed.load(Ordering::SeqCst) {
-            set_last_error("ms_field_push_publish_video: session closed");
-            return MS_FIELD_ERR_STATE;
+            set_last_error("mediaservo_field_push_publish_video: session closed");
+            return MEDIASERVO_FIELD_ERR_STATE;
         }
         let mut guard = match handle.inner.lock() {
             Ok(g) => g,
             Err(_) => {
-                set_last_error("ms_field_push_publish_video: lock poisoned");
-                return MS_FIELD_ERR_INTERNAL;
+                set_last_error("mediaservo_field_push_publish_video: lock poisoned");
+                return MEDIASERVO_FIELD_ERR_INTERNAL;
             }
         };
         let Some(session) = guard.as_mut() else {
-            set_last_error("ms_field_push_publish_video: session closed");
-            return MS_FIELD_ERR_STATE;
+            set_last_error("mediaservo_field_push_publish_video: session closed");
+            return MEDIASERVO_FIELD_ERR_STATE;
         };
 
         let opts = PublishOptions::default();
@@ -263,63 +263,63 @@ pub extern "C" fn ms_field_push_publish_video(
                     ptr::copy_nonoverlapping(bytes.as_ptr(), out_track as *mut u8, n);
                     *out_track.add(n) = 0;
                 }
-                MS_OK
+                MEDIASERVO_OK
             }
             Err(e) => {
-                set_last_error(format!("ms_field_push_publish_video: {e}"));
-                MS_FIELD_ERR_PUBLISH
+                set_last_error(format!("mediaservo_field_push_publish_video: {e}"));
+                MEDIASERVO_FIELD_ERR_PUBLISH
             }
         }
     }))
     .unwrap_or_else(|_| {
-        set_last_error("ms_field_push_publish_video: panic");
-        MS_FIELD_ERR_INTERNAL
+        set_last_error("mediaservo_field_push_publish_video: panic");
+        MEDIASERVO_FIELD_ERR_INTERNAL
     })
 }
 
 /// 启动视频帧生成（Squares + 时间戳水印；阻塞仅本地启动）。
 #[unsafe(no_mangle)]
-pub extern "C" fn ms_field_push_start_video_frames(s: *mut ms_field_push_t) -> c_int {
+pub extern "C" fn mediaservo_field_push_start_video_frames(s: *mut mediaservo_field_push_t) -> c_int {
     catch_unwind(AssertUnwindSafe(|| {
         if s.is_null() {
-            set_last_error("ms_field_push_start_video_frames: null handle");
-            return MS_FIELD_ERR_INVALID_ARG;
+            set_last_error("mediaservo_field_push_start_video_frames: null handle");
+            return MEDIASERVO_FIELD_ERR_INVALID_ARG;
         }
         let handle = unsafe { &*s };
         if handle.closed.load(Ordering::SeqCst) {
-            set_last_error("ms_field_push_start_video_frames: session closed");
-            return MS_FIELD_ERR_STATE;
+            set_last_error("mediaservo_field_push_start_video_frames: session closed");
+            return MEDIASERVO_FIELD_ERR_STATE;
         }
         let mut guard = match handle.inner.lock() {
             Ok(g) => g,
             Err(_) => {
-                set_last_error("ms_field_push_start_video_frames: lock poisoned");
-                return MS_FIELD_ERR_INTERNAL;
+                set_last_error("mediaservo_field_push_start_video_frames: lock poisoned");
+                return MEDIASERVO_FIELD_ERR_INTERNAL;
             }
         };
         let Some(session) = guard.as_mut() else {
-            set_last_error("ms_field_push_start_video_frames: session closed");
-            return MS_FIELD_ERR_STATE;
+            set_last_error("mediaservo_field_push_start_video_frames: session closed");
+            return MEDIASERVO_FIELD_ERR_STATE;
         };
         // WebRtcTrackSink 需要 tokio runtime context（Handle::try_current）——
         // 同步方法经共享 rt block_on 提供 context（审核 R1 延续）。
         match handle.rt.block_on(async { session.start_video_frames(&handle.cfg) }) {
-            Ok(()) => MS_OK,
+            Ok(()) => MEDIASERVO_OK,
             Err(e) => {
-                set_last_error(format!("ms_field_push_start_video_frames: {e}"));
-                MS_FIELD_ERR_STATE
+                set_last_error(format!("mediaservo_field_push_start_video_frames: {e}"));
+                MEDIASERVO_FIELD_ERR_STATE
             }
         }
     }))
     .unwrap_or_else(|_| {
-        set_last_error("ms_field_push_start_video_frames: panic");
-        MS_FIELD_ERR_INTERNAL
+        set_last_error("mediaservo_field_push_start_video_frames: panic");
+        MEDIASERVO_FIELD_ERR_INTERNAL
     })
 }
 
 /// 停止视频帧生成（幂等）。
 #[unsafe(no_mangle)]
-pub extern "C" fn ms_field_push_stop_video_frames(s: *mut ms_field_push_t) {
+pub extern "C" fn mediaservo_field_push_stop_video_frames(s: *mut mediaservo_field_push_t) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         if s.is_null() {
             return;
@@ -341,38 +341,38 @@ pub extern "C" fn ms_field_push_stop_video_frames(s: *mut ms_field_push_t) {
 /// 顺序（审核 R2）：置 closed 标志 → 释放会话（block_on close）→
 /// drop runtime（取消残留后台任务）→ 释放 handle 内存。
 #[unsafe(no_mangle)]
-pub extern "C" fn ms_field_push_close(s: *mut ms_field_push_t) -> c_int {
+pub extern "C" fn mediaservo_field_push_close(s: *mut mediaservo_field_push_t) -> c_int {
     catch_unwind(AssertUnwindSafe(|| {
         if s.is_null() {
-            return MS_OK;
+            return MEDIASERVO_OK;
         }
         let handle = unsafe { Box::from_raw(s) };
         if handle.closed.swap(true, Ordering::SeqCst) {
-            return MS_OK; // 幂等：已关闭
+            return MEDIASERVO_OK; // 幂等：已关闭
         }
         let session = handle.inner.lock().ok().and_then(|mut g| g.take());
         if let Some(session) = session {
             match handle.rt.block_on(session.close()) {
-                Ok(()) => MS_OK,
+                Ok(()) => MEDIASERVO_OK,
                 Err(e) => {
-                    set_last_error(format!("ms_field_push_close: {e}"));
-                    MS_FIELD_ERR_INTERNAL
+                    set_last_error(format!("mediaservo_field_push_close: {e}"));
+                    MEDIASERVO_FIELD_ERR_INTERNAL
                 }
             }
         } else {
-            MS_OK
+            MEDIASERVO_OK
         }
     }))
     .unwrap_or_else(|_| {
-        set_last_error("ms_field_push_close: panic");
-        MS_FIELD_ERR_INTERNAL
+        set_last_error("mediaservo_field_push_close: panic");
+        MEDIASERVO_FIELD_ERR_INTERNAL
     })
 }
 
 /// 最近一次错误的详情（线程安全；无错误时返回空串）。
 fn last_error_impl(buf: *mut c_char, len: usize) -> c_int {
     if buf.is_null() || len == 0 {
-        return MS_FIELD_ERR_INVALID_ARG;
+        return MEDIASERVO_FIELD_ERR_INVALID_ARG;
     }
     let msg = LAST_ERROR
         .lock()
@@ -385,29 +385,29 @@ fn last_error_impl(buf: *mut c_char, len: usize) -> c_int {
         ptr::copy_nonoverlapping(bytes.as_ptr(), buf as *mut u8, n);
         *buf.add(n) = 0;
     }
-    MS_OK
+    MEDIASERVO_OK
 }
 
 /// 最近错误详情（现行前缀，推荐使用）。
 #[unsafe(no_mangle)]
-pub extern "C" fn ms_field_last_error(buf: *mut c_char, len: usize) -> c_int {
+pub extern "C" fn mediaservo_field_last_error(buf: *mut c_char, len: usize) -> c_int {
     catch_unwind(AssertUnwindSafe(|| last_error_impl(buf, len)))
-        .unwrap_or(MS_FIELD_ERR_INTERNAL)
+        .unwrap_or(MEDIASERVO_FIELD_ERR_INTERNAL)
 }
 
 /// 最近错误详情（deprecated 别名，additive-only 保留）。
 #[unsafe(no_mangle)]
-pub extern "C" fn ms_last_error(buf: *mut c_char, len: usize) -> c_int {
+pub extern "C" fn mediaservo_last_error(buf: *mut c_char, len: usize) -> c_int {
     catch_unwind(AssertUnwindSafe(|| last_error_impl(buf, len)))
-        .unwrap_or(MS_FIELD_ERR_INTERNAL)
+        .unwrap_or(MEDIASERVO_FIELD_ERR_INTERNAL)
 }
 
 /// 版本信息（MAJOR.MINOR.PATCH — D241 soname 语义）。
 #[unsafe(no_mangle)]
-pub extern "C" fn ms_field_version(buf: *mut c_char, len: usize) -> c_int {
+pub extern "C" fn mediaservo_field_version(buf: *mut c_char, len: usize) -> c_int {
     catch_unwind(AssertUnwindSafe(|| {
         if buf.is_null() || len == 0 {
-            return MS_FIELD_ERR_INVALID_ARG;
+            return MEDIASERVO_FIELD_ERR_INVALID_ARG;
         }
         let ver = CString::new(env!("CARGO_PKG_VERSION")).unwrap_or_default();
         let bytes = ver.as_bytes();
@@ -416,9 +416,9 @@ pub extern "C" fn ms_field_version(buf: *mut c_char, len: usize) -> c_int {
             ptr::copy_nonoverlapping(bytes.as_ptr(), buf as *mut u8, n);
             *buf.add(n) = 0;
         }
-        MS_OK
+        MEDIASERVO_OK
     }))
-    .unwrap_or(MS_FIELD_ERR_INTERNAL)
+    .unwrap_or(MEDIASERVO_FIELD_ERR_INTERNAL)
 }
 
 #[cfg(test)]
@@ -431,8 +431,8 @@ mod tests {
         set_last_error("");
         set_last_error("test error");
         let mut buf = [0u8; 64];
-        let rc = ms_field_last_error(buf.as_mut_ptr() as *mut c_char, buf.len());
-        assert_eq!(rc, MS_OK);
+        let rc = mediaservo_field_last_error(buf.as_mut_ptr() as *mut c_char, buf.len());
+        assert_eq!(rc, MEDIASERVO_OK);
         let s = unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char) }
             .to_str()
             .unwrap();
@@ -443,8 +443,8 @@ mod tests {
     fn last_error_deprecated_alias() {
         set_last_error("alias error");
         let mut buf = [0u8; 64];
-        let rc = ms_last_error(buf.as_mut_ptr() as *mut c_char, buf.len());
-        assert_eq!(rc, MS_OK);
+        let rc = mediaservo_last_error(buf.as_mut_ptr() as *mut c_char, buf.len());
+        assert_eq!(rc, MEDIASERVO_OK);
         let s = unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char) }
             .to_str()
             .unwrap();
@@ -454,8 +454,8 @@ mod tests {
     #[test]
     fn version_roundtrip() {
         let mut buf = [0u8; 32];
-        let rc = ms_field_version(buf.as_mut_ptr() as *mut c_char, buf.len());
-        assert_eq!(rc, MS_OK);
+        let rc = mediaservo_field_version(buf.as_mut_ptr() as *mut c_char, buf.len());
+        assert_eq!(rc, MEDIASERVO_OK);
         let s = unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char) }
             .to_str()
             .unwrap();
@@ -464,43 +464,43 @@ mod tests {
 
     #[test]
     fn connect_null_cfg_fails() {
-        let rc = ms_field_push_connect(ptr::null(), ptr::null_mut());
-        assert_eq!(rc, MS_FIELD_ERR_INVALID_ARG);
+        let rc = mediaservo_field_push_connect(ptr::null(), ptr::null_mut());
+        assert_eq!(rc, MEDIASERVO_FIELD_ERR_INVALID_ARG);
     }
 
     #[test]
     fn connect_small_struct_size_fails() {
         // 旧头文件编译的调用方：struct_size 过小 → 明确错误（R3）
-        let cfg = ms_push_config_t { struct_size: 1, ..Default::default() };
-        let mut out: *mut ms_field_push_t = ptr::null_mut();
-        let rc = ms_field_push_connect(&cfg, &mut out);
-        assert_eq!(rc, MS_FIELD_ERR_INVALID_ARG);
+        let cfg = mediaservo_push_config_t { struct_size: 1, ..Default::default() };
+        let mut out: *mut mediaservo_field_push_t = ptr::null_mut();
+        let rc = mediaservo_field_push_connect(&cfg, &mut out);
+        assert_eq!(rc, MEDIASERVO_FIELD_ERR_INVALID_ARG);
         assert!(out.is_null());
     }
 
     #[test]
     fn connect_missing_required_fails() {
         // struct_size 合法但 url/psk/room 为空 → 必填错误
-        let cfg = ms_push_config_t::default();
-        let mut out: *mut ms_field_push_t = ptr::null_mut();
-        let rc = ms_field_push_connect(&cfg, &mut out);
-        assert_eq!(rc, MS_FIELD_ERR_INVALID_ARG);
+        let cfg = mediaservo_push_config_t::default();
+        let mut out: *mut mediaservo_field_push_t = ptr::null_mut();
+        let rc = mediaservo_field_push_connect(&cfg, &mut out);
+        assert_eq!(rc, MEDIASERVO_FIELD_ERR_INVALID_ARG);
         assert!(out.is_null());
     }
 
     #[test]
     fn publish_null_handle_fails() {
         let mut track = [0u8; 64];
-        let rc = ms_field_push_publish_video(
+        let rc = mediaservo_field_push_publish_video(
             ptr::null_mut(),
             track.as_mut_ptr() as *mut c_char,
             64,
         );
-        assert_eq!(rc, MS_FIELD_ERR_INVALID_ARG);
+        assert_eq!(rc, MEDIASERVO_FIELD_ERR_INVALID_ARG);
     }
 
     #[test]
     fn close_null_is_ok() {
-        assert_eq!(ms_field_push_close(ptr::null_mut()), MS_OK);
+        assert_eq!(mediaservo_field_push_close(ptr::null_mut()), MEDIASERVO_OK);
     }
 }

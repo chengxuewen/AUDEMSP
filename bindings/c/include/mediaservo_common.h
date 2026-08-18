@@ -14,14 +14,14 @@ extern "C" {
 #endif
 
 /* ── 错误码 ──
- * 每 SDK 头文件按 MS_<SDK>_ERR_* 前缀展开值空间（防多 header 同 include 宏冲突）：
- *   field: MS_FIELD_ERR_*（保留历史 MS_ERR_* 别名）
- *   link:  MS_LINK_ERR_*
- *   deck:  MS_DECK_ERR_*
+ * 每 SDK 头文件按 MEDIASERVO_<SDK>_ERR_* 前缀展开值空间（防多 header 同 include 宏冲突）：
+ *   field: MEDIASERVO_FIELD_ERR_*（保留历史 MEDIASERVO_ERR_* 别名）
+ *   link:  MEDIASERVO_LINK_ERR_*
+ *   deck:  MEDIASERVO_DECK_ERR_*
  * 0 = ok，<0 = 错误码。
  */
-typedef int ms_err_t;
-#define MS_OK 0
+typedef int mediaservo_err_t;
+#define MEDIASERVO_OK 0
 
 /* ── 帧元数据（link 帧总线线格式，定长 36B LE，D243）────────
  * 布局与 Rust FrameMeta::encode 逐字节一致：
@@ -33,7 +33,7 @@ typedef int ms_err_t;
  * 读取构造 FrameMeta，禁止整块 reinterpret（填充/字节序风险）。
  */
 #pragma pack(push, 1)
-typedef struct ms_frame_meta_t {
+typedef struct mediaservo_frame_meta_t {
     uint64_t seq;
     uint32_t width;
     uint32_t height;
@@ -43,16 +43,16 @@ typedef struct ms_frame_meta_t {
     uint8_t  reserved;      /* 必须填 0 */
     uint64_t ts_mono_ns;    /* 单调时钟 ns */
     uint64_t ts_epoch_ns;   /* 墙上时钟 ns */
-} ms_frame_meta_t;
+} mediaservo_frame_meta_t;
 #pragma pack(pop)
 
 /* 编译期尺寸断言（C/C++ 通用，避免 _Static_assert 的 C11 依赖） */
-typedef char ms_frame_meta_size_check[(sizeof(ms_frame_meta_t) == 36) ? 1 : -1];
+typedef char mediaservo_frame_meta_size_check[(sizeof(mediaservo_frame_meta_t) == 36) ? 1 : -1];
 
 /* ── 内存帧描述（deck 采集/回放回调，I420 三平面）────────
  * data_* 指针仅在回调内有效 —— 需要保留必须拷贝（文档契约）。
  */
-typedef struct ms_frame_t {
+typedef struct mediaservo_frame_t {
     uint32_t width;
     uint32_t height;
     uint64_t pts_us;        /* 演示时间戳 µs */
@@ -62,7 +62,7 @@ typedef struct ms_frame_t {
     const uint8_t* data_y;
     const uint8_t* data_u;
     const uint8_t* data_v;
-} ms_frame_t;
+} mediaservo_frame_t;
 
 #ifdef __cplusplus
 } /* extern "C" */
