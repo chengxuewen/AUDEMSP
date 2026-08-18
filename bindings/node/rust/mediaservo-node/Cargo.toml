@@ -1,0 +1,20 @@
+[package]
+name = "mediaservo-node"
+version.workspace = true
+edition.workspace = true
+description = "MediaServo Node.js 绑定 — napi-rs 直绑 Rust SDK（livekit rtc-ffi-bindings 同构）"
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3", default-features = false, features = ["compat-mode", "async", "napi6"] }
+napi-derive = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+mediaservo-field = { path = "../../../../crates/mediaservo-field" }
+mediaservo-link = { path = "../../../../crates/mediaservo-link" }
+mediaservo-deck = { path = "../../../../crates/mediaservo-deck" }
+
+[build-dependencies]
+napi-build = "2"
