@@ -43,8 +43,8 @@ OxMgr（进程总管：重启策略/健康检查/日志轮转/CPU-RAM 指标/fil
 
 **媒体链路**：`host-capturer →(FrameBus I420)→ host-streamer / host-recorder / 外部节点(ROS 拼接)`；`外部节点 →(FrameBus 1 路全景)→ host-streamer(stitch) / host-recorder`
 **控制链路**：`舱端/Server →(WebRTC DataChannel)→ host-controller`（P2P 直连；SFU 经 Server data 域）
-**视觉结果链路**：`ROS 视觉节点 →(FrameBus 视觉 topic)→ host-streamer →(同 PC DataChannel label "vision")→ 舱端 HMI overlay`
-——视频走 RTP、视觉结果走同 PC 的 DC（每路 streamer 转发自己那路的检测结果，与视频帧 ts/seq 关联）
+**视觉结果链路**：`ROS 视觉节点 →(FrameBus 视觉 topic)→ host-streamer →(独立 transport B: DataChannel label "vision")→ 舱端 HMI overlay`
+——视频走 RTP（transport A）、视觉结果走**独立 transport B 的 DC**（mediasoup 官方: client 端 send/recv 须分离 transport + libwebrtc SCTP 与 RTP 混用互相拖累 → media/data 分离）；"视频+视觉"关联靠 ts/seq 帧关联（非 transport 关联）
 **信令链路**：`各进程 →(WS→127.0.0.1:PORT)→ host-agent（信令网关）→(单 WS)→ Server`——一个 host 在 Server 侧 = 一个 peer 会话
 
 ## 3. 关键决策记录
@@ -116,7 +116,7 @@ host-monitor ──(期望态镜像)──▶ 拓扑验证/告警闭环
 ### D-H8: 视觉处理结果 = 元数据流，经 streamer 的 DC 转发（舱端 HMI overlay）
 - **决策**: ROS 视觉节点经 link SDK 发布检测结果 topic（对象 bbox + 提示文本 + 建议显示颜色 + 帧关联 ts/seq）；host-streamer 订阅后经**同一 PC 的 DataChannel（label "vision"）**转发；舱端 HMI 本地 overlay 渲染（视频 RTP + 检测 DC 同连接）
 - **理由**: 检测结果是帧级元数据非视频帧——DC 传输（延迟低、按帧关联）；overlay 在舱端渲染（车端不烧录标注，带宽与画质无损）；"视频+视觉同连接"使 HMI 天然对齐（无需额外订阅关系）
-- **通道语义**: 视觉 DC 是信息展示流（非控制流）——不并入 controller 的 PC（控制/信息分离）；挂在 streamer PC 上（与对应视频流同生共死）
+- **通道语义**: 视觉 DC 是信息展示流（非控制流）——不并入 controller 的 PC（控制/信息分离）；挂在 streamer 进程的**独立 transport B**（mediasoup 官方: mediasoup-client/libmediasoupclient 设计上 send/recv 须分离 transport + libwebrtc SCTP 与 RTP 同 PC 调度互相拖累 → media/data 分离 transport；controller/emergency 纯 DC transport 天然合规）
 - **消息格式**: JSON 起步（对象数组: class/confidence/bbox/text/color）；量级小（每路 10-30Hz 检测）；帧关联用 ts_mono/seq（FrameMeta 对齐语义）
 - **安全**: 视觉节点 attach 走 link ACL + 能力令牌（同 D-H7）
 
