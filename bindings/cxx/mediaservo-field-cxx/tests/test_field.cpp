@@ -14,29 +14,29 @@ using mediaservo::field::PushSession;
 
 static void test_version() {
     auto v = mediaservo::field::version();
-    assert(v.ok());
+    assert(v.has_value());
     assert(v.value().rfind("0.1.", 0) == 0); // "0.1.x"
 }
 
 static void test_connect_error_path() {
     // 空配置 → C ABI 快速 INVALID_ARG（url/psk/room 必填），不触网
     auto r = PushSession::connect(PushConfig{});
-    assert(!r.ok());
-    assert(r.has_error());
+    assert(!r.has_value());
+    assert(!r.has_value());
     assert(r.error().code == MEDIASERVO_FIELD_ERR_INVALID_ARG);
     assert(!r.error().message.empty());
 }
 
 static void test_result_misuse_throws() {
     auto r = PushSession::connect(PushConfig{});
-    assert(!r.ok());
+    assert(!r.has_value());
     bool threw = false;
     try {
         (void)r.value();
-    } catch (const std::logic_error&) {
+    } catch (const tl::bad_expected_access<mediaservo::Error>&) {
         threw = true;
     }
-    assert(threw && "value() on error must throw std::logic_error");
+    assert(threw && "value() on error must throw bad_expected_access");
 }
 
 static void test_closed_session_error_path() {
@@ -44,17 +44,17 @@ static void test_closed_session_error_path() {
     assert(!s);
 
     auto p = s.publish_video();
-    assert(!p.ok());
+    assert(!p.has_value());
     assert(p.error().code == MEDIASERVO_FIELD_ERR_INVALID_ARG);
     assert(p.error().message == "closed");
 
     auto st = s.start_video_frames();
-    assert(!st.ok());
+    assert(!st.has_value());
     assert(st.error().code == MEDIASERVO_FIELD_ERR_INVALID_ARG);
 
     s.stop_video_frames(); // 已关闭 no-op，不崩
-    assert(s.close().ok()); // 幂等
-    assert(s.close().ok());
+    assert(s.close().has_value()); // 幂等
+    assert(s.close().has_value());
 }
 
 static void test_move_semantics() {

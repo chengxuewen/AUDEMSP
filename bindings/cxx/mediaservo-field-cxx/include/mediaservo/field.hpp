@@ -5,7 +5,7 @@
  *   - PushSession move-only；析构自动 close（幂等）。
  *   - 默认构造 = 已关闭（null handle）；对已关闭会话调用 API 返回
  *     Error{INVALID_ARG, "closed"}，不触碰 C ABI。
- *   - 错误通道为 Result（非异常）；仅 value()/error() 误用抛 std::logic_error
+ *   - 错误通道为 Result（非异常）；误用 value()/error() 抛 tl::bad_expected_access<Error>
  *     （livekit Result 模式一致）。
  */
 #ifndef MEDIASERVO_FIELD_HPP
@@ -21,15 +21,15 @@
 
 #include <mediaservo/common.h>
 #include <mediaservo/field.h>
+#include <mediaservo/detail/result.hpp>
 
 namespace mediaservo {
 namespace field {
+using mediaservo::Error;
+using mediaservo::Result;
 
 /// 错误详情（code 为 mediaservo/field.h 中 MEDIASERVO_FIELD_ERR_* 值；message 读自 last_error）。
-struct Error {
-    int code;
-    std::string message;
-};
+;
 
 namespace detail {
 
@@ -47,90 +47,18 @@ inline const char* c_str_or_null(const std::string& s) {
 
 } // namespace detail
 
-/// 成功或错误返回值（livekit Result 模式；误用 value()/error() 抛 std::logic_error）。
-template <typename T>
-class [[nodiscard]] Result {
-public:
-    static Result success(T value) { return Result(std::variant<T, Error>(std::in_place_index<0>, std::move(value))); }
-    static Result failure(Error error) { return Result(std::variant<T, Error>(std::in_place_index<1>, std::move(error))); }
 
-    bool ok() const noexcept { return storage_.index() == 0; }
-    bool has_error() const noexcept { return !ok(); }
-    explicit operator bool() const noexcept { return ok(); }
 
-    T& value() & {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-        return std::get<0>(storage_);
-    }
-    const T& value() const& {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-        return std::get<0>(storage_);
-    }
-    T&& value() && {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-        return std::get<0>(std::move(storage_));
-    }
 
-    Error& error() & {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<1>(storage_);
-    }
-    const Error& error() const& {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<1>(storage_);
-    }
-    Error&& error() && {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<1>(std::move(storage_));
-    }
-
-private:
-    explicit Result(std::variant<T, Error> storage) : storage_(std::move(storage)) {}
-    std::variant<T, Error> storage_;
-};
-
-/// void 特化（操作仅报告成败）。
-template <>
-class [[nodiscard]] Result<void> {
-public:
-    static Result success() { return Result(std::monostate{}); }
-    static Result failure(Error error) { return Result(std::variant<Error, std::monostate>(std::in_place_index<0>, std::move(error))); }
-
-    bool ok() const noexcept { return storage_.index() == 1; }
-    bool has_error() const noexcept { return !ok(); }
-    explicit operator bool() const noexcept { return ok(); }
-
-    /// 校验成功；误用抛 std::logic_error。
-    void value() const {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-    }
-
-    Error& error() & {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<0>(storage_);
-    }
-    const Error& error() const& {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<0>(storage_);
-    }
-    Error&& error() && {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<0>(std::move(storage_));
-    }
-
-private:
-    Result(std::variant<Error, std::monostate> storage) : storage_(std::move(storage)) {}
-    std::variant<Error, std::monostate> storage_;
-};
 
 /// SDK 版本 (MAJOR.MINOR.PATCH)。
 inline Result<std::string> version() {
     char buf[64];
     int rc = mediaservo_field_version(buf, sizeof(buf));
     if (rc != MEDIASERVO_OK) {
-        return Result<std::string>::failure(detail::make_error(rc));
+        return Result<std::string>(tl::unexpect, detail::make_error(rc));
     }
-    return Result<std::string>::success(std::string(buf));
+    return Result<std::string>(std::string(buf));
 }
 
 /// 推流配置（对应 mediaservo_push_config_t；字段默认值与 C DEFAULT 一致）。
@@ -163,9 +91,9 @@ public:
         mediaservo_field_push_t* h = nullptr;
         int rc = mediaservo_field_push_connect(&c, &h);
         if (rc != MEDIASERVO_OK) {
-            return Result<PushSession>::failure(detail::make_error(rc));
+            return Result<PushSession>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<PushSession>::success(PushSession(h));
+        return Result<PushSession>(PushSession(h));
     }
 
     /// 默认构造 = 已关闭会话（所有调用返回 INVALID_ARG/"closed"）。
@@ -188,23 +116,23 @@ public:
 
     /// 发布视频轨（阻塞协商）。返回 track id。
     Result<std::string> publish_video() {
-        if (!h_) return Result<std::string>::failure(Error{MEDIASERVO_FIELD_ERR_INVALID_ARG, "closed"});
+        if (!h_) return Result<std::string>(tl::unexpect, Error{MEDIASERVO_FIELD_ERR_INVALID_ARG, "closed"});
         char track[64];
         int rc = mediaservo_field_push_publish_video(h_, track, sizeof(track));
         if (rc != MEDIASERVO_OK) {
-            return Result<std::string>::failure(detail::make_error(rc));
+            return Result<std::string>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<std::string>::success(std::string(track));
+        return Result<std::string>(std::string(track));
     }
 
     /// 启动视频帧生成（Squares + 时间戳水印）。
     Result<void> start_video_frames() {
-        if (!h_) return Result<void>::failure(Error{MEDIASERVO_FIELD_ERR_INVALID_ARG, "closed"});
+        if (!h_) return Result<void>(tl::unexpect, Error{MEDIASERVO_FIELD_ERR_INVALID_ARG, "closed"});
         int rc = mediaservo_field_push_start_video_frames(h_);
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
     /// 停止视频帧生成（幂等；无错误通道——C ABI 为 void）。
@@ -214,13 +142,13 @@ public:
 
     /// 关闭会话并释放 handle（幂等；重复 close 与已关闭会话均返回 OK）。
     Result<void> close() noexcept {
-        if (!h_) return Result<void>::success();
+        if (!h_) return Result<void>();
         int rc = mediaservo_field_push_close(h_);
         h_ = nullptr;
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
 private:

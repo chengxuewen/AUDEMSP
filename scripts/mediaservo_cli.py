@@ -153,6 +153,13 @@ def _cmd_install_bindings(prefix: str, components: str = "all", release: bool = 
 
     for h in (ROOT / "bindings/c/include/mediaservo").glob("*.h"):
         shutil.copy2(h, inc_dir)  # common.h 总是装（所有头依赖）
+    # C++ 共享目录（detail/result.hpp + 3rdparty/tl/expected.hpp + NOTICE）: 总是装
+    for f in (ROOT / "bindings/cxx/include/mediaservo").rglob("*"):
+        if not f.is_file():
+            continue
+        dst = inc_dir / f.relative_to(ROOT / "bindings/cxx/include/mediaservo")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(f, dst)
     for sdk in sdks:
         for h in (ROOT / f"bindings/c/mediaservo-{sdk}-c/include/mediaservo").glob("*.h"):
             shutil.copy2(h, inc_dir)

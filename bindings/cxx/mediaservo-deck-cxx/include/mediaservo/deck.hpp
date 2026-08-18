@@ -10,7 +10,7 @@
  *     std::function 堆对象在 close（join 泵线程）后统一释放，防 use-after-free。
  *   - Recorder::record 要求 camera 已 start 且活到录制结束；关闭顺序必须
  *     recorder stop/close 先于 camera stop/close（C 契约）。
- *   - 错误通道为 Result（非异常）；仅 value()/error() 误用抛 std::logic_error。
+ *   - 错误通道为 Result（非异常）；误用 value()/error() 抛 tl::bad_expected_access<Error>。
  */
 #ifndef MEDIASERVO_DECK_HPP
 #define MEDIASERVO_DECK_HPP
@@ -27,15 +27,15 @@
 
 #include <mediaservo/common.h>
 #include <mediaservo/deck.h>
+#include <mediaservo/detail/result.hpp>
 
 namespace mediaservo {
 namespace deck {
+using mediaservo::Error;
+using mediaservo::Result;
 
 /// 错误详情（code 为 mediaservo/deck.h 中 MEDIASERVO_DECK_ERR_* 值；message 读自 last_error）。
-struct Error {
-    int code;
-    std::string message;
-};
+;
 
 namespace detail {
 
@@ -54,90 +54,18 @@ inline void frame_trampoline(const mediaservo_frame_t* frame, void* user) {
 
 } // namespace detail
 
-/// 成功或错误返回值（livekit Result 模式；误用 value()/error() 抛 std::logic_error）。
-template <typename T>
-class [[nodiscard]] Result {
-public:
-    static Result success(T value) { return Result(std::variant<T, Error>(std::in_place_index<0>, std::move(value))); }
-    static Result failure(Error error) { return Result(std::variant<T, Error>(std::in_place_index<1>, std::move(error))); }
 
-    bool ok() const noexcept { return storage_.index() == 0; }
-    bool has_error() const noexcept { return !ok(); }
-    explicit operator bool() const noexcept { return ok(); }
 
-    T& value() & {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-        return std::get<0>(storage_);
-    }
-    const T& value() const& {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-        return std::get<0>(storage_);
-    }
-    T&& value() && {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-        return std::get<0>(std::move(storage_));
-    }
 
-    Error& error() & {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<1>(storage_);
-    }
-    const Error& error() const& {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<1>(storage_);
-    }
-    Error&& error() && {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<1>(std::move(storage_));
-    }
-
-private:
-    explicit Result(std::variant<T, Error> storage) : storage_(std::move(storage)) {}
-    std::variant<T, Error> storage_;
-};
-
-/// void 特化（操作仅报告成败）。
-template <>
-class [[nodiscard]] Result<void> {
-public:
-    static Result success() { return Result(std::monostate{}); }
-    static Result failure(Error error) { return Result(std::variant<Error, std::monostate>(std::in_place_index<0>, std::move(error))); }
-
-    bool ok() const noexcept { return storage_.index() == 1; }
-    bool has_error() const noexcept { return !ok(); }
-    explicit operator bool() const noexcept { return ok(); }
-
-    /// 校验成功；误用抛 std::logic_error。
-    void value() const {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-    }
-
-    Error& error() & {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<0>(storage_);
-    }
-    const Error& error() const& {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<0>(storage_);
-    }
-    Error&& error() && {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<0>(std::move(storage_));
-    }
-
-private:
-    Result(std::variant<Error, std::monostate> storage) : storage_(std::move(storage)) {}
-    std::variant<Error, std::monostate> storage_;
-};
 
 /// SDK 版本 (MAJOR.MINOR.PATCH)。
 inline Result<std::string> version() {
     char buf[64];
     int rc = mediaservo_deck_version(buf, sizeof(buf));
     if (rc != MEDIASERVO_OK) {
-        return Result<std::string>::failure(detail::make_error(rc));
+        return Result<std::string>(tl::unexpect, detail::make_error(rc));
     }
-    return Result<std::string>::success(std::string(buf));
+    return Result<std::string>(std::string(buf));
 }
 
 /// 设备种类（对应 mediaservo_deck_devices_enumerate 的 kind 参数）。
@@ -162,7 +90,8 @@ inline std::vector<std::string> enumerate_devices(DeviceKind kind) {
         return {}; // ponytail: 无 Result 通道（spec 固定签名）；失败=空列表
     }
     std::string buf(len, '\0');
-    rc = mediaservo_deck_devices_enumerate(static_cast<int>(kind), buf.data(), buf.size(), &len);
+    rc = mediaservo_deck_devices_enumerate(static_cast<int>(kind), &buf[0], buf.size(), &len);
+    // C++11: string::data() 为 const，&buf[0] 惯用法
     if (rc < MEDIASERVO_OK) {
         return {};
     }
@@ -192,9 +121,9 @@ public:
         mediaservo_deck_camera_t* h = nullptr;
         int rc = mediaservo_deck_camera_open(dev_id.empty() ? nullptr : dev_id.c_str(), &c, &h);
         if (rc != MEDIASERVO_OK) {
-            return Result<CameraSource>::failure(detail::make_error(rc));
+            return Result<CameraSource>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<CameraSource>::success(CameraSource(h));
+        return Result<CameraSource>(CameraSource(h));
     }
 
     /// 默认构造 = 已关闭相机。
@@ -218,42 +147,42 @@ public:
 
     /// 开始产帧（用 open 时的 opts；只允许一次）。
     Result<void> start() {
-        if (!h_) return Result<void>::failure(Error{MEDIASERVO_DECK_ERR_INVALID_ARG, "closed"});
+        if (!h_) return Result<void>(tl::unexpect, Error{MEDIASERVO_DECK_ERR_INVALID_ARG, "closed"});
         int rc = mediaservo_deck_camera_start(h_);
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
     /// 注册帧回调（泵线程逐帧触发；重复注册替换；frame 指针仅回调内有效；
     /// 回调内禁止调用任何 deck API）。
     Result<void> on_frame(detail::FrameCb cb) {
-        if (!h_) return Result<void>::failure(Error{MEDIASERVO_DECK_ERR_INVALID_ARG, "closed"});
+        if (!h_) return Result<void>(tl::unexpect, Error{MEDIASERVO_DECK_ERR_INVALID_ARG, "closed"});
         auto* f = new detail::FrameCb(std::move(cb));
         cbs_.push_back(f); // ponytail: 旧回调留到 close 释放（泵线程可能正在执行，防 UAF）；注册次数通常 1
         int rc = mediaservo_deck_camera_frames_cb(h_, &detail::frame_trampoline, f);
         if (rc != MEDIASERVO_OK) {
             cbs_.pop_back();
             delete f;
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
     /// 停止产帧（幂等）。
     Result<void> stop() noexcept {
-        if (!h_) return Result<void>::success();
+        if (!h_) return Result<void>();
         int rc = mediaservo_deck_camera_stop(h_);
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
     /// 关闭相机并释放 handle（幂等；join 帧泵后才释放回调对象）。
     Result<void> close() noexcept {
-        if (!h_ && cbs_.empty()) return Result<void>::success();
+        if (!h_ && cbs_.empty()) return Result<void>();
         int rc = MEDIASERVO_OK;
         if (h_) {
             rc = mediaservo_deck_camera_close(h_);
@@ -262,9 +191,9 @@ public:
         for (auto* cb : cbs_) delete cb;
         cbs_.clear();
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
 private:
@@ -287,9 +216,9 @@ public:
         mediaservo_deck_recorder_t* h = nullptr;
         int rc = mediaservo_deck_recorder_new(path.empty() ? nullptr : path.c_str(), &h);
         if (rc != MEDIASERVO_OK) {
-            return Result<Recorder>::failure(detail::make_error(rc));
+            return Result<Recorder>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<Recorder>::success(Recorder(h));
+        return Result<Recorder>(Recorder(h));
     }
 
     /// 默认构造 = 已关闭录制器。
@@ -313,34 +242,34 @@ public:
     /// 桥接录制: camera 帧泵 → recorder。camera 必须已 start 且活到录制结束
     /// （关闭顺序: recorder stop/close 先于 camera stop/close，C 契约）。
     Result<void> record(CameraSource& camera) {
-        if (!h_) return Result<void>::failure(Error{MEDIASERVO_DECK_ERR_INVALID_ARG, "closed"});
-        if (!camera.h_) return Result<void>::failure(Error{MEDIASERVO_DECK_ERR_INVALID_ARG, "camera closed"});
+        if (!h_) return Result<void>(tl::unexpect, Error{MEDIASERVO_DECK_ERR_INVALID_ARG, "closed"});
+        if (!camera.h_) return Result<void>(tl::unexpect, Error{MEDIASERVO_DECK_ERR_INVALID_ARG, "camera closed"});
         int rc = mediaservo_deck_recorder_record(h_, camera.h_);
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
     /// 请求停止录制（幂等；flush + trailer 收尾在 close 时完成）。
     Result<void> stop() noexcept {
-        if (!h_) return Result<void>::success();
+        if (!h_) return Result<void>();
         int rc = mediaservo_deck_recorder_stop(h_);
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
     /// 关闭录制器并释放 handle（幂等；join 录制任务完成 flush）。
     Result<void> close() noexcept {
-        if (!h_) return Result<void>::success();
+        if (!h_) return Result<void>();
         int rc = mediaservo_deck_recorder_close(h_);
         h_ = nullptr;
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
 private:
@@ -361,9 +290,9 @@ public:
         mediaservo_deck_player_t* h = nullptr;
         int rc = mediaservo_deck_player_open(path.empty() ? nullptr : path.c_str(), &h);
         if (rc != MEDIASERVO_OK) {
-            return Result<Player>::failure(detail::make_error(rc));
+            return Result<Player>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<Player>::success(Player(h));
+        return Result<Player>(Player(h));
     }
 
     /// 默认构造 = 已关闭回放器。
@@ -387,21 +316,21 @@ public:
 
     /// 逐帧解码回调泵（运行至 EOF 自然结束；只允许一次；close 为阻塞 join）。
     Result<void> on_frame(detail::FrameCb cb) {
-        if (!h_) return Result<void>::failure(Error{MEDIASERVO_DECK_ERR_INVALID_ARG, "closed"});
+        if (!h_) return Result<void>(tl::unexpect, Error{MEDIASERVO_DECK_ERR_INVALID_ARG, "closed"});
         auto* f = new detail::FrameCb(std::move(cb));
         cbs_.push_back(f);
         int rc = mediaservo_deck_player_frames_cb(h_, &detail::frame_trampoline, f);
         if (rc != MEDIASERVO_OK) {
             cbs_.pop_back();
             delete f;
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
     /// 关闭回放器并释放 handle（幂等；join 解码泵至完成后释放回调对象）。
     Result<void> close() noexcept {
-        if (!h_ && cbs_.empty()) return Result<void>::success();
+        if (!h_ && cbs_.empty()) return Result<void>();
         int rc = MEDIASERVO_OK;
         if (h_) {
             rc = mediaservo_deck_player_close(h_);
@@ -410,9 +339,9 @@ public:
         for (auto* cb : cbs_) delete cb;
         cbs_.clear();
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
 private:

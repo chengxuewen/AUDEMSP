@@ -36,8 +36,8 @@ C_OUT=$(/tmp/opencode/parity_c)
 echo "$C_OUT"
 
 # ── 2. C++（复用 field-cxx 测试：version 断言 + 错误路径断言）──
-g++ -std=c++17 -Wall -Wextra \
-    -I bindings/cxx/mediaservo-field-cxx/include \
+g++ -std=c++11 -Wall -Wextra \
+    -I bindings/cxx/mediaservo-field-cxx/include -I bindings/cxx/include \
     -I bindings/c/mediaservo-field-c/include -I bindings/c/include \
     bindings/cxx/mediaservo-field-cxx/tests/test_field.cpp \
     -L target/debug -lmediaservo_field -o /tmp/opencode/parity_cxx

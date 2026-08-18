@@ -9,7 +9,7 @@
  *     close（join 泵线程）后统一释放，防 use-after-free。回调内禁止调用
  *     close/on_event（C 契约）；重复注册不释放旧回调对象（泵线程可能正在
  *     执行它），随 close 一起释放 —— 注册次数通常为 1，上界有界。
- *   - 错误通道为 Result（非异常）；仅 value()/error() 误用抛 std::logic_error。
+ *   - 错误通道为 Result（非异常）；误用 value()/error() 抛 tl::bad_expected_access<Error>。
  */
 #ifndef MEDIASERVO_LINK_HPP
 #define MEDIASERVO_LINK_HPP
@@ -26,15 +26,15 @@
 
 #include <mediaservo/common.h>
 #include <mediaservo/link.h>
+#include <mediaservo/detail/result.hpp>
 
 namespace mediaservo {
 namespace link {
+using mediaservo::Error;
+using mediaservo::Result;
 
 /// 错误详情（code 为 mediaservo/link.h 中 MEDIASERVO_LINK_ERR_* 值；message 读自 last_error）。
-struct Error {
-    int code;
-    std::string message;
-};
+;
 
 namespace detail {
 
@@ -47,90 +47,18 @@ inline Error make_error(int code) {
 
 } // namespace detail
 
-/// 成功或错误返回值（livekit Result 模式；误用 value()/error() 抛 std::logic_error）。
-template <typename T>
-class [[nodiscard]] Result {
-public:
-    static Result success(T value) { return Result(std::variant<T, Error>(std::in_place_index<0>, std::move(value))); }
-    static Result failure(Error error) { return Result(std::variant<T, Error>(std::in_place_index<1>, std::move(error))); }
 
-    bool ok() const noexcept { return storage_.index() == 0; }
-    bool has_error() const noexcept { return !ok(); }
-    explicit operator bool() const noexcept { return ok(); }
 
-    T& value() & {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-        return std::get<0>(storage_);
-    }
-    const T& value() const& {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-        return std::get<0>(storage_);
-    }
-    T&& value() && {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-        return std::get<0>(std::move(storage_));
-    }
 
-    Error& error() & {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<1>(storage_);
-    }
-    const Error& error() const& {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<1>(storage_);
-    }
-    Error&& error() && {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<1>(std::move(storage_));
-    }
-
-private:
-    explicit Result(std::variant<T, Error> storage) : storage_(std::move(storage)) {}
-    std::variant<T, Error> storage_;
-};
-
-/// void 特化（操作仅报告成败）。
-template <>
-class [[nodiscard]] Result<void> {
-public:
-    static Result success() { return Result(std::monostate{}); }
-    static Result failure(Error error) { return Result(std::variant<Error, std::monostate>(std::in_place_index<0>, std::move(error))); }
-
-    bool ok() const noexcept { return storage_.index() == 1; }
-    bool has_error() const noexcept { return !ok(); }
-    explicit operator bool() const noexcept { return ok(); }
-
-    /// 校验成功；误用抛 std::logic_error。
-    void value() const {
-        if (!ok()) throw std::logic_error("Result::value() called on an error result");
-    }
-
-    Error& error() & {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<0>(storage_);
-    }
-    const Error& error() const& {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<0>(storage_);
-    }
-    Error&& error() && {
-        if (ok()) throw std::logic_error("Result::error() called on a success result");
-        return std::get<0>(std::move(storage_));
-    }
-
-private:
-    Result(std::variant<Error, std::monostate> storage) : storage_(std::move(storage)) {}
-    std::variant<Error, std::monostate> storage_;
-};
 
 /// SDK 版本 (MAJOR.MINOR.PATCH)。
 inline Result<std::string> version() {
     char buf[64];
     int rc = mediaservo_link_version(buf, sizeof(buf));
     if (rc != MEDIASERVO_OK) {
-        return Result<std::string>::failure(detail::make_error(rc));
+        return Result<std::string>(tl::unexpect, detail::make_error(rc));
     }
-    return Result<std::string>::success(std::string(buf));
+    return Result<std::string>(std::string(buf));
 }
 
 /// 信令配置（对应 mediaservo_link_signal_config_t）。
@@ -156,9 +84,9 @@ public:
         mediaservo_link_signal_t* h = nullptr;
         int rc = mediaservo_link_signal_connect(&c, &h);
         if (rc != MEDIASERVO_OK) {
-            return Result<SignalSession>::failure(detail::make_error(rc));
+            return Result<SignalSession>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<SignalSession>::success(SignalSession(h));
+        return Result<SignalSession>(SignalSession(h));
     }
 
     /// 默认构造 = 已关闭会话。
@@ -182,12 +110,12 @@ public:
 
     /// 发送一条信令消息（JSON；SignalingMessage type 标签 snake_case）。
     Result<void> send(const std::string& json) {
-        if (!h_) return Result<void>::failure(Error{MEDIASERVO_LINK_ERR_INVALID_ARG, "closed"});
+        if (!h_) return Result<void>(tl::unexpect, Error{MEDIASERVO_LINK_ERR_INVALID_ARG, "closed"});
         int rc = mediaservo_link_signal_send(h_, json.c_str(), json.size());
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
     /// 注册事件回调（connect 后任意时刻；重复注册替换；回调在内部泵线程触发，
@@ -202,7 +130,7 @@ public:
 
     /// 关闭会话并释放 handle（幂等；join 事件泵后才释放回调对象）。
     Result<void> close() noexcept {
-        if (!h_ && cbs_.empty()) return Result<void>::success();
+        if (!h_ && cbs_.empty()) return Result<void>();
         int rc = MEDIASERVO_OK;
         if (h_) {
             rc = mediaservo_link_signal_close(h_);
@@ -211,9 +139,9 @@ public:
         for (auto* cb : cbs_) delete cb;
         cbs_.clear();
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
 private:
@@ -238,9 +166,9 @@ public:
         mediaservo_link_bus_t* b = nullptr;
         int rc = mediaservo_link_bus_attach(endpoint.c_str(), token_pem.c_str(), vk_pem.c_str(), &b);
         if (rc != MEDIASERVO_OK) {
-            return Result<Bus>::failure(detail::make_error(rc));
+            return Result<Bus>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<Bus>::success(Bus(b));
+        return Result<Bus>(Bus(b));
     }
 
     /// 默认构造 = 已关闭总线。
@@ -263,13 +191,13 @@ public:
 
     /// 发布一帧（ACL 检查 + SHM loan + send，阻塞）。
     Result<void> publish(const std::string& topic, const std::vector<uint8_t>& payload, const mediaservo_frame_meta_t& meta) {
-        if (!h_) return Result<void>::failure(Error{MEDIASERVO_LINK_ERR_INVALID_ARG, "closed"});
+        if (!h_) return Result<void>(tl::unexpect, Error{MEDIASERVO_LINK_ERR_INVALID_ARG, "closed"});
         const uint8_t* data = payload.empty() ? nullptr : payload.data(); // C 契约：payload NULL 当且仅当 len==0
         int rc = mediaservo_link_bus_publish(h_, topic.c_str(), data, payload.size(), &meta);
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
     /// 订阅 topic，创建帧流（阻塞）。
@@ -277,13 +205,13 @@ public:
 
     /// 关闭帧总线并释放 handle（幂等；shutdown 全部流，stream recv 返回 CLOSED）。
     Result<void> close() noexcept {
-        if (!h_) return Result<void>::success();
+        if (!h_) return Result<void>();
         int rc = mediaservo_link_bus_close(h_);
         h_ = nullptr;
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
 private:
@@ -325,7 +253,7 @@ public:
 
     /// 阻塞取帧（元数据 + 载荷拷贝）。
     Result<Frame> recv() {
-        if (!h_) return Result<Frame>::failure(Error{MEDIASERVO_LINK_ERR_INVALID_ARG, "closed"});
+        if (!h_) return Result<Frame>(tl::unexpect, Error{MEDIASERVO_LINK_ERR_INVALID_ARG, "closed"});
         Frame frame;
         // ponytail: 单缓冲 16MiB 覆盖 4K I420（12.4MiB）；C ABI 无法探测截断
         //（meta 仅取帧后可知），更大帧需扩缓冲 —— 升级路径: 按 meta 缓存上次
@@ -334,21 +262,21 @@ public:
         size_t len = 0;
         int rc = mediaservo_link_bus_recv(h_, &frame.meta, frame.data.data(), frame.data.size(), &len);
         if (rc != MEDIASERVO_OK) {
-            return Result<Frame>::failure(detail::make_error(rc));
+            return Result<Frame>(tl::unexpect, detail::make_error(rc));
         }
         frame.data.resize(len);
-        return Result<Frame>::success(std::move(frame));
+        return Result<Frame>(std::move(frame));
     }
 
     /// 关闭帧流并释放 handle（幂等；唤醒阻塞中的 recv 使其返回 CLOSED）。
     Result<void> close() noexcept {
-        if (!h_) return Result<void>::success();
+        if (!h_) return Result<void>();
         int rc = mediaservo_link_stream_close(h_);
         h_ = nullptr;
         if (rc != MEDIASERVO_OK) {
-            return Result<void>::failure(detail::make_error(rc));
+            return Result<void>(tl::unexpect, detail::make_error(rc));
         }
-        return Result<void>::success();
+        return Result<void>();
     }
 
 private:
@@ -363,13 +291,13 @@ private:
 };
 
 inline Result<class Stream> Bus::subscribe(const std::string& topic) {
-    if (!h_) return Result<Stream>::failure(Error{MEDIASERVO_LINK_ERR_INVALID_ARG, "closed"});
+    if (!h_) return Result<Stream>(tl::unexpect, Error{MEDIASERVO_LINK_ERR_INVALID_ARG, "closed"});
     mediaservo_link_stream_t* st = nullptr;
     int rc = mediaservo_link_bus_subscribe(h_, topic.c_str(), &st);
     if (rc != MEDIASERVO_OK) {
-        return Result<Stream>::failure(detail::make_error(rc));
+        return Result<Stream>(tl::unexpect, detail::make_error(rc));
     }
-    return Result<Stream>::success(Stream(st));
+    return Result<Stream>(Stream(st));
 }
 
 } // namespace link

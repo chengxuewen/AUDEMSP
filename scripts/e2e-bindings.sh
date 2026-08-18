@@ -70,8 +70,8 @@ fi
 
 # ── 6. C++ field: 真实 server 推流（header-only RAII）────────
 note "C++ field push"
-g++ -std=c++17 -Wall -Wextra \
-    -I bindings/cxx/mediaservo-field-cxx/include \
+g++ -std=c++11 -Wall -Wextra \
+    -I bindings/cxx/mediaservo-field-cxx/include -I bindings/cxx/include \
     -I bindings/c/mediaservo-field-c/include -I bindings/c/include \
     bindings/cxx/mediaservo-field-cxx/examples/vehicle_field.cpp \
     -L target/debug -lmediaservo_field -o /tmp/opencode/e2e_cxx

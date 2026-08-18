@@ -1,0 +1,7 @@
+MediaServo vendored 3rdparty headers — do not edit.
+
+tl/expected.hpp
+  Project : TartanLlama/expected v1.2.0 (tl::expected)
+  License : CC0-1.0 (dedication text in header; creativecommons.org/publicdomain/zero/1.0)
+  Source  : .refinfo/cxxkit/3rdparty/expected-1.2.0.tar.gz (git-ignored research archive)
+  Status  : unmodified, vendored verbatim. Regenerate from the source tarball on upgrade.

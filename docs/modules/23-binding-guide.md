@@ -18,7 +18,10 @@ bindings/
 │   │   └── include/mediaservo/link.h
 │   └── mediaservo-deck-c/                 # → libmediaservo_deck.so（camera/recorder/player）
 │       └── include/mediaservo/deck.h
-├── cxx/mediaservo-{field,link,deck}-cxx/  # header-only RAII（namespace mediaservo::{field,link,deck}）
+├── cxx/
+│   ├── include/mediaservo/detail/result.hpp     # 共享 Result（alias tl::expected, C++11 起步）
+│   ├── include/mediaservo/3rdparty/tl/expected.hpp + NOTICE  # vendored（CC0, 不可修改）
+│   └── mediaservo-{field,link,deck}-cxx/  # header-only RAII（namespace mediaservo::{field,link,deck}）
 └── python/mediaservo/                     # ctypes 包（非 cargo member，D228）
     └── mediaservo/{_ffi,field,link,deck}.py
 ```
@@ -63,7 +66,7 @@ if (!s) { /* s.error().code / s.error().message */ }
 s.value().start_video_frames();        /* RAII: 析构自动 close */
 ```
 
-编译: `g++ -std=c++17 app.cpp -I bindings/cxx/mediaservo-field-cxx/include \
+编译: `g++ -std=c++11 app.cpp -I bindings/cxx/mediaservo-field-cxx/include -I bindings/cxx/include \
        -I bindings/c/mediaservo-field-c/include -I bindings/c/include \
        -L target/debug -lmediaservo_field`
 
@@ -184,3 +187,13 @@ s.publish_video()
 #   gcc 直链:    gcc app.c -I <prefix>/include -L <prefix>/lib -lmediaservo_field
 # Python: pip install bindings/python/mediaservo（薄包；运行时 .so 定位: LD_LIBRARY_PATH 或 ldconfig）
 ```
+
+## C++11 承诺与 Result 契约（2026-08-18）
+
+- **C++11 起步可用**: 三 SDK header-only 绑定 + 共享 Result 全部 `-std=c++11` 编译零警告（test-cxx 全量门禁）
+- **Result 定义**: `mediaservo::Result<T> = tl::expected<T, mediaservo::Error>`（alias，`detail/result.hpp`）
+  - 原生 API: `has_value()/value()/error()/value_or()`；**无 operator bool**；`Result<void>` 即 `tl::expected<void, Error>`
+  - **契约变更（source-breaking, 2026-08-18）**: 误用 `value()` 抛 `tl::bad_expected_access<Error>`（std::exception 子类，what() 通用文案，细节经异常 `.error().code/.message`）；旧 `std::logic_error` 断言需改 catch 类型（`catch(std::exception)` 兼容新旧）；`error()` on success 为标准 UB（旧版抛异常）
+  - 绑定刚交付零真实消费者，变更无外部破坏记录
+- **CC0 归属**: `tl/expected.hpp` vendored from TartanLlama/expected v1.2.0（CC0-1.0），见 `3rdparty/NOTICE`（不可修改，升级走重新 vendor）
+- **未来 std::expected swap 路径**: 编译器升 C++23 后 `detail/result.hpp` 两行 alias 改为 `std::expected<T, Error>`（API 同构），契约测试 `bindings/cxx/tests/test_result_common.cpp` 为回归锚
