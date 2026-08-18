@@ -89,3 +89,53 @@ impl Default for PublishOptions {
         }
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn push_config_defaults_sane() {
+        let cfg = PushConfig::new("ws://x", "psk", "room");
+        assert_eq!(cfg.width, 1280);
+        assert_eq!(cfg.height, 720);
+        assert_eq!(cfg.framerate, 30);
+        assert_eq!(cfg.bitrate_kbps, 2000);
+        assert_eq!(cfg.keyframe_interval, 2);
+        assert_eq!(cfg.role, PeerRole::Host);
+    }
+
+    #[test]
+    fn push_config_custom_values_preserved() {
+        let mut cfg = PushConfig::new("ws://x", "psk", "room");
+        cfg.width = 640;
+        cfg.height = 480;
+        cfg.framerate = 15;
+        cfg.bitrate_kbps = 800;
+        cfg.keyframe_interval = 4;
+        assert_eq!(cfg.width, 640);
+        assert_eq!(cfg.framerate, 15);
+        assert_eq!(cfg.bitrate_kbps, 800);
+        assert_eq!(cfg.keyframe_interval, 4);
+    }
+
+    #[test]
+    fn publish_options_defaults_vp8_auto() {
+        let opts = PublishOptions::default();
+        assert_eq!(opts.codec, "vp8");
+        assert_eq!(opts.encoder_backend, "auto");
+    }
+
+    #[test]
+    fn pull_config_default_auto_subscribe() {
+        let cfg = PullConfig::default();
+        assert!(cfg.auto_subscribe);
+        assert_eq!(cfg.role, PeerRole::Remote);
+    }
+
+    #[test]
+    fn push_config_url_trims_trailing_slash_in_connect() {
+        // SignalClient 内部 trim_end_matches('/') — 配置保持原样, 连接时处理
+        let cfg = PushConfig::new("ws://host:9800/ws/", "psk", "room");
+        assert_eq!(cfg.url, "ws://host:9800/ws/");
+    }
+}
