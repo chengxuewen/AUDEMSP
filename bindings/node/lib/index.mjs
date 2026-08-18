@@ -82,4 +82,31 @@ export class CameraSource {
   close() { return this._h.close(); }
 }
 
-export default { PushSession, SignalSession, CameraSource };
+/**
+ * 录制器（FFmpeg mux；record(camera) 后台任务，stop() 触发 flush+trailer）。
+ */
+export class Recorder {
+  /** @private */
+  constructor(h) { this._h = h; }
+  static async open(path) { return new Recorder(await binding.JsRecorder.open(path)); }
+  /** 开始录制（立即返回；camera 须已 start）。 */
+  record(camera) { return this._h.record(camera._h); }
+  stop() { return this._h.stop(); }
+  close() { return this._h.close(); }
+}
+
+/**
+ * 回放器（demux+decode；onFrame 泵线程逐帧回调）。
+ */
+export class Player {
+  /** @private */
+  constructor(h) { this._h = h; }
+  static async open(path) { return new Player(await binding.JsPlayer.open(path)); }
+  onFrame(cb) {
+    return this._h.onFrame(([meta, data]) => cb({ ...JSON.parse(meta), data }));
+  }
+  durationSecs() { return this._h.durationSecs(); }
+  close() { return this._h.close(); }
+}
+
+export default { PushSession, SignalSession, CameraSource, Recorder, Player };

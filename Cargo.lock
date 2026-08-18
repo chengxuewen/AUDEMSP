@@ -4353,6 +4353,7 @@ dependencies = [
  "napi-derive",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

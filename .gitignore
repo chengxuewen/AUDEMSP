@@ -62,8 +62,9 @@ out
 log
 dist
 build
-/install
 target
+*.node
+/install
 
 # Temp dirs
 # --------

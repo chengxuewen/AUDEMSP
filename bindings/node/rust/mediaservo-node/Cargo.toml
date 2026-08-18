@@ -15,8 +15,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"
 mediaservo-common = { path = "../../../../crates/mediaservo-common" }
 mediaservo-field = { path = "../../../../crates/mediaservo-field" }
 mediaservo-link = { path = "../../../../crates/mediaservo-link" }
-mediaservo-deck = { path = "../../../../crates/mediaservo-deck" }
+mediaservo-deck = { path = "../../../../crates/mediaservo-deck", features = ["backend-ffmpeg"] }
 serde_json = "1"
+tracing = "0.1"
 
 [build-dependencies]
 napi-build = "2"
