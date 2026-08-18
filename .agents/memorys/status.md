@@ -366,3 +366,13 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 
 - oh-my-openagent@4.19.4 内置 context7/grep_app MCP（dist/index.js 直接 StreamableHTTPClientTransport 注册）→ 移除 `.opencode/init-mcp-streamable-bridge.mjs` + opencode.json 显式配置（1.18 SSE→405 时期的权宜之计，见 2026-08-17 记录）
 - 验证: 本会话 context7/grep_app 工具可用、无 bridge 进程
+
+## 绑定矩阵完成 — link/deck/field × c/cxx/py (2026-08-18, D247/D248)
+
+- **C ABI 三件套**: field-c（加固: 共享 runtime/closed/struct_size）+ link-c（signal 4 + bus 4 + 事件泵线程）+ deck-c（camera/recorder/player + backend-ffmpeg + --exclude-libs,ALL）— live e2e 全通（server 收帧/事件泵/91 帧闭环）
+- **C++**: 三 header-only RAII（FfiHandle/Result 模式, namespace mediaservo::{field,link,deck}）— 测试全过
+- **Python**: ctypes 三子模块（_ffi.py 加载层 + argtypes 全覆盖 + 回调防 GC）— 22 tests + live e2e
+- **D247**: 符号前缀 ms_ → mediaservo_（全名, 三重对齐）+ 头文件布局 include/mediaservo/（D248: 手工维护 + abi-drift 门禁, cbindgen 押后）
+- **pixi tasks**: build-c / test-cxx / test-py / parity-bindings / abi-drift
+- **PIT-98**: 代理并发仓级重命名被 git checkout 冲掉（edit-safety 规则 14）
+- workspace 16 members（10 crates + 3 c ABI + 3 空 cxx 载体）; 测试: field-c 8 + link-c 20 + deck-c 19 + cxx 3 套 + py 22

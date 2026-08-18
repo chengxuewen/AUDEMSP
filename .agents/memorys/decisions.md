@@ -576,3 +576,11 @@ facade 仍是纯编解码（不吞 mux，D229）；后续如果 playback 落地�
 **原因**: ① 唯一性——ms_ 与微软 MS_ 宏/毫秒/大量小库冲突，dlopen 场景（D240 deck-full.so OTA 插件）下同名符号可被 LD 抢先解析（正确性/安全问题）；② 品牌自描述 + 审计友好（`nm -D | grep mediaservo_` 一键区分归属）；③ 与 libmediaservo_*.so / MEDIASERVO_* 头文件 guard / mediaservo-* crate 全链一致；④ 行业惯例全部是品牌唯一前缀（gst_/av_/iox2_/livekit_）；⑤ 执行窗口：cxx/py 层未建、link-c/deck-c 未发布——pre-1.0 唯一低成本的改名时刻。
 
 **影响**: C++ 命名空间用全名 `mediaservo::{link,deck,field}`（命名空间无运行期成本）；Python 类名对应；0.1.x ABI 破坏性变更（未发布 MAJOR，记录在案）；契约 §7 示例/22-field-guide 已同步。**执行纪律：仓级重命名必须在所有子代理完成后再做**（PIT-98：deck-c 代理将重命名误判为污染并 git checkout 还原全仓）。
+
+## D248: C 头文件策略 — 手工维护 + nm 漂移门禁，cbindgen 押后 (2026-08-18)
+
+**决策**: 绑定矩阵三 SDK 的 C 头文件（bindings/c/mediaservo-<sdk>-c/include/mediaservo/<sdk>.h + 共享 common.h）**手工维护**，配 `scripts/check-abi-drift.sh`（nm/readelf 导出符号 ↔ header 声明集合对照，pixi task `abi-drift`）作为 CI 门禁。cbindgen 不引入（押后至头文件纯化为纯签名投影时再评估）。
+
+**原因**: ① 头文件是"契约型"而非纯签名投影——含审核 R2 生命周期/线程契约注释、`#pragma pack(1)`（cbindgen packed 支持有限）、`sizeof` 初始化宏、跨 crate 共享 common.h（cbindgen 单 crate 生成需复杂 include 处理）；② 函数面小（三 SDK ~30 函数），手工维护成本低；③ 主流对照：iceoryx2 用 cbindgen（其头是纯签名投影）而 livekit C++ API 层/Arrow C Data Interface 均手工（契约型）；④ L2 漂移门禁比 cbindgen 更直接——头文件含 C 专属内容，生成+手工合并维护成本更高。修订 D227"-c（cbindgen 生成）"字面取向。
+
+**影响**: 头文件必须随 ABI 变更 review（git diff = ABI 变更记录）；新导出函数必须同步头文件（drift 门禁强制）；cbindgen 迁移路径保留（iceoryx2 模板在 .refinfo）。

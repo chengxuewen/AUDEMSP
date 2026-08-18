@@ -41,6 +41,17 @@ check = "cargo check --workspace --exclude mediaservo-server"
 build = "cargo build --workspace --exclude mediaservo-server"
 test = "cargo test --workspace --exclude mediaservo-server"
 lint = "cargo clippy --workspace --all-targets -- -D warnings"
+# === Bindings tasks（绑定矩阵, link/deck/field × c/cxx/py）===
+# cdylib 构建 + dev .so.<MAJOR> symlink（D241: DT_NEEDED 解析）
+build-c = "cargo build -p mediaservo-field-c -p mediaservo-link-c -p mediaservo-deck-c && ln -sf libmediaservo_field.so target/debug/libmediaservo_field.so.0 && ln -sf libmediaservo_link.so target/debug/libmediaservo_link.so.0 && ln -sf libmediaservo_deck.so target/debug/libmediaservo_deck.so.0"
+# C++ header-only 绑定测试（g++ 编译 + 运行断言）
+test-cxx = "bash scripts/test-cxx.sh"
+# Python ctypes 绑定测试（stdlib unittest）
+test-py = "MEDIASERVO_LIB_DIR=$PWD/target/debug python3 -m unittest discover -s bindings/python/mediaservo/tests"
+# 跨语言 parity（D227 ⑤: 同序列三端断言一致）
+parity-bindings = "bash scripts/parity_bindings.sh"
+# ABI 漂移门禁（D248/L2: header 声明 ↔ .so 导出对照）
+abi-drift = "bash scripts/check-abi-drift.sh"
 
 # mediaservo-server — Docker 编译 (mediasoup C++ Worker 需要 Linux + meson)
 check-server = "sh -c 'scripts/docker-cargo.sh check -p mediaservo-server --features sfu-mediasoup'"
