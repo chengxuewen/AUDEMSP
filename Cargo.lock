@@ -4278,6 +4278,7 @@ dependencies = [
  "gstreamer-app",
  "gstreamer-video",
  "hmac",
+ "libc",
  "mediaservo-common",
  "mediaservo-media",
  "mediaservo-webrtc",

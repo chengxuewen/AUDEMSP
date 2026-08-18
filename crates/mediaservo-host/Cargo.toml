@@ -5,9 +5,49 @@ edition = "2024"
 description = "MediaServo Remote Host — V4L2 capture, NVENC encode, WebRTC push (field/vehicle side)"
 license = "Apache-2.0"
 
+# 9 个 bin 全部显式声明，禁止 autodiscovery（src/bin/ 下 host-legacy 的模块文件
+# 会被误判为 bin target）
+autobins = false
+
+[lib]
+name = "mediaservo_host"
+path = "src/lib.rs"
+
 [[bin]]
-name = "mediaservo-host"
-path = "src/main.rs"
+name = "host"
+path = "src/bin/host.rs"
+
+[[bin]]
+name = "host-agent"
+path = "src/bin/host-agent.rs"
+
+[[bin]]
+name = "host-capturer"
+path = "src/bin/host-capturer.rs"
+
+[[bin]]
+name = "host-streamer"
+path = "src/bin/host-streamer.rs"
+
+[[bin]]
+name = "host-recorder"
+path = "src/bin/host-recorder.rs"
+
+[[bin]]
+name = "host-controller"
+path = "src/bin/host-controller.rs"
+
+[[bin]]
+name = "host-emergency"
+path = "src/bin/host-emergency.rs"
+
+[[bin]]
+name = "host-audio"
+path = "src/bin/host-audio.rs"
+
+[[bin]]
+name = "host-legacy"
+path = "src/bin/host-legacy.rs"
 
 [dependencies]
 mediaservo-common = { path = "../mediaservo-common" }
@@ -62,4 +102,5 @@ production = ["gstreamer"]
 webrtc-p2p = ["dep:webrtc"]
 [dev-dependencies]
 tempfile = "3"
+libc = "0.2"
 tokio-tungstenite = { version = "0.24", features = ["connect"] }
