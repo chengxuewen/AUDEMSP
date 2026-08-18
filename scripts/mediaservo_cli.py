@@ -160,7 +160,7 @@ def _cmd_install_bindings(prefix: str, components: str = "all", release: bool = 
             shutil.copy2(h, inc_dir)
 
     # pkg-config (.pc) + CMake package config：模板渲染（FFmpeg/iceoryx2 惯例）
-    tpl = ROOT / "bindings/install/templates"
+    tpl = ROOT / "bindings/packaging"  # 分发/打包配方（.pc + cmake config 模板）
     pc_dir = lib_dir / "pkgconfig"
     cmake_dir = lib_dir / "cmake" / "mediaservo"
     pc_dir.mkdir(parents=True, exist_ok=True)
