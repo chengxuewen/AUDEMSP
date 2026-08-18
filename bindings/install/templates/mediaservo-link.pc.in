@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/../..
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: mediaservo-link
+Description: MediaServo link C ABI — 设备侧 IPC（信令 + 帧总线）
+Version: @VERSION@
+Libs: -L${libdir} -lmediaservo_link
+Cflags: -I${includedir}

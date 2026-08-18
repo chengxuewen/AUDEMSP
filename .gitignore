@@ -62,7 +62,7 @@ out
 log
 dist
 build
-install
+/install
 target
 
 # Temp dirs

@@ -135,8 +135,25 @@ def _cmd_install_bindings(prefix: str) -> None:
         for h in (ROOT / f"bindings/cxx/mediaservo-{sdk}-cxx/include/mediaservo").glob("*.hpp"):
             shutil.copy2(h, inc_dir)
 
+    # pkg-config (.pc) + CMake package config：模板渲染（FFmpeg/iceoryx2 惯例）
+    tpl = ROOT / "bindings/install/templates"
+    pc_dir = lib_dir / "pkgconfig"
+    cmake_dir = lib_dir / "cmake" / "mediaservo"
+    pc_dir.mkdir(parents=True, exist_ok=True)
+    cmake_dir.mkdir(parents=True, exist_ok=True)
+    prefix_abs = str(lib_dir.parent)  # 规范绝对 prefix（configure 传统；模板用 ${pcfiledir} 保持可重定位）
+    for t in sorted(tpl.glob("*.pc.in")):
+        content = t.read_text().replace("@VERSION@", ver).replace("${pcfiledir}/../..", prefix_abs)
+        (pc_dir / t.name[:-3]).write_text(content)  # .pc.in → .pc
+    for name, t in (("mediaservoConfig.cmake", "mediaservoConfig.cmake.in"),
+                    ("mediaservoConfigVersion.cmake", "mediaservoConfigVersion.cmake.in")):
+        content = (tpl / t).read_text().replace("@VERSION@", ver).replace("@MAJOR@", major)
+        (cmake_dir / name).write_text(content)
+
     print(f"bindings 已安装到 {prefix}")
     print(f"  lib/    libmediaservo_{{field,link,deck}}.so.{major}.{minor}.{patch} + .so.{major} + .so")
+    print(f"  lib/pkgconfig/   mediaservo-{{field,link,deck}}.pc（pkg-config 消费）")
+    print(f"  lib/cmake/mediaservo/  mediaservoConfig.cmake + ConfigVersion.cmake（find_package(mediaservo)）")
     print(f"  include/mediaservo/  {{common,field,link,deck}}.h + {{field,link,deck}}.hpp")
     print("Python: pip install bindings/python/mediaservo（薄包；运行时 .so 定位: LD_LIBRARY_PATH 或 ldconfig）")
 

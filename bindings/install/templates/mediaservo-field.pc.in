@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/../..
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: mediaservo-field
+Description: MediaServo Field C ABI — 推流面（车端 SDK）
+Version: @VERSION@
+Libs: -L${libdir} -lmediaservo_field
+Cflags: -I${includedir}

@@ -177,6 +177,9 @@ s.publish_video()
 ./mediaservo.sh install bindings --prefix /usr/local
   # lib/    libmediaservo_{field,link,deck}.so.0.1.0 + .so.0 + .so（D241 三件套）
   # include/mediaservo/  {common,field,link,deck}.h + {field,link,deck}.hpp（D248）
-# 消费验证: gcc app.c -I <prefix>/include -L <prefix>/lib -lmediaservo_field
+# 消费方式（三选一）:
+#   pkg-config:  PKG_CONFIG_PATH=<prefix>/lib/pkgconfig cc app.c $(pkg-config --cflags --libs mediaservo-field)
+#   CMake:       find_package(mediaservo REQUIRED) → target_link_libraries(app mediaservo::field)（-DCMAKE_PREFIX_PATH=<prefix>）
+#   gcc 直链:    gcc app.c -I <prefix>/include -L <prefix>/lib -lmediaservo_field
 # Python: pip install bindings/python/mediaservo（薄包；运行时 .so 定位: LD_LIBRARY_PATH 或 ldconfig）
 ```

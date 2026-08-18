@@ -1,0 +1,31 @@
+# mediaservoConfig.cmake — find_package(mediaservo) → mediaservo::field/link/deck
+# 手工模板（等价 iceoryx2 Config.cmake.in 输出纪律，D248）: 安装时渲染 @VERSION@/@MAJOR@
+# 可重定位: 前缀从本文件位置推导（lib/cmake/mediaservo → ../../..）
+
+get_filename_component(_mediaservo_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+
+if(WIN32)
+    set(_mediaservo_lib_ext "dll")
+    set(_mediaservo_lib_prefix "")
+elseif(APPLE)
+    set(_mediaservo_lib_ext "dylib")
+    set(_mediaservo_lib_prefix "lib")
+else()
+    set(_mediaservo_lib_ext "so")
+    set(_mediaservo_lib_prefix "lib")
+endif()
+
+foreach(_sdk field link deck)
+    if(NOT TARGET mediaservo::${_sdk})
+        add_library(mediaservo::${_sdk} INTERFACE IMPORTED)
+        set_target_properties(mediaservo::${_sdk} PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${_mediaservo_prefix}/include"
+            INTERFACE_LINK_LIBRARIES "${_mediaservo_prefix}/lib/${_mediaservo_lib_prefix}mediaservo_${_sdk}.${_mediaservo_lib_ext}"
+        )
+    endif()
+endforeach()
+
+set(mediaservo_FOUND TRUE)
+set(mediaservo_VERSION "@VERSION@")
+set(mediaservo_SDK_ABI_MAJOR "@MAJOR@")
+set(mediaservo_INCLUDE_DIRS "${_mediaservo_prefix}/include")

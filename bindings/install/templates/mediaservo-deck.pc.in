@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/../..
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: mediaservo-deck
+Description: MediaServo deck C ABI — 媒体数据面（采集/录制/回放）
+Version: @VERSION@
+Libs: -L${libdir} -lmediaservo_deck
+Cflags: -I${includedir}
