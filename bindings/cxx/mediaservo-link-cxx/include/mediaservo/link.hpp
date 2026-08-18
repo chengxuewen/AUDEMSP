@@ -1,6 +1,6 @@
 /* MediaServo link C++ header-only binding (信令 + 帧总线) — 设备侧 C++ 消费。
  *
- * 薄包装 over bindings/c/mediaservo-link-c/include/mediaservo_link.h (D247)。
+ * 薄包装 over bindings/c/mediaservo-link-c/include/mediaservo/link.h (D247)。
  * 生命周期契约（自 C ABI 头翻译成 RAII 保证）：
  *   - SignalSession/Bus/Stream 均 move-only；析构自动 close（幂等）。
  *   - 默认构造 = 已关闭（null handle）；对已关闭对象调用 API 返回
@@ -24,13 +24,13 @@
 #include <variant>
 #include <vector>
 
-#include "mediaservo_common.h"
-#include "mediaservo_link.h"
+#include <mediaservo/common.h>
+#include <mediaservo/link.h>
 
 namespace mediaservo {
 namespace link {
 
-/// 错误详情（code 为 mediaservo_link.h 中 MEDIASERVO_LINK_ERR_* 值；message 读自 last_error）。
+/// 错误详情（code 为 mediaservo/link.h 中 MEDIASERVO_LINK_ERR_* 值；message 读自 last_error）。
 struct Error {
     int code;
     std::string message;

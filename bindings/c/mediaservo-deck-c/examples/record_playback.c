@@ -9,7 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "mediaservo_deck.h"
+#include "mediaservo/deck.h"
 
 static long g_camera_frames = 0;
 static long g_playback_frames = 0;

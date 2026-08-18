@@ -1,6 +1,6 @@
 /* MediaServo field C++ header-only binding (推流面) — 车端 C++ 消费。
  *
- * 薄包装 over bindings/c/mediaservo-field-c/include/mediaservo_field.h (D247)。
+ * 薄包装 over bindings/c/mediaservo-field-c/include/mediaservo/field.h (D247)。
  * 生命周期契约（自 C ABI 头翻译成 RAII 保证）：
  *   - PushSession move-only；析构自动 close（幂等）。
  *   - 默认构造 = 已关闭（null handle）；对已关闭会话调用 API 返回
@@ -19,13 +19,13 @@
 #include <utility>
 #include <variant>
 
-#include "mediaservo_common.h"
-#include "mediaservo_field.h"
+#include <mediaservo/common.h>
+#include <mediaservo/field.h>
 
 namespace mediaservo {
 namespace field {
 
-/// 错误详情（code 为 mediaservo_field.h 中 MEDIASERVO_FIELD_ERR_* 值；message 读自 last_error）。
+/// 错误详情（code 为 mediaservo/field.h 中 MEDIASERVO_FIELD_ERR_* 值；message 读自 last_error）。
 struct Error {
     int code;
     std::string message;

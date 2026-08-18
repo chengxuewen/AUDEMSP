@@ -9,7 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "mediaservo_link.h"
+#include "mediaservo/link.h"
 
 static void on_event(mediaservo_link_signal_t* s, const char* event_json, void* user) {
     (void)s;

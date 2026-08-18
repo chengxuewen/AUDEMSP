@@ -2,7 +2,7 @@
  *
  * MAJOR = C ABI 版本 (D241)：within MAJOR 只加法，二进制兼容。
  * 本头文件手工维护（稳定导出面，等价 cbindgen 输出纪律）。
- * 共享 C 类型（mediaservo_err_t/mediaservo_frame_t）见 mediaservo_common.h。
+ * 共享 C 类型（mediaservo_err_t/mediaservo_frame_t）见 common.h。
  *
  * 用法:
  *   mediaservo_deck_camera_t* cam = NULL;
@@ -28,7 +28,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "mediaservo_common.h"
+#include <mediaservo/common.h>
 
 #ifdef __cplusplus
 extern "C" {

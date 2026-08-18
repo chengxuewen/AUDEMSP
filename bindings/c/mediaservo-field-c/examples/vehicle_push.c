@@ -9,7 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "mediaservo_field.h"
+#include "mediaservo/field.h"
 
 int main(void) {
     /* 1. 配置 */
