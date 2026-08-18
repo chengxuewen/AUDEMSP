@@ -117,8 +117,8 @@ s.publish_video()
 |---|---|---|
 | push_connect | ✓（null/small-size/missing-required）| ✓ vehicle_push |
 | push_publish_video | ✓（null handle）| ✓ vehicle_push（track=video）|
-| push_start_video_frames | ⚠️ 无单测 | ✓ vehicle_push（frames running）|
-| push_stop_video_frames | ⚠️ 无单测（void 幂等）| ✓ vehicle_push（close 前调用）|
+| push_start_video_frames | ✓（null 失败）| ✓ vehicle_push（frames running）|
+| push_stop_video_frames | ✓（null noop）| ✓ vehicle_push（close 前调用）|
 | push_close | ✓（null/幂等）| ✓ vehicle_push |
 | last_error（+deprecated 别名）| ✓ roundtrip ×2 | ✓ parity |
 | version | ✓ roundtrip | ✓ parity（三端一致）|
@@ -130,12 +130,12 @@ s.publish_video()
 | signal_send | ✓（null/empty/未连接/closed）| ✓ vehicle_signal（encoder_status 回显）|
 | signal_on_event | ✓（null noop）| ✓ vehicle_signal（event 泵）|
 | signal_close | ✓（null）| ✓ vehicle_signal |
-| bus_attach | ✓（null）| ⚠️ 无（需 token/ACL 构造）|
-| bus_publish | ✓（null/未连接/closed）| ⚠️ 无 |
-| bus_subscribe | ✓（null）| ⚠️ 无 |
-| bus_recv | ✓（null）| ⚠️ 无（SHM 帧往返未自动化）|
-| stream_close | ⚠️ 无单测 | ⚠️ 无 |
-| bus_close | ⚠️ 无单测 | ⚠️ 无 |
+| bus_attach | ✓（null）+ 正向（双节点验签）| ⚠️ e2e 无（单测覆盖 SHM 往返）|
+| bus_publish | ✓（null/未连接/closed）+ 正向 | ⚠️ e2e 无（单测覆盖）|
+| bus_subscribe | ✓（null）+ 正向 | ⚠️ e2e 无（单测覆盖）|
+| bus_recv | ✓（null）+ 正向（meta/payload 断言）| ⚠️ e2e 无（单测覆盖）|
+| stream_close | ✓（null）| — |
+| bus_close | ✓（null）| — |
 | last_error | ✓ roundtrip | ✓ parity |
 | version | ✓ roundtrip | ✓ parity |
 
@@ -150,10 +150,10 @@ s.publish_video()
 | camera_close | ✓ | ✓ record_playback |
 | recorder_new | ✓（null/父目录缺失）| ✓ record_playback |
 | recorder_record | ✓（null/未 start 相机）| ✓ record_playback（mp4 产物）|
-| recorder_stop | ⚠️ 无独立单测 | ✓ record_playback |
+| recorder_stop | ✓（null 失败）| ✓ record_playback |
 | recorder_close | ✓（null）| ✓ record_playback |
 | player_open | ✓（null/文件缺失）| ✓ record_playback |
-| player_frames_cb | ⚠️ 无单测 | ✓ record_playback（91 帧解码）|
+| player_frames_cb | ✓（null 失败）| ✓ record_playback（91 帧解码）|
 | player_close | ✓（null）| ✓ record_playback |
 | last_error | ✓ roundtrip | ✓ parity |
 | version | ✓ roundtrip | ✓ parity |
@@ -162,7 +162,10 @@ s.publish_video()
 - parity-bindings: version + 空配置 connect 错误路径（C/C++/Python 断言一致）✓
 - abi-drift: 34 声明 == 34 导出 ✓
 
-### 已知缺口（⚠️，按优先级）
-1. **link bus 正向链路**（attach→publish→subscribe→recv 真实 SHM 往返 + token/ACL）：单测只有错误路径，无自动化正向——iceoryx2 总线闭环待补（需构造 CapabilityToken + 验证密钥 fixture）
-2. **field start/stop_video_frames、link stream_close/bus_close、deck recorder_stop/player_frames_cb** 无独立单测（正向由 e2e 覆盖，错误路径薄弱）
-3. **cxx/py 正向 live**：仅 field push 手动验证过；cxx 无 live e2e（依赖 C 层已验证链路，风险低）
+### 已补齐（2026-08-18，二次收尾）
+1. ✅ link bus 正向链路单测（双节点 token/ACL 验签 → subscribe → publish → recv 断言 meta/payload，真实 SHM 往返）
+2. ✅ field start/stop、link stream_close/bus_close、deck recorder_stop/player_frames_cb null 单测
+3. ✅ C++ live e2e（e2e-bindings 第 6 步，vehicle_field.cpp 连真实 server）
+
+### 剩余缺口（可接受）
+- link bus 的 e2e 级覆盖依赖单测（无真实跨进程 server 场景）；cxx/py 其余 SDK 正向依赖 C 层已验证链路

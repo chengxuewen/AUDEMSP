@@ -1079,8 +1079,6 @@ mod tests {
     }
 
     #[test]
-
-    #[test]
     fn frame_meta_c_layout_matches_wire() {
         // R4: repr(C, packed) 镜像结构逐字段填 → 36B 拷贝 + decode →
         // 与 Rust FrameMeta::encode 逐字节比对
@@ -1132,5 +1130,99 @@ mod tests {
             ptr::copy_nonoverlapping(&back as *const _ as *const u8, out_buf.as_mut_ptr(), FrameMeta::WIRE_LEN);
         }
         assert_eq!(out_buf, decoded.encode());
+    }
+
+    #[test]
+    fn stream_close_null_ok() {
+        assert_eq!(mediaservo_link_stream_close(ptr::null_mut()), MEDIASERVO_OK);
+    }
+
+    #[test]
+    fn bus_close_null_ok() {
+        assert_eq!(mediaservo_link_bus_close(ptr::null_mut()), MEDIASERVO_OK);
+    }
+
+    /// bus 正向链路: attach(验签) → subscribe → publish → recv 断言 meta/payload。
+    /// 双节点（ACL 矩阵: Capture 仅发布 camera/*, Processor 仅订阅 camera/*）；
+    /// 订阅先于发布（iceoryx2 新订阅者不重放历史帧）。
+    /// 复用 mediaservo-link e2e 测试密钥对（D235 测试 fixture）。
+    #[test]
+    fn bus_attach_publish_subscribe_recv_roundtrip() {
+        const PRIV_PEM: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIObCg8b+Le6kKOI/+pE+4+YhXUlr6X6h7q8p/MjvHmXT\n-----END PRIVATE KEY-----\n";
+        const PUB_PEM: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAgXprEbnahCZoZtLpiUqR0ruqtzEfRXk/Gl/6F6PEm4o=\n-----END PUBLIC KEY-----\n";
+        use mediaservo_link::{CapabilityToken, Ed25519SigningKey, Ed25519VerifyingKey, NodeAcl, NodeId, Role};
+
+        let sk = Ed25519SigningKey::from_pem(PRIV_PEM.as_bytes());
+        let vk = Ed25519VerifyingKey::from_pem(PUB_PEM.as_bytes());
+        let endpoint = CString::new("").unwrap();
+        let suffix = std::process::id();
+        let topic = CString::new(format!("camera/ct/{suffix}/front/raw")).unwrap();
+        let vk_s = CString::new(vk.pem()).unwrap();
+        let token_for = |node: &str, role: Role| {
+            let acl = NodeAcl::for_role(NodeId::new(node), role);
+            CString::new(CapabilityToken::sign(&acl, 3600, &sk).expect("sign").as_str()).unwrap()
+        };
+
+        // 1. Capture 发布端
+        let mut bus: *mut mediaservo_link_bus_t = ptr::null_mut();
+        let rc = mediaservo_link_bus_attach(
+            endpoint.as_ptr(),
+            token_for("ct-capture", Role::Capture).as_ptr(),
+            vk_s.as_ptr(),
+            &mut bus,
+        );
+        assert_eq!(rc, MEDIASERVO_OK, "attach capture");
+        assert!(!bus.is_null());
+
+        // 2. Processor 订阅端
+        let mut proc_bus: *mut mediaservo_link_bus_t = ptr::null_mut();
+        let rc = mediaservo_link_bus_attach(
+            endpoint.as_ptr(),
+            token_for("ct-processor", Role::Processor).as_ptr(),
+            vk_s.as_ptr(),
+            &mut proc_bus,
+        );
+        assert_eq!(rc, MEDIASERVO_OK, "attach processor");
+        assert!(!proc_bus.is_null());
+
+        // 3. 订阅先于发布（历史帧不重放）
+        let mut stream: *mut mediaservo_link_stream_t = ptr::null_mut();
+        let rc = mediaservo_link_bus_subscribe(proc_bus, topic.as_ptr(), &mut stream);
+        assert_eq!(rc, MEDIASERVO_OK, "subscribe");
+        assert!(!stream.is_null());
+
+        // 4. 发布
+        let meta = mediaservo_frame_meta_t {
+            seq: 7, width: 640, height: 480, format: 1, version: 1,
+            is_keyframe: 1, reserved: 0, ts_mono_ns: 1000, ts_epoch_ns: 2000,
+        };
+        let payload = [0xAAu8; 64];
+        let rc = mediaservo_link_bus_publish(bus, topic.as_ptr(), payload.as_ptr(), payload.len(), ptr::addr_of!(meta));
+        assert_eq!(rc, MEDIASERVO_OK, "publish");
+
+        // 5. 接收并断言 meta/payload
+        let mut out_meta = mediaservo_frame_meta_t {
+            seq: 0, width: 0, height: 0, format: 0, version: 0,
+            is_keyframe: 0, reserved: 0, ts_mono_ns: 0, ts_epoch_ns: 0,
+        };
+        let mut buf = [0u8; 128];
+        let mut out_len: usize = 0;
+        let rc = mediaservo_link_bus_recv(stream, ptr::addr_of_mut!(out_meta), buf.as_mut_ptr(), buf.len(), &mut out_len);
+        assert_eq!(rc, MEDIASERVO_OK, "recv");
+        // packed 结构字段读取必须 read_unaligned（E0793）
+        unsafe {
+            assert_eq!(ptr::addr_of!(out_meta.seq).read_unaligned(), 7);
+            assert_eq!(ptr::addr_of!(out_meta.width).read_unaligned(), 640);
+            assert_eq!(ptr::addr_of!(out_meta.height).read_unaligned(), 480);
+            assert_eq!(ptr::addr_of!(out_meta.format).read_unaligned(), 1);
+            assert_eq!(ptr::addr_of!(out_meta.is_keyframe).read_unaligned(), 1);
+        }
+        assert_eq!(out_len, 64);
+        assert_eq!(&buf[..64], &payload);
+
+        // 6. 关闭
+        assert_eq!(mediaservo_link_stream_close(stream), MEDIASERVO_OK);
+        assert_eq!(mediaservo_link_bus_close(proc_bus), MEDIASERVO_OK);
+        assert_eq!(mediaservo_link_bus_close(bus), MEDIASERVO_OK);
     }
 }

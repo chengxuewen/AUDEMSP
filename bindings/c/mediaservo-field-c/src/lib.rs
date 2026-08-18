@@ -503,4 +503,15 @@ mod tests {
     fn close_null_is_ok() {
         assert_eq!(mediaservo_field_push_close(ptr::null_mut()), MEDIASERVO_OK);
     }
+
+    #[test]
+    fn start_video_frames_null_fails() {
+        let rc = mediaservo_field_push_start_video_frames(ptr::null_mut());
+        assert_eq!(rc, MEDIASERVO_FIELD_ERR_INVALID_ARG);
+    }
+
+    #[test]
+    fn stop_video_frames_null_noop() {
+        mediaservo_field_push_stop_video_frames(ptr::null_mut()); // void: 不崩即过
+    }
 }

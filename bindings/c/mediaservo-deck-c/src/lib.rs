@@ -1116,4 +1116,16 @@ mod tests {
     fn player_close_null_is_ok() {
         assert_eq!(mediaservo_deck_player_close(ptr::null_mut()), MEDIASERVO_OK);
     }
+
+    #[test]
+    fn recorder_stop_null_fails() {
+        let rc = mediaservo_deck_recorder_stop(ptr::null_mut());
+        assert_eq!(rc, MEDIASERVO_DECK_ERR_INVALID_ARG);
+    }
+
+    #[test]
+    fn player_frames_cb_null_fails() {
+        let rc = mediaservo_deck_player_frames_cb(ptr::null_mut(), None, ptr::null_mut());
+        assert_eq!(rc, MEDIASERVO_DECK_ERR_INVALID_ARG);
+    }
 }

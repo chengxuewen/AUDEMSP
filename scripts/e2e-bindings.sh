@@ -68,7 +68,20 @@ else
     echo "FAIL: C deck closed-loop"; echo "$out" | tail -5; FAIL=1
 fi
 
-# ── 6. Python field: 真实 server 推流 ───────────────────────
+# ── 6. C++ field: 真实 server 推流（header-only RAII）────────
+note "C++ field push"
+g++ -std=c++17 -Wall -Wextra \
+    -I bindings/cxx/mediaservo-field-cxx/include \
+    -I bindings/c/mediaservo-field-c/include -I bindings/c/include \
+    bindings/cxx/mediaservo-field-cxx/examples/vehicle_field.cpp \
+    -L target/debug -lmediaservo_field -o /tmp/opencode/e2e_cxx
+check "C++ field: published" "published track" \
+    env LD_LIBRARY_PATH="$PWD/target/debug" \
+        MEDIASERVO_SIGNAL_URL="ws://127.0.0.1:9800/ws" \
+        MEDIASERVO_PSK="mediaservo-dev" MEDIASERVO_ROOM="vehicle-cxx-e2e" \
+        /tmp/opencode/e2e_cxx < /dev/null
+
+# ── 7. Python field: 真实 server 推流 ───────────────────────
 note "Python field push"
 check "Python field: connected + published" "frames running" \
     python3 -c "
@@ -79,7 +92,7 @@ t = s.publish_video(); print('published:', t)
 s.start_video_frames(); print('frames running')
 s.stop_video_frames(); s.close()"
 
-# ── 7. server 侧收帧证据 ────────────────────────────────────
+# ── 8. server 侧收帧证据 ────────────────────────────────────
 note "server key-frame evidence"
 KF=$(docker logs mediaservo-server-1 2>&1 | grep -c "ReceiveRtpPacket.*key frame" || true)
 if [ "${KF:-0}" -ge 1 ]; then echo "OK: server received key frames ($KF)"; else echo "FAIL: no key frames in server log"; FAIL=1; fi
