@@ -1,0 +1,15 @@
+{
+  "name": "mediaservo",
+  "version": "0.1.0",
+  "description": "MediaServo Node.js 绑定 — napi-rs 直绑 Rust SDK（field/link/deck）",
+  "type": "module",
+  "main": "lib/index.mjs",
+  "exports": { ".": "./lib/index.mjs" },
+  "files": ["lib/", "mediaservo.node"],
+  "scripts": {
+    "build": "bash -c 'pixi run cargo build -p mediaservo-node && cp ../../../target/debug/libmediaservo_node.so ./mediaservo.node'",
+    "test": "node --test tests/"
+  },
+  "engines": { "node": ">=18" },
+  "license": "Apache-2.0"
+}
