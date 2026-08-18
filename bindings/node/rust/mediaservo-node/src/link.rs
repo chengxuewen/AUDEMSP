@@ -18,18 +18,6 @@ pub struct JsSignalConfig {
     pub role: Option<String>,
 }
 
-fn event_runtime() -> &'static tokio::runtime::Runtime {
-    use std::sync::OnceLock;
-    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RT.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .expect("mediaservo-node event runtime")
-    })
-}
-
 fn closed_err() -> napi::Error {
     napi::Error::from_reason("session closed")
 }
@@ -101,7 +89,7 @@ impl JsSignalSession {
         let session = self.inner.clone();
         // 泵: broadcast receiver → tsfn.call（JS 主线程）；broadcast 关闭（session 关闭）后退出。
         // 同步方法无 tokio 上下文 → 用全局共享 runtime（field-c 同款模式）。
-        event_runtime().spawn(async move {
+        super::event_runtime().spawn(async move {
             let (room_id, mut rx) = {
                 let guard = session.lock().await;
                 match guard.as_ref() {

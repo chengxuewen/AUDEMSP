@@ -7,6 +7,19 @@ pub mod field;
 pub mod link;
 pub mod deck;
 
+/// 共享事件泵 runtime（同步 napi 方法无 tokio 上下文——field-c 同款全局 runtime 模式）。
+pub(crate) fn event_runtime() -> &'static tokio::runtime::Runtime {
+    use std::sync::OnceLock;
+    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RT.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("mediaservo-node event runtime")
+    })
+}
+
 // 模块导出（napi 命名空间合并）
 pub use field::*;
 pub use link::*;
