@@ -73,3 +73,22 @@ fn doctor_broken_config_counts_failures() {
     assert!(stdout.contains("[fail] host.toml"), "stdout 缺 host.toml 失败标记:\n{stdout}");
     assert!(stdout.contains("[fail] oxfile"), "stdout 缺 oxfile 失败标记:\n{stdout}");
 }
+
+#[test]
+fn doctor_missing_config_counts_both_config_failures() {
+    // 空 etc/（无 host.toml）：检查 ②③ 均失败且各有一条 [fail] 标记 →
+    // 退出码 = 2 + (oxmgr 缺失 ? 1 : 0)，与打印的失败数一致。
+    let dir = tmp_dir("missing"); // tmp_dir 只建 etc/，不写 host.toml
+    let out = run_doctor(&dir);
+    let expected = if oxmgr_present() { 2 } else { 3 };
+    assert_eq!(
+        out.status.code(),
+        Some(expected),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("[fail] 读取"), "stdout 缺读取失败标记:\n{stdout}");
+    assert!(stdout.contains("[fail] oxfile"), "stdout 缺 oxfile 失败标记:\n{stdout}");
+}

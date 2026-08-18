@@ -42,7 +42,7 @@ enabled = false
 enabled = false
 "#;
 
-const USAGE: &str = "用法: host <init|start|stop|status|version> [--dir <dir>]";
+const USAGE: &str = "用法: host <init|start|stop|status|doctor|version> [--dir <dir>]";
 
 fn main() {
     let mut args = std::env::args();
@@ -268,7 +268,8 @@ fn cmd_doctor(args: &mut impl Iterator<Item = String>) -> i32 {
         Ok(cfg) => cfg,
         Err(e) => {
             println!("[fail] 读取 {} 失败: {e} — 先运行 host init <dir>", cfg_path.display());
-            return failed + 2; // ②③ 均因无配置失败
+            println!("[fail] oxfile 生成失败: 无配置可翻译（host.toml 不可读）");
+            return failed + 2; // ②③ 均因无配置失败，各打一条 [fail] 与计数一致
         }
     };
     match toml::from_str::<toml::Value>(&cfg) {
