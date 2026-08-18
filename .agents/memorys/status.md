@@ -1,6 +1,6 @@
 # MediaServo Status
 
-**生成**: 2026-08-17| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP || 373 commits | 22 skills | mediasoup 0.24.1 | PIT-96 | 分支: main (field Push/Pull 协商全通 + SFU 多 IP) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-18| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP || 373 commits | 22 skills | mediasoup 0.24.1 | PIT-97 | 分支: main (field Push/Pull 协商全通 + SFU 多 IP) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | mediaservo-common | 72 | — | EncoderStatus 信令 + codec 字段 |
 | mediaservo-media | 107 | — | |
@@ -355,3 +355,9 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
   按 D227/D240 设计是薄包装（各 ~30min 成本）
 - **待确认**: 车端真实消费语言（Rust 主控则 C ABI 即最终交付; C++/Python 主控则补绑定）
 - **扩展面**: 契约 §7 规划 link/field/deck/client × c/cxx/py = 12 绑定, 当前仅 field-c
+
+## OMO 配置 schema 修复 (2026-08-18, PIT-97 + C27)
+
+- 迁移把 `model`+`fallback_models` 写成 `models`（复数）→ v4.19.4 schema z.$strip 静默丢弃 → agent 模型回落默认值
+- 修复: `.omo/omo.jsonc` 全部改回 `model`/`fallback_models`（19/19 处），保留 D246 reasoningEffort 分层
+- 验证: `grep -c '"models"' .omo/omo.jsonc` = 0；重启 opencode 生效

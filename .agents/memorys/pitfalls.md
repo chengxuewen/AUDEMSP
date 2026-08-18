@@ -1036,3 +1036,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **根因**: provider 模型定义 `supportsReasoning: false`（premium-max/deepseek-v4-pro 等）与 OMO 层 `reasoningEffort: "high"` 直接矛盾——适配器被告知"此模型不支持推理"→ 不将 `reasoning_content` 解析为结构化 thinking part，降级为普通文本处理；且 fast 层未显式设 low，网关默认全量输出 thinking。
 - **解法**: ① `supportsReasoning` 与模型实际能力对齐（5 个推理模型 false→true）；② fast 层 8 agent 显式 `reasoningEffort: "low"`；③ `compaction.tail_turns: 15` 保留尾部原文；④ 验证：session 存储应出现 `"type":"thinking"` part 而非 content 内 `<thinking>` 文本。
 - **验证**: `grep '"supportsReasoning"' ~/.config/opencode/opencode.jsonc`（推理模型=true）；`grep -c '"type":"thinking"' ~/.local/share/opencode/storage/session/*.json`（结构化 part 存在）。
+
+## PIT-97: OMO 配置迁移把 `model`+`fallback_models` 写成 `models` — z.$strip 静默丢弃，模型回落默认值 (2026-08-18)
+- **症状**: `.omo/omo.jsonc` 中 agents 配了模型但实际不生效（agent 用插件内置默认模型）；无任何报错/警告；categories 看起来"生效"但语义是回退列表
+- **根因**: OMO 迁移时把 `model`+`fallback_models` 两个字段合并成了 `models`（复数）；v4.19.4 schema 中 `agents.*.models` 不存在（`models` 仅 `categories` 有，语义是回退别名），且 validate.ts `parseConfig` 用 `z.$strip` safeParse → **未知 key 静默丢弃**，配置被 strip 后只剩 temperature/reasoningEffort
+- **解法**: agents/categories 一律用 `model`（单数主模型）+ `fallback_models`（复数回退链）；对照迁移备份 `.omo/migration-backup-*/oh-my-openagent.jsonc`（旧格式即正确格式）
+- **验证**: `grep -c '"models"' .omo/omo.jsonc` = 0；`grep -c '"model"' .omo/omo.jsonc` = 19（11 agents + 8 categories）；`grep -c '"fallback_models"' .omo/omo.jsonc` = 19；重启 opencode 后 agent 实际使用配置模型
+- **教训**: z.$strip 静默丢 key 是配置"看似生效实则无效"的最隐蔽形态——不报错不警告；任何配置迁移/改动后必须 diff 备份 + grep 关键字段验证，不能只看文件存在（关联 C27）

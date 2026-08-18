@@ -419,3 +419,11 @@ conda 交叉编译器（会 PIT-85 复发）。
 **检查**: `grep -c '"type":"thinking"' storage/session/*.json` — 应为结构化 part（非 content 内 `<thinking>` 文本）；`grep 'supportsReasoning' ~/.config/opencode/opencode.jsonc` — 推理模型应为 true；`grep -c '"reasoningEffort": "low"' .omo/omo.jsonc` — 应为 8。
 
 **来源**: D246 (2026-08-17)，OMO 多 agent 多模型上下文治理（延续 D213）
+
+## C27: OMO 配置字段必须对照官方 schema — z.$strip 静默丢弃未知 key (2026-08-18)
+
+**约束**: ① OMO agents/categories 模型配置字段必须是 `model`（单数主模型）+ `fallback_models`（复数回退链）；**禁止 `models` 复数**（仅 categories schema 存在且语义是回退别名，agents 用了即被静默丢弃）；② 插件 schema 是 `z.$strip`（非 passthrough）——未知 key 静默丢弃，**配置不生效无任何报错**，迁移/手工改动后必须 grep 验证关键字段；③ 配置类调查（"为什么不生效"）直接读插件源码（`node_modules/oh-my-opencode/dist/config/schema/*` + validate.ts）并与迁移备份 diff，命令批量并行，禁止串行小命令猜测路径（用户 2026-08-18 明确批评浪费 token）。
+
+**检查**: `grep -c '"models"' .omo/omo.jsonc` 应为 0；`grep -c '"model"' .omo/omo.jsonc` 应为 19；`grep -c '"fallback_models"' .omo/omo.jsonc` 应为 19；配置迁移后先 `diff` 新旧再重启。
+
+**来源**: PIT-97 (2026-08-18)，延续 D246/C26 的 OMO 配置治理
