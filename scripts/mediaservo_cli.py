@@ -113,6 +113,13 @@ def _cmd_build_bindings(release: bool = False) -> None:
 ALL_SDKS = ("field", "link", "deck")
 
 
+def _platform_tag() -> str:
+    """wheel 平台 tag（Linux x86_64 → linux_x86_64；其余平台 best-effort）。"""
+    import platform
+    mach = platform.machine().lower().replace("-", "_")
+    return f"{platform.system().lower()}_{mach}"
+
+
 def _cmd_install_bindings(prefix: str, components: str = "all", release: bool = False) -> None:
     """安装 bindings（按需分发）: libmediaservo_<sdk>.so.<MAJOR>.<MINOR>.<PATCH> 三件套（D241）
     + C/cxx 头文件（D248 include/mediaservo 布局）+ .pc + cmake config（组件裁剪）。"""
@@ -172,27 +179,56 @@ def _cmd_install_bindings(prefix: str, components: str = "all", release: bool = 
         content = content.replace("@SDK_LIST@", sdk_list)
         (cmake_dir / name).write_text(content)
 
-    # Python 绑定（fat 自包含）: 包复制到 <prefix>/lib/python3.x/site-packages/，
-    # 选中 SDK 的 .so 三件套进包内 _libs/（_ffi.py 加载顺序第 2 位；CDLL 打开 .so.<MAJOR>
-    # 实体使 DT_NEEDED 自包含解析，无需 LD_LIBRARY_PATH/ldconfig）
-    py_src = ROOT / "bindings/python/mediaservo/mediaservo"
-    site_packages = lib_dir / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
-    py_dst = site_packages / "mediaservo"
-    py_dst.mkdir(parents=True, exist_ok=True)
-    for f in ("__init__.py", "_ffi.py", "field.py", "link.py", "deck.py"):
-        shutil.copy2(py_src / f, py_dst)
-    libs_dst = py_dst / "_libs"
-    libs_dst.mkdir(exist_ok=True)
+    # Python 绑定: 构建 fat wheel（选中 SDK 的 .so 三件套进包内 _libs/，
+    # CDLL 打开 .so.<MAJOR> 实体使 DT_NEEDED 自解析）→ pip install --prefix
+    py_src = ROOT / "bindings/python/mediaservo"
+    py_pkg = py_src / "mediaservo"
+    libs_src = py_pkg / "_libs"
+    libs_src.mkdir(exist_ok=True)
     for sdk in sdks:
         so = src_dir / f"libmediaservo_{sdk}.so"
-        so_major = libs_dst / f"libmediaservo_{sdk}.so.{major}"
+        so_major = libs_src / f"libmediaservo_{sdk}.so.{major}"
         shutil.copy2(so, so_major)  # 实体（SONAME 文件名，DT_NEEDED 自解析）
-        _symlink_force(f"libmediaservo_{sdk}.so.{major}", libs_dst / f"libmediaservo_{sdk}.so")
-    # 清理旧 SDK 的 _libs（组件缩减时防残留）
-    for stale in libs_dst.glob("libmediaservo_*.so*"):
+        _symlink_force(f"libmediaservo_{sdk}.so.{major}", libs_src / f"libmediaservo_{sdk}.so")
+    for stale in libs_src.glob("libmediaservo_*.so*"):
         if not any(sdk in stale.name for sdk in sdks):
-            stale.unlink()
+            stale.unlink()  # 组件缩减时防残留
+    try:
+        wheel_dir = Path(prefix) / "wheel"
+        wheel_dir.mkdir(parents=True, exist_ok=True)
+        r = subprocess.run(
+            ["pip", "wheel", "--no-deps", "--no-build-isolation", "-w", str(wheel_dir), str(py_src)],
+            capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            print(f"错误: wheel 构建失败 — {r.stderr[-500:]}", file=sys.stderr)
+            sys.exit(1)
+        # 强制平台 tag（wheel 含 Linux .so，拒绝 any-tag 误装跨平台）: 改 WHEEL 内 Tag + 重命名
+        import zipfile
+        wheel = next(wheel_dir.glob("mediaservo-*.whl"))
+        tag_new = f"py3-none-{_platform_tag()}"
+        with zipfile.ZipFile(wheel, "r") as z:
+            items = z.infolist()
+            data = {i.filename: z.read(i) for i in items}
+        fixed = wheel.with_name(f"mediaservo-{ver}-{tag_new}.whl")
+        with zipfile.ZipFile(fixed, "w") as z:
+            for i in items:
+                content = data[i.filename]
+                if i.filename == "mediaservo-{ver}.dist-info/WHEEL":
+                    content = content.replace(b"Tag: py3-none-any", f"Tag: {tag_new}".encode())
+                z.writestr(i, content)
+        wheel.unlink()
+        r2 = subprocess.run(
+            ["pip", "install", "--prefix", str(Path(prefix)), "--no-deps", str(fixed)],
+            capture_output=True, text=True,
+        )
+        if r2.returncode != 0:
+            print(f"错误: pip install 失败 — {r2.stderr[-500:]}", file=sys.stderr)
+            sys.exit(1)
+    finally:
+        shutil.rmtree(libs_src, ignore_errors=True)  # 清理临时 _libs（gitignore 兜底）
 
+    site_packages = lib_dir / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
     print(f"bindings 已安装到 {prefix}（组件: {', '.join(sdks)}；{'release' if release else 'debug'}）")
     print(f"  lib/    {', '.join(f'libmediaservo_{s}.so.{major}.{minor}.{patch}' for s in sdks)} + .so.{major} + .so")
     print(f"  lib/pkgconfig/   {', '.join(f'mediaservo-{s}.pc' for s in sdks)}（pkg-config 消费）")

@@ -12,3 +12,6 @@ dependencies = []  # 零依赖: ctypes/dataclasses/unittest 全 stdlib
 
 [tool.setuptools]
 packages = ["mediaservo"]
+
+[tool.setuptools.package-data]
+mediaservo = ["_libs/*.so*", "_libs/*.dylib", "_libs/*.dll"]

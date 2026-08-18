@@ -99,4 +99,4 @@ test-results
 *.tsbuildinfo
 
 # Python bindings example artifacts
-bindings/python/mediaservo/examples/recorded.mp4
+bindings/python/mediaservo/examples/recorded.mp4/bindings/python/mediaservo/mediaservo/_libs/
