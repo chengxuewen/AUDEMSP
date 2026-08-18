@@ -104,7 +104,7 @@ host-monitor ──(期望态镜像)──▶ 拓扑验证/告警闭环
 ### D-H6: 单 WS 信令总线（WS 代理模式）— Server 零改动
 - **形态**: 各进程 WS 连本地 127.0.0.1:PORT → host-agent 做 WS 网关（本地 accept + 远端单 WS + 双向转发 + 会话区分）→ Server 只见一个 peer = 一个车
 - **理由**: 多 peer 语义缺"车"聚合层（踢下线/凭证/拉流路由/admin 视图都按设备）；Server 零改动（多路 produce = 同 peer 多 transport，mediasoup 原生支持；P2P relay 仅 SDP/ICE 交换）
-- **影响**: 各进程代码零改动（信令地址一个配置项）；host-agent 兼信令网关（职责混合可接受——信令状态监控天然在手）；controller 的 PC 协商借道总线（不持独立信令）
+- **影响**: 各进程信令地址一个配置项（连本地网关）；**RoomJoin 由 agent 拦截**（signaling.rs 实证：relay 循环内再收 RoomJoin 被静默丢弃——子进程不得逐进程 join，agent 以整车身份单次 join）；响应路由按 msg_peer_id/transport_id 映射回本地连接（SFU）或协商归属追踪（P2P relay）；host-agent 兼信令网关（职责混合可接受——信令状态监控天然在手）；controller 的 PC 协商借道总线（不持独立信令）
 - **演进**: 真多车时升级 Server 设备聚合（方向 2），agent 网关平滑过渡
 
 ### D-H7: 环视拼接默认外置 — 第三方节点经 link SDK 接入
