@@ -324,24 +324,24 @@ pub use mediaservo_codec::{Encoder, Decoder};   // D229: deck 依赖 codec，不
 
 ## 7. C ABI 绑定形态（c / cxx / py）
 
-延续 D109：**opaque handle + int 错误码 + 回调**。每 SDK 一套 `ms_<sdk>_*` 前缀。
+延续 D109：**opaque handle + int 错误码 + 回调**。每 SDK 一套 `mediaservo_<sdk>_*` 前缀。
 
 ```c
 /* 示例：link 信令 */
-typedef struct ms_link_signal_t ms_link_signal_t;   /* opaque */
-typedef int ms_err_t;                                /* 0 = ok, <0 = error code */
+typedef struct mediaservo_link_signal_t mediaservo_link_signal_t;   /* opaque */
+typedef int mediaservo_err_t;                                /* 0 = ok, <0 = error code */
 
-ms_err_t ms_link_signal_connect(const char* url, const ms_auth_t* auth, ms_link_signal_t** out);
-ms_err_t ms_link_signal_send(ms_link_signal_t* s, const uint8_t* msg, size_t len);
-void     ms_link_signal_on_event(ms_link_signal_t* s, ms_signal_event_cb cb, void* user);  /* 事件回调 */
-ms_err_t ms_link_signal_close(ms_link_signal_t* s);
-ms_err_t ms_last_error(char* buf, size_t len);       /* 最近错误详情 */
+mediaservo_err_t mediaservo_link_signal_connect(const char* url, const mediaservo_auth_t* auth, mediaservo_link_signal_t** out);
+mediaservo_err_t mediaservo_link_signal_send(mediaservo_link_signal_t* s, const uint8_t* msg, size_t len);
+void     mediaservo_link_signal_on_event(mediaservo_link_signal_t* s, mediaservo_signal_event_cb cb, void* user);  /* 事件回调 */
+mediaservo_err_t mediaservo_link_signal_close(mediaservo_link_signal_t* s);
+mediaservo_err_t mediaservo_last_error(char* buf, size_t len);       /* 最近错误详情 */
 
 /* field 推流（async → handle + 完成回调，或阻塞式，绑定层二选一） */
-typedef struct ms_field_push_t ms_field_push_t;
-ms_err_t ms_field_push_connect(const ms_push_config_t* cfg, ms_field_push_t** out);
-ms_err_t ms_field_push_publish_video(ms_field_push_t* s, ms_video_source_t* src,
-                                     const ms_publish_options_t* opts, ms_track_id_t* out_track);
+typedef struct mediaservo_field_push_t mediaservo_field_push_t;
+mediaservo_err_t mediaservo_field_push_connect(const mediaservo_push_config_t* cfg, mediaservo_field_push_t** out);
+mediaservo_err_t mediaservo_field_push_publish_video(mediaservo_field_push_t* s, mediaservo_video_source_t* src,
+                                     const mediaservo_publish_options_t* opts, mediaservo_track_id_t* out_track);
 ```
 
 - **C++（`-cxx`）**：header-only RAII 包装 C ABI（`FfiHandle` 式析构 + `Result<T,E>`）

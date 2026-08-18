@@ -568,3 +568,11 @@ facade 仍是纯编解码（不吞 mux，D229）；后续如果 playback 落地�
 **原因**: 推理模型双通道输出（reasoning_content 思考 + content 答案）与对话历史只认 content 的矛盾（转换机制）；OMO 多 agent 混合模型（6 模型 1024K）放大上下文爆炸 + 格式串扰 + 错误锚定；`supportsReasoning: false` 与 OMO 层 `reasoningEffort: "high"` 配置直接矛盾（根因）；fast 层无 reasoningEffort 导致网关默认全量 thinking 输出。
 
 **影响**: 分层策略 "展示全量、存储分离、注入限量、按模型裁剪、续写特例"；后续若 session 存储仍无 thinking part（网关侧拼接 content），下一层修网关别名配置。配置生效需重启 opencode（启动时加载）。
+
+## D247: C ABI 符号前缀 — ms_ 改为 mediaservo_ 全名 (2026-08-18)
+
+**决策**: 绑定矩阵三 SDK（link/deck/field）的 C ABI 符号/类型/宏前缀统一为 **mediaservo_**（如 `mediaservo_field_push_connect`、`mediaservo_err_t`、`MEDIASERVO_FIELD_ERR_*`），废弃计划中的 ms_ 前缀（D109/D241 起草形态）。
+
+**原因**: ① 唯一性——ms_ 与微软 MS_ 宏/毫秒/大量小库冲突，dlopen 场景（D240 deck-full.so OTA 插件）下同名符号可被 LD 抢先解析（正确性/安全问题）；② 品牌自描述 + 审计友好（`nm -D | grep mediaservo_` 一键区分归属）；③ 与 libmediaservo_*.so / MEDIASERVO_* 头文件 guard / mediaservo-* crate 全链一致；④ 行业惯例全部是品牌唯一前缀（gst_/av_/iox2_/livekit_）；⑤ 执行窗口：cxx/py 层未建、link-c/deck-c 未发布——pre-1.0 唯一低成本的改名时刻。
+
+**影响**: C++ 命名空间用全名 `mediaservo::{link,deck,field}`（命名空间无运行期成本）；Python 类名对应；0.1.x ABI 破坏性变更（未发布 MAJOR，记录在案）；契约 §7 示例/22-field-guide 已同步。**执行纪律：仓级重命名必须在所有子代理完成后再做**（PIT-98：deck-c 代理将重命名误判为污染并 git checkout 还原全仓）。

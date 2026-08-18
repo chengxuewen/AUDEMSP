@@ -187,3 +187,11 @@ grep -c "重复模式" <file>    # 期望 1；>1 = edit 重复插入
 **验证**: edit 后 `python3 -m json.tool <file>`（json）或 `grep -c '"reasoningEffort": "low"' .omo/omo.jsonc`（jsonc 目标字段）确认生效。
 
 **阻塞条件**: 未 re-read 直接拼接错误输出的部分 tags 重试；JSON 替换后未做语法校验。
+
+### 14. 仓级重命名/批量编辑是代理并发禁区 (PIT-98)
+
+**规则**: 有子代理在运行（background task 未收到完成通知）时，**禁止**执行仓级重命名、跨文件批量替换、`git checkout/restore` 目录级操作。子代理可能：① 后续提交覆盖/还原工作区（git checkout 恢复"污染"会连带冲掉编排者的未提交改动——PIT-98 实证 10 文件重命名被整体冲掉）；② 基于旧内容继续编码产生冲突合并。
+
+**验证**: 重命名/批量替换后 `grep -rc "<旧模式>" <范围>` 必须为 0 + 二进制级验证（`readelf --dyn-syms` 符号名）；重做前确认 `git log` 静止 + 无 background 任务。
+
+**阻塞条件**: 有未完成子代理时执行仓级替换；批量替换后未做符号/内容双重验证即提交。

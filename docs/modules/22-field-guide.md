@@ -49,16 +49,16 @@ session.close().await?;
 ```c
 #include "mediaservo_field.h"
 
-ms_push_config_t cfg = MS_PUSH_CONFIG_DEFAULT;
+mediaservo_push_config_t cfg = MEDIASERVO_PUSH_CONFIG_DEFAULT;
 cfg.url = "ws://host:9800/ws"; cfg.psk = "psk"; cfg.room = "room";
 
-ms_field_push_t* s = NULL;
-ms_field_push_connect(&cfg, &s);
+mediaservo_field_push_t* s = NULL;
+mediaservo_field_push_connect(&cfg, &s);
 char track[64];
-ms_field_push_publish_video(s, track, sizeof(track));
-ms_field_push_start_video_frames(s);
+mediaservo_field_push_publish_video(s, track, sizeof(track));
+mediaservo_field_push_start_video_frames(s);
 /* ... */
-ms_field_push_close(s);
+mediaservo_field_push_close(s);
 ```
 
 完整示例: `bindings/c/mediaservo-field-c/examples/vehicle_push.c`

@@ -1043,3 +1043,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: agents/categories 一律用 `model`（单数主模型）+ `fallback_models`（复数回退链）；对照迁移备份 `.omo/migration-backup-*/oh-my-openagent.jsonc`（旧格式即正确格式）
 - **验证**: `grep -c '"models"' .omo/omo.jsonc` = 0；`grep -c '"model"' .omo/omo.jsonc` = 19（11 agents + 8 categories）；`grep -c '"fallback_models"' .omo/omo.jsonc` = 19；重启 opencode 后 agent 实际使用配置模型
 - **教训**: z.$strip 静默丢 key 是配置"看似生效实则无效"的最隐蔽形态——不报错不警告；任何配置迁移/改动后必须 diff 备份 + grep 关键字段验证，不能只看文件存在（关联 C27）
+
+## PIT-98: 仓级重命名与运行中子代理冲突 — 被 git checkout 整体冲掉 (2026-08-18)
+- **症状**: mediaservo_ 前缀重命名（10 文件 ~1050 处）应用后，link-c 代理已完成但 deck-c 代理仍在运行；deck-c 代理提交竞态修复时把重命名误判为 "edit 工具污染"（提交信息明说），`git checkout 恢复全 bindings/c` → 全部重命名改动丢失，三 crate 源码回到 ms_*，需完整重做（重命名 → 重建 → 三端 e2e）。
+- **根因**: 重命名时 deck-c 代理（bg_c1ad52e1）尚未结束（其后又提交 5a27374），代理在工作区执行 git checkout 恢复其认知中的"污染"；编排者未等 ALL 代理完成通知就执行仓级操作。
+- **解法**: 重命名/批量替换后立即验证（grep ms_ = 0）；重做时确认代理已全部结束（git log 静止 + 无 background 任务在跑）。代理侧: 禁止对未触碰文件执行 git checkout/restore 全目录。
+- **验证**: `grep -rc "ms_" bindings/c/*/src bindings/c/*/include bindings/c/*/examples` 全 0；`readelf -W --dyn-syms target/debug/libmediaservo_*.so | grep -c " ms_"` = 0。
+- **教训**: 仓级重命名/跨文件批量编辑是"代理并发禁区"——必须先等全部子代理完成（含其后续修复提交），再执行；重命名后必须符号级验证（readelf），不能只看文件内容。
