@@ -1,8 +1,8 @@
 /* 车端推流示例（C ABI 消费）— ms_field_* 用法。
  *
- * 编译（链接 libmediaservo_field_c.so）:
- *   gcc vehicle_push.c -I bindings/c/mediaservo-field-c/include \
- *       -L target/debug -lmediaservo_field_c -o vehicle_push
+ * 编译（链接 libmediaservo_field.so）:
+ *   gcc vehicle_push.c -I bindings/c/mediaservo-field-c/include -I bindings/c/include \
+ *       -L target/debug -lmediaservo_field -o vehicle_push
  * 运行: LD_LIBRARY_PATH=target/debug ./vehicle_push
  */
 #include <stdio.h>
@@ -28,7 +28,7 @@ int main(void) {
     ms_field_push_t* s = NULL;
     ms_err_t rc = ms_field_push_connect(&cfg, &s);
     if (rc != MS_OK) {
-        ms_last_error(err, sizeof(err));
+        ms_field_last_error(err, sizeof(err));
         fprintf(stderr, "connect failed (%d): %s\n", rc, err);
         return 1;
     }
@@ -38,7 +38,7 @@ int main(void) {
     char track[64];
     rc = ms_field_push_publish_video(s, track, sizeof(track));
     if (rc != MS_OK) {
-        ms_last_error(err, sizeof(err));
+        ms_field_last_error(err, sizeof(err));
         fprintf(stderr, "publish failed (%d): %s\n", rc, err);
         ms_field_push_close(s);
         return 1;
@@ -48,7 +48,7 @@ int main(void) {
     /* 4. 启动帧生成 */
     rc = ms_field_push_start_video_frames(s);
     if (rc != MS_OK) {
-        ms_last_error(err, sizeof(err));
+        ms_field_last_error(err, sizeof(err));
         fprintf(stderr, "start frames failed (%d): %s\n", rc, err);
         ms_field_push_close(s);
         return 1;
@@ -65,7 +65,7 @@ int main(void) {
     ms_field_push_stop_video_frames(s);
     rc = ms_field_push_close(s);
     if (rc != MS_OK) {
-        ms_last_error(err, sizeof(err));
+        ms_field_last_error(err, sizeof(err));
         fprintf(stderr, "close failed (%d): %s\n", rc, err);
         return 1;
     }
