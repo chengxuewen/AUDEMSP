@@ -127,11 +127,33 @@ host-monitor ──(期望态镜像)──▶ 拓扑验证/告警闭环
 - **理由**: 云端下发业务配置而非进程管理配置（restart_policy 等是运维细节）；翻译层在 host 侧使 OxMgr 可替换（翻译器输出目标可换 systemd/pm2）；Windows CARLA 机同入口
 - **功能面**: host init/start/stop/restart/status/apply/doctor/version
 
+## 5.5 安全设计（授权/认证/加密全景）
+
+### D-H10: link 节点间授权 — 授权文件 + 长期令牌（固定）
+- **形态**: host init 签发长期 Ed25519 令牌文件（如 /etc/mediaservo/link/ros-vision.token），ROS 节点 link SDK attach 时 from_file 加载——**配置一次永久使用，零动态改动**
+- **信任根**: host-agent 持 signing key（本地信任根）；各 host 节点 + ROS 节点持 verifying key + 各自令牌（host token issue --role --topic 签发）
+- **固定令牌对冲**: 令牌 claims 带 topic 白名单（最小权限——泄露的 ROS 令牌只能发布声明的事）+ 文件权限 0600 + 吊销 = 重新签发部署；Ed25519 不可伪造
+- **不做**（YAGNI）: 短期 ttl + 自动续签（agent 持 signing key，未来加签发端点即可）
+
+### D-H11: host↔server 双类身份 + 舱端分级授权
+- **车端（host，无人设备）**: 设备凭证（device_id + device_secret）→ Join 认证 → 短期 session token；开发/内网保留全局 PSK（渐进）；单 WS 聚合 = 单点认证（一个设备会话一次认证）
+- **舱端（client，操作员）**: 操作员账号（人）——双类身份模型；**三级角色**:
+  | 能力 \ 角色 | viewer | operator | admin |
+  |---|---|---|---|
+  | 拉流（视频+视觉）| ✅ | ✅ | ✅ |
+  | 音频对话（双向）| ✅ | ✅ | ✅ |
+  | 控制（底盘/云台）| ❌ | ✅ | ✅ |
+  | 急停 | ❌ | ✅（强审计：谁/何时/来自哪个舱端）| ✅ |
+  | 配置下发 | ❌ | ❌ | ✅ |
+- **授权矩阵**: 车端 produce 自己的流/接收配置/接收控制转发；舱端按角色 consume 授权车的流/发控制/发急停；车×舱授权关系表（租户隔离：车 A 不可见车 B）
+- **加密**: 信令 TLS（wss）生产必开；WebRTC DTLS/SRTP 自带；SHM 不加密（同机可信域声明边界）
+
 ## 6. 已知缺口与后续工作
 
 1. **Server SFU data 域**：mediasoup DataProducer/DataConsumer（SFU 模式 DC 控制的前置）
 2. **外部节点（ROS：拼接 + 视觉处理）**：经 link SDK 接入（D-H7/D-H8）；帧同步/ts 对齐由外部节点承担（FrameMeta ts_mono/ts_epoch 提供对齐输入）
 2b. **视觉 DC 消息格式**：JSON 起步，量级增长（高频多对象）时评估二进制紧凑编码
+2c. **音频对话（双向对讲）**：viewer 级能力（D-H11 矩阵）——车端麦克风/扬声器 + opus track（host-audio 进程 or 并入现有进程，待定）
 3. **帧同步策略**：stitch 缓冲对齐窗口（多路帧到达时刻差异）
 4. **采集 zero-copy**：MIPI/CSI 采集进 SHM 的零拷贝优化（immediate transfer）
 5. **emergency 本地兜底**：执行器直连形态（CAN/GPIO/串口）与控制器冗余
