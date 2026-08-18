@@ -2,7 +2,8 @@
 //!
 //! 子命令（`std::env::args` 手工解析，Phase A 不引入 clap）：
 //! - `host init <dir>`        — 生成 `etc/host.toml` 模板 + `etc/link/signing.pem`
-//!   （Ed25519 PKCS#8 keypair，0600）+ 空 `etc/link/` 目录
+//!   （Ed25519 PKCS#8 keypair，0600）+ `etc/link/ros_bridge.yaml`（B3：ROS 节点
+//!   配置单一来源——topic 清单 + 令牌路径，从 host.toml 相机/流清单导出）
 //! - `host start --dir <dir>` — 读 etc/host.toml → translate → 写 run/oxfile.toml
 //!   → `oxmgr apply run/oxfile.toml` 拉起全部 host 进程
 //! - `host stop --dir <dir>`  — `oxmgr stop run/oxfile.toml` + `oxmgr delete run/oxfile.toml`
@@ -84,7 +85,8 @@ fn parse_dir(args: &mut impl Iterator<Item = String>) -> Option<PathBuf> {
     Some(dir)
 }
 
-/// `host init <dir>`: 生成 etc/host.toml 模板 + etc/link/signing.pem（Ed25519，0600）。
+/// `host init <dir>`: 生成 etc/host.toml 模板 + etc/link/signing.pem（Ed25519，0600）
+/// + etc/link/ros_bridge.yaml（topic 清单 + 令牌路径，从 host.toml 导出）。
 fn cmd_init(args: &mut impl Iterator<Item = String>) -> i32 {
     let dir = args.next().map(PathBuf::from).unwrap_or_default();
     let etc = dir.join("etc");
@@ -122,6 +124,35 @@ fn cmd_init(args: &mut impl Iterator<Item = String>) -> i32 {
             }
         }
     }
+
+    // 生成 ros_bridge.yaml（B3）：topic 清单 + 令牌路径，ROS 节点配置单一来源。
+    // 从已存在的 host.toml 解析（init 刚写入模板或用户已编辑），解析失败即报错——
+    // 静默写空清单会让 ROS 节点连不上任何 topic（C15）。
+    let cfg_text = match std::fs::read_to_string(&cfg_path) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("init: 读取 {} 失败: {e}", cfg_path.display());
+            return 1;
+        }
+    };
+    let (cameras, streams) = match mediaservo_host::translate::camera_and_stream_ids(&cfg_text) {
+        Ok(ids) => ids,
+        Err(e) => {
+            eprintln!("init: {e}");
+            return 1;
+        }
+    };
+    let token_path = std::path::absolute(link.join("ros-vision.token"))
+        .unwrap_or_else(|_| link.join("ros-vision.token"))
+        .to_string_lossy()
+        .into_owned();
+    let yaml = mediaservo_link::bridge::ros_bridge(&cameras, &streams, &token_path);
+    let ros_path = link.join("ros_bridge.yaml");
+    if let Err(e) = std::fs::write(&ros_path, &yaml) {
+        eprintln!("init: 写入 {} 失败: {e}", ros_path.display());
+        return 1;
+    }
+    println!("已生成 {}", ros_path.display());
     0
 }
 

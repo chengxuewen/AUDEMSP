@@ -40,22 +40,31 @@ const FIXED_APPS: [&str; 5] = [
 /// 单实例用类型名（如 `host-capturer`），多实例追加实例 id（如 `host-capturer-cam1`）
 /// ——OxMgr validate 拒绝重复 app 名（CLI.md "duplicate app name" 硬错误）。
 pub fn to_oxfile(cfg: &str) -> Result<String, String> {
-    let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
+    let (cameras, streams) = camera_and_stream_ids(cfg)?;
 
     let mut out = String::from("version = 1\n\n[defaults]\nnamespace = \"host\"\nrestart_policy = \"always\"\n\n");
 
     for name in FIXED_APPS {
         push_app(&mut out, name, &exe_cmd(name));
     }
-    for cam in &cfg.cameras {
-        let name = instance_name("host-capturer", &cam.id, cfg.cameras.len() > 1);
-        push_app(&mut out, &name, &format!("{} --camera {}", exe_cmd("host-capturer"), cam.id));
+    for cam in &cameras {
+        let name = instance_name("host-capturer", cam, cameras.len() > 1);
+        push_app(&mut out, &name, &format!("{} --camera {}", exe_cmd("host-capturer"), cam));
     }
-    for stream in &cfg.streams {
-        let name = instance_name("host-streamer", &stream.id, cfg.streams.len() > 1);
-        push_app(&mut out, &name, &format!("{} --stream {}", exe_cmd("host-streamer"), stream.id));
+    for stream in &streams {
+        let name = instance_name("host-streamer", stream, streams.len() > 1);
+        push_app(&mut out, &name, &format!("{} --stream {}", exe_cmd("host-streamer"), stream));
     }
     Ok(out)
+}
+
+/// 提取 cameras/streams 的 id 列表（host init 生成 ros_bridge.yaml 复用，单一解析点）。
+pub fn camera_and_stream_ids(cfg: &str) -> Result<(Vec<String>, Vec<String>), String> {
+    let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
+    Ok((
+        cfg.cameras.into_iter().map(|c| c.id).collect(),
+        cfg.streams.into_iter().map(|s| s.id).collect(),
+    ))
 }
 
 /// 单实例用类型名，多实例追加实例 id 保证名字唯一。

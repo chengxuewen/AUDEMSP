@@ -51,6 +51,7 @@ path = "src/bin/host-legacy.rs"
 
 [dependencies]
 mediaservo-common = { path = "../mediaservo-common" }
+mediaservo-link = { path = "../mediaservo-link" }
 mediaservo-media = { path = "../mediaservo-media" }
 # GStreamer (optional — requires system GStreamer on Linux/Jetson)
 gstreamer = { version = "0.23", optional = true }

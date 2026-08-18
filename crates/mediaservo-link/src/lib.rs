@@ -8,6 +8,7 @@
 //!
 //! 不含 SignalClient（对 server 的 WS 信令）——拆到 Phase 1b。
 
+pub mod bridge;
 pub mod acl;
 pub mod bus;
 pub mod error;
