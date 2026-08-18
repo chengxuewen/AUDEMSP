@@ -159,23 +159,22 @@ def _cmd_install_bindings(prefix: str, components: str = "all", release: bool = 
         for h in (ROOT / f"bindings/cxx/mediaservo-{sdk}-cxx/include/mediaservo").glob("*.hpp"):
             shutil.copy2(h, inc_dir)
 
-    # pkg-config (.pc) + CMake package config：模板渲染（FFmpeg/iceoryx2 惯例）
-    tpl = ROOT / "bindings/packaging"  # 分发/打包配方（.pc + cmake config 模板）
+    # pkg-config (.pc) + CMake package config：模板随归属（.pc 在各自 SDK 包目录，
+    # cmake 聚合模板在 bindings/c/cmake/——iceoryx2 每包自带配方模式）
     pc_dir = lib_dir / "pkgconfig"
     cmake_dir = lib_dir / "cmake" / "mediaservo"
     pc_dir.mkdir(parents=True, exist_ok=True)
     cmake_dir.mkdir(parents=True, exist_ok=True)
     prefix_abs = str(lib_dir.parent)  # 规范绝对 prefix（configure 传统；模板用 ${pcfiledir} 保持可重定位）
-    for t in sorted(tpl.glob("*.pc.in")):
-        sdk = t.name.removeprefix("mediaservo-").removesuffix(".pc.in")
-        if sdk not in sdks:
-            continue  # 按需: 只装选中的 .pc
+    for sdk in sdks:  # 按需: 只装选中的 .pc
+        t = ROOT / f"bindings/c/mediaservo-{sdk}-c/mediaservo-{sdk}.pc.in"
         content = t.read_text().replace("@VERSION@", ver).replace("${pcfiledir}/../..", prefix_abs)
-        (pc_dir / t.name[:-3]).write_text(content)  # .pc.in → .pc
+        (pc_dir / f"mediaservo-{sdk}.pc").write_text(content)
     sdk_list = " ".join(sdks)  # cmake config 组件裁剪
+    cmake_tpl = ROOT / "bindings/c/cmake"
     for name, t in (("mediaservoConfig.cmake", "mediaservoConfig.cmake.in"),
                     ("mediaservoConfigVersion.cmake", "mediaservoConfigVersion.cmake.in")):
-        content = (tpl / t).read_text().replace("@VERSION@", ver).replace("@MAJOR@", major)
+        content = (cmake_tpl / t).read_text().replace("@VERSION@", ver).replace("@MAJOR@", major)
         content = content.replace("@SDK_LIST@", sdk_list)
         (cmake_dir / name).write_text(content)
 
