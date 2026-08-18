@@ -138,22 +138,29 @@ host-monitor ──(期望态镜像)──▶ 拓扑验证/告警闭环
 ### D-H11: host↔server 双类身份 + 舱端分级授权
 - **车端（host，无人设备）**: 设备凭证（device_id + device_secret）→ Join 认证 → 短期 session token；开发/内网保留全局 PSK（渐进）；单 WS 聚合 = 单点认证（一个设备会话一次认证）
 - **舱端（client，操作员）**: 操作员账号（人）——双类身份模型；**三级角色**:
-  | 能力 \ 角色 | viewer | operator | admin |
-  |---|---|---|---|
-  | 拉流（视频+视觉）| ✅ | ✅ | ✅ |
-  | 音频对话（双向）| ✅ | ✅ | ✅ |
-  | 控制（底盘/云台）| ❌ | ✅ | ✅ |
-  | 急停 | ❌ | ✅（强审计：谁/何时/来自哪个舱端）| ✅ |
-  | 配置下发 | ❌ | ❌ | ✅ |
+  | 能力 \ 角色 | viewer | operator | admin | dispatcher |
+  |---|---|---|---|---|
+  | 拉流（视频+视觉）| ✅ | ✅ | ✅ | ❌（需求出现可加）|
+  | 音频对话（会议）| ✅ | ✅ | ✅ | ✅（任意车房间）|
+  | 控制（底盘/云台）| ❌ | ✅ | ✅ | ❌ |
+  | 急停 | ❌ | ✅（强审计：谁/何时/来自哪个舱端）| ✅ | ❌ |
+  | 配置下发 | ❌ | ❌ | ✅ | ❌ |
+  | 状态/告警查看 | ❌ | ✅ | ✅ | ✅ |
 - **授权矩阵**: 车端 produce 自己的流/接收配置/接收控制转发；舱端按角色 consume 授权车的流/发控制/发急停；车×舱授权关系表（租户隔离：车 A 不可见车 B）
 - **加密**: 信令 TLS（wss）生产必开；WebRTC DTLS/SRTP 自带；SHM 不加密（同机可信域声明边界）
+
+### D-H12: 音频会议房间 — 每车一房间，N 方全互连
+- **模型**: 每车一个音频房间（车为单位的会议）；参与者 = 车端（host-audio 进程，始终在）+ 舱端（viewer+）+ 调度后台（dispatcher，任意车房间，浏览器 WebRTC）；音频走 WebRTC opus track 直连 Server SFU（不经 FrameBus）
+- **拓扑**: 全互连（每参与者 publish 1 路 + subscribe 其他所有人）；opus ~50kbps/路，≤10 人/房间转发模式够用（更大规模才需 Server 端混音——YAGNI）
+- **车端**: host-audio 进程（麦克风采集 + 扬声器播放 + opus 编解码——codec FFmpeg 后端）
+- **Server 扩展**: 音频房间管理（join/leave + 房间成员列表 + 权限校验——dispatcher 任意车 / 舱端仅授权车）+ admin dashboard 音频面板（调度端）
 
 ## 6. 已知缺口与后续工作
 
 1. **Server SFU data 域**：mediasoup DataProducer/DataConsumer（SFU 模式 DC 控制的前置）
 2. **外部节点（ROS：拼接 + 视觉处理）**：经 link SDK 接入（D-H7/D-H8）；帧同步/ts 对齐由外部节点承担（FrameMeta ts_mono/ts_epoch 提供对齐输入）
 2b. **视觉 DC 消息格式**：JSON 起步，量级增长（高频多对象）时评估二进制紧凑编码
-2c. **音频对话（双向对讲）**：viewer 级能力（D-H11 矩阵）——车端麦克风/扬声器 + opus track（host-audio 进程 or 并入现有进程，待定）
+2c. **音频会议（D-H12）**：每车一房间 N 方全互连；剩余：Server 音频房间管理（join/leave/成员/权限）+ 浏览器调度面板 + host-audio 进程
 3. **帧同步策略**：stitch 缓冲对齐窗口（多路帧到达时刻差异）
 4. **采集 zero-copy**：MIPI/CSI 采集进 SHM 的零拷贝优化（immediate transfer）
 5. **emergency 本地兜底**：执行器直连形态（CAN/GPIO/串口）与控制器冗余
