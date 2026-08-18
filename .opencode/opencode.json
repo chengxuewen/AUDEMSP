@@ -11,7 +11,7 @@
   "plugin": [
     "superpowers@git+https://github.com/obra/superpowers.git",
     "@dietrichgebert/ponytail",
-    "oh-my-opencode@latest",
+    "oh-my-openagent@4.19.4",
     "context-mode"
   ],
   "instructions": [
@@ -35,30 +35,7 @@
     ".agents/rules/rust/hooks.md"
   ],
   "mcp": {
-    "context7": {
-      "type": "local",
-      "enabled": true,
-      "command": [
-        "node",
-        ".opencode/init-mcp-streamable-bridge.mjs"
-      ],
-      "environment": {
-        "STREAMABLE_MCP_URL": "https://mcp.context7.com/mcp"
-      },
-      "timeout": 30000
-    },
-    "grep_app": {
-      "type": "local",
-      "enabled": true,
-      "command": [
-        "node",
-        ".opencode/init-mcp-streamable-bridge.mjs"
-      ],
-      "environment": {
-        "STREAMABLE_MCP_URL": "https://mcp.grep.app"
-      },
-      "timeout": 30000
-    },
+    
     "websearch": {
       "type": "remote",
       "url": "https://websearch.opencode.ai",

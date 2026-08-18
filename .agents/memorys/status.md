@@ -361,3 +361,8 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - 迁移把 `model`+`fallback_models` 写成 `models`（复数）→ v4.19.4 schema z.$strip 静默丢弃 → agent 模型回落默认值
 - 修复: `.omo/omo.jsonc` 全部改回 `model`/`fallback_models`（19/19 处），保留 D246 reasoningEffort 分层
 - 验证: `grep -c '"models"' .omo/omo.jsonc` = 0；重启 opencode 生效
+
+## MCP bridge 退役 (2026-08-18)
+
+- oh-my-openagent@4.19.4 内置 context7/grep_app MCP（dist/index.js 直接 StreamableHTTPClientTransport 注册）→ 移除 `.opencode/init-mcp-streamable-bridge.mjs` + opencode.json 显式配置（1.18 SSE→405 时期的权宜之计，见 2026-08-17 记录）
+- 验证: 本会话 context7/grep_app 工具可用、无 bridge 进程
