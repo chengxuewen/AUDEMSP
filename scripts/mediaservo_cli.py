@@ -106,7 +106,12 @@ def _cmd_build_bindings(release: bool = False) -> None:
             f"libmediaservo_{sdk}.so",
             out_dir / f"libmediaservo_{sdk}.so.{major}",
         )
-    print("bindings 构建完成: libmediaservo_{field,link,deck}.so (%s, symlink .so.%s)"
+    # node 绑定（napi-rs .node；FFmpeg 动态库链接经 build.rs 补齐）
+    _run_or_exit(["cargo", "build"] + (["--release"] if release else []) + ["-p", "mediaservo-node"])
+    node_so = out_dir / "libmediaservo_node.so"
+    if node_so.exists():
+        shutil.copy2(node_so, ROOT / "bindings/node/mediaservo.node")
+    print("bindings 构建完成: libmediaservo_{field,link,deck}.so + mediaservo.node (%s, symlink .so.%s)"
           % ("release" if release else "debug", major))
 
 
@@ -233,6 +238,19 @@ def _cmd_install_bindings(prefix: str, components: str = "all", release: bool = 
             sys.exit(1)
     finally:
         shutil.rmtree(libs_src, ignore_errors=True)  # 清理临时 _libs（gitignore 兜底）
+
+    # Node 绑定: 包目录复制到 <prefix>/node/mediaservo/（lib + package.json + .node）
+    node_src = ROOT / "bindings/node"
+    node_dst = Path(prefix) / "node" / "mediaservo"
+    if (node_src / "mediaservo.node").exists():
+        node_dst.mkdir(parents=True, exist_ok=True)
+        for f in ("package.json", "mediaservo.node"):
+            shutil.copy2(node_src / f, node_dst)
+        lib_dst = node_dst / "lib"
+        lib_dst.mkdir(exist_ok=True)
+        shutil.copy2(node_src / "lib/index.mjs", lib_dst)
+        print(f"  node/    mediaservo 包（package.json + mediaservo.node + lib/）→ {node_dst}")
+        print("  使用: NODE_PATH=<prefix>/node npm 或 import '<prefix>/node/mediaservo/lib/index.mjs'")
 
     site_packages = lib_dir / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
     print(f"bindings 已安装到 {prefix}（组件: {', '.join(sdks)}；{'release' if release else 'debug'}）")
