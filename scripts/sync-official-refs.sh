@@ -23,12 +23,14 @@ FORCE=0
 
 # url|dir  (git clone <url> <refs_dir>/<dir>)
 REPOS=(
-  "https://github.com/versatica/mediasoup-client   mediasoup-client"
+  "https://github.com/versatica/mediasoup-client    mediasoup-client"
   "https://github.com/versatica/libmediasoupclient  libmediasoupclient"
   "https://github.com/versatica/mediasoup-demo      mediasoup-demo"
-  "https://github.com/eclipse-iceoryx/iceoryx2    iceoryx"  # PIT-14: 仅用于分析, 非官方依赖, 可选
-  "https://github.com/livekit/rust-sdks   livekit-rust"  # PIT-14: 仅用于分析, 非官方依赖, 可选
-  "https://github.com/livekit/client-sdk-cpp  livekit-cpp"  # PIT-14: 仅用于分析, 非官方依赖, 可选
+  "https://github.com/eclipse-iceoryx/iceoryx2      iceoryx2"  # PIT-14: 仅用于分析, 非官方依赖, 可选
+  "https://github.com/livekit/rust-sdks             livekit-sdk-rust"  # PIT-14: 仅用于分析, 非官方依赖, 可选
+  "https://github.com/livekit/client-sdk-cpp        livekit-sdk-cpp"  # PIT-14: 仅用于分析, 非官方依赖, 可选
+  "https://github.com/livekit/node-sdks             livekit-sdk-node"  # PIT-14: 仅用于分析, 非官方依赖, 可选
+  "https://github.com/livekit/python-sdks           livekit-sdk-python"  # PIT-14: 仅用于分析, 非官方依赖, 可选
 )
 
 mkdir -p "$REFS_DIR"
