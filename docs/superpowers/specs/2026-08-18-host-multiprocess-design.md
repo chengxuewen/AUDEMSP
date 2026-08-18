@@ -23,18 +23,22 @@
 ```
 OxMgr（进程总管：重启策略/健康检查/日志轮转/CPU-RAM 指标/file-watch 配置热生效）
 ├── host-capturer × N      每相机一进程 → FrameBus 发布 I420（ts_mono/ts_epoch 对齐）
-├── host-stitch × 1        环视拼接：订阅 N 路 → 缓冲对齐(ts) → GPU 拼接 → 发布 1 路全景
-├── host-streamer × N      每路一进程：订阅 RAW → 编码 → WebRTC 推流（协商 WS → 本地总线）
-├── host-recorder × 1      聚合：订阅全部路 → 各自编码落盘（磁盘故障不影响推流）
+├── host-streamer × N      每路一进程：订阅任意 link topic → 编码 → WebRTC 推流
+│                          （源不限于 host-capturer——第三方发布者同样可推；协商 WS → 本地总线）
+├── host-recorder × 1      聚合：订阅任意路（相机路 + 拼接路）→ 各自编码落盘
 ├── host-controller × 1    控制通道：一条 PC（只开 DC 不开 track）+ 多 DataChannel label
 ├── host-emergency × 1     急停：独立进程 + 独立 PC + 本地兜底（最高可靠性通道）
 └── host-agent × 1         信令网关（单 WS 聚合）+ 拓扑/数据流/信令状态监控
                            + 云端配置镜像 + 远程上报 Server
+
+外部生产者（不归 OxMgr 管，自带生命周期）：
+└── ROS 拼接节点（如环视 AVM）经 link SDK（C++ 绑定）attach → 订阅 N 路相机
+    → GPU 拼接 → 发布 1 路全景 topic → host-streamer 推流 + host-recorder 录制
 ```
 
 **link 角色 = 共享库（非进程）**：FrameBus（iceoryx2 SHM）+ 去中心化 Registry（D235：attach 即注册，iceoryx2 service discovery 枚举）+ 静态 ACL + 能力令牌，内嵌各进程。
 
-**媒体链路**：`host-capturer →(FrameBus I420)→ host-streamer / host-recorder / host-stitch`；`host-stitch →(FrameBus I420 全景)→ host-streamer(stitch)`
+**媒体链路**：`host-capturer →(FrameBus I420)→ host-streamer / host-recorder / 外部节点(ROS 拼接)`；`外部节点 →(FrameBus 1 路全景)→ host-streamer(stitch) / host-recorder`
 **控制链路**：`舱端/Server →(WebRTC DataChannel)→ host-controller`（P2P 直连；SFU 经 Server data 域）
 **信令链路**：`各进程 →(WS→127.0.0.1:PORT)→ host-agent（信令网关）→(单 WS)→ Server`——一个 host 在 Server 侧 = 一个 peer 会话
 
@@ -98,10 +102,16 @@ host-monitor ──(期望态镜像)──▶ 拓扑验证/告警闭环
 - **影响**: 各进程代码零改动（信令地址一个配置项）；host-agent 兼信令网关（职责混合可接受——信令状态监控天然在手）；controller 的 PC 协商借道总线（不持独立信令）
 - **演进**: 真多车时升级 Server 设备聚合（方向 2），agent 网关平滑过渡
 
+### D-H7: 环视拼接默认外置 — 第三方节点经 link SDK 接入
+- **决策**: host 不内置 stitch 进程；拼接由外部节点（如 ROS）经 link SDK（attach → 订阅相机路 → 发布全景路）完成，host-streamer/host-recorder 订阅其结果推流/录制
+- **理由**: 拼接算法（透视变换/融合/相机标定）是 ROS/算法团队的领域，不是媒体伺服平台职责；link SDK（C++ 绑定矩阵——ROS 生态）正是第三方集成契约面（D222-D243）；宿主进程与算法进程生命周期解耦（roslaunch 管 ROS，OxMgr 管 host 族）
+- **安全**: 外部节点 attach 走 link ACL（D237 静态 ACL）+ 能力令牌（D238）——ROS 节点配置订阅/发布权限
+- **影响**: host-streamer/host-recorder 输入通用化为"任意 link topic"（源不限于 host-capturer）；FrameMeta.format 支持 I420 及变体
+
 ## 6. 已知缺口与后续工作
 
 1. **Server SFU data 域**：mediasoup DataProducer/DataConsumer（SFU 模式 DC 控制的前置）
-2. **stitch 实现来源**：自研 CUDA/VPI（Jetson GPU 加速）vs 第三方黑盒——待定；输入走 FrameBus 9 路 + ts 对齐（FrameMeta ts_mono/ts_epoch 设计内）
+2. **拼接节点（ROS/第三方）**：经 link SDK 接入（D-H7）；帧同步/ts 对齐由外部节点承担（FrameMeta ts_mono/ts_epoch 提供对齐输入）
 3. **帧同步策略**：stitch 缓冲对齐窗口（多路帧到达时刻差异）
 4. **采集 zero-copy**：MIPI/CSI 采集进 SHM 的零拷贝优化（immediate transfer）
 5. **emergency 本地兜底**：执行器直连形态（CAN/GPIO/串口）与控制器冗余
@@ -117,4 +127,4 @@ host-monitor ──(期望态镜像)──▶ 拓扑验证/告警闭环
 ## 8. 范围边界
 
 - **本次范围**: host 多进程形态设计 + 进程清单 + monitor 子系统 + OxMgr 接入 + 云端配置通道设计
-- **不在本次**: client（舱端拉流，骨架阶段）；Server SFU data 域实现；stitch 算法实现；client 消费侧
+- **不在本次**: client（舱端拉流，骨架阶段）；Server SFU data 域实现；拼接节点（外部团队，link SDK 契约面）；client 消费侧
