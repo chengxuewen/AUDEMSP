@@ -15,7 +15,8 @@
 | mediaservo-client | — | E2E 脚本 9/9 ✅ | macOS native |
 | mediaservo-link | 32 | 跨进程 e2e 4 | 设备侧 SDK: FrameBus/Registry/ACL/令牌 + SignalClient |
 | mediaservo-deck | 10 | — | source(采集 stub)+record(MP4 mux)+playback(回放) 三域 + 闭环 e2e |
-| mediaservo-field | 4 | — | 组合 SDK: re-export link+deck + Push/PullSession 门面 (Phase 2 webrtc) |
+| mediaservo-field | 8 | push_e2e 6 | 推流链路完成: 信令/协商/帧发布 + C ABI (field-c) |
+| mediaservo-field-c | 4 | — | C ABI 绑定 (bindings/c, 11th member) |
 
 ### macOS E2E 验证 (2026-07-24)
 ```
@@ -334,3 +335,15 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **field = 遥控车端 SDK**: 只需视频推流（PushSession 已完成并实证）— 拉流是舱端 client 的事
 - PullSession 收帧挂起为已知限制（libwebrtc 接收管线缺陷, RTP 全对但 on_frame 不触发）
 - field 剩余收尾: C ABI 绑定（ms_field_*）+ 推流示例/文档 + PushSession 测试补强
+
+## field 收尾完成 (2026-08-18, 3 commits)
+
+- **C ABI 绑定** (cd0fd29): bindings/c/mediaservo-field-c (11th member, cdylib)
+  · ms_field_push_connect/publish_video/start_video_frames/stop/close + ms_last_error/ms_field_version
+  · include/mediaservo_field.h 手工维护（D241: 稳定 C ABI 面）+ catch_unwind 防护 + 4 tests
+- **示例/文档** (16e2f16): vehicle_push.rs (Rust 完整流程) + vehicle_push.c (C ABI 消费)
+  + docs/modules/22-field-guide.md（车端集成指引: 流程/前置/已验证能力/已知限制）
+- **测试补强** (1fd2895): config 单测 5 + D6 重复 publish 报错 + D7 低码率帧验证
+  · 实证: libwebrtc BWE 自适应降分辨率（低码率 scaling down）— 正常行为
+  · D5 (PullSession 收帧) 标 #[ignore] 文档化已知限制
+- field 测试: lib 8 + push_e2e 6 + field-c 4 = 18 全绿
