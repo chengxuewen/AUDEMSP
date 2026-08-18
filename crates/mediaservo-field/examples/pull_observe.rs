@@ -46,7 +46,7 @@ async fn main() {
 
     // 监控: 每 1s 打点（确认进程存活 + server 转发持续）
     let pc = pull.peer_connection().expect("pc");
-    for i in 0..15 {
+    for i in 0..60 {
         tokio::time::sleep(Duration::from_secs(1)).await;
         let state = pc.connection_state();
         println!("t={i}s pc_state={state:?}");

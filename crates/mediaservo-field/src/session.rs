@@ -500,6 +500,7 @@ impl PullSession {
         );
         // 注入 a=ssrc（consumer 的 encodings[0].ssrc）
         let remote_sdp = sfu::inject_remote_ssrc(&remote_sdp, &consumer_rtp);
+        tracing::info!("PullSession remote SDP (after ssrc inject):\n{remote_sdp}");
         let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
         pc.set_remote_description(&remote_desc)
             .await
