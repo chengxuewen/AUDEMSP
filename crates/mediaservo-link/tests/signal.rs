@@ -220,6 +220,7 @@ async fn on_disconnect_fires_when_server_closes() {
         .expect("send ready");
     tokio::time::timeout(std::time::Duration::from_secs(3), rx.changed())
         .await
-        .expect("on_disconnect 应在 server 关闭时触发（3s 超时）");
+        .expect("on_disconnect 应在 server 关闭时触发（3s 超时）")
+        .expect("watch channel 不应关闭");
     server.await.unwrap();
 }
