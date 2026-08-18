@@ -305,15 +305,20 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
   - PIT-81 遵守: frame_generator owned 存会话字段; e2e D4 sender stats 实证 bytes_sent>0 + frames_encoded>0
 - field 测试: sfu 3 + 单测 4 + push_e2e 4 = 11 全绿
 
-## PullSession 消费链路 (2026-08-17, 2e356af — 协商完成, 收帧待续)
+## PullSession 消费链路 (2026-08-17, 2e356af — 协商完成, 收帧挂起收口)
 
 - webrtc-sys: 实现 add_transceiver(kind) 版（add_transceiver_for_media, recvonly 纯接收）— 之前 NotSupported
 - PullSession::subscribe: Recv transport → 标准 answerer → Connect → Consume → Consumed
   · on_track 必须在 set_remote_description 前注册（remote sendonly m-line 触发即丢）
   · transport_connected 确认消息跳过（server 惯例, 非真错误）
 - sfu.rs: build_remote_sdp 方向参数化（RemoteDirection: ServerSendonly/ServerRecvonly）
-- **遗留**: 协商全通 (PC=Connected ICE=Completed on_track 触发) 但帧未达 FrameSink —
-  媒体路径待深挖（push 侧帧达 server 已实证 ReceiveRtpPacket key frame; consumer 转发待验证）
+- 协商收敛 (37e257d/99e6c85): ssrc 注入 + mid=0 + 完整 rtp_capabilities + W3C 协商顺序 + rtcp-rsize
+- **收口结论 (2026-08-18)**: field = 遥控车端 SDK, 只需推流（已完成）; PullSession 消费方是
+  client（舱端, 骨架阶段）→ 收帧问题挂起不阻塞 field 交付
+  · tcpdump 实证: RTP 完全正确到达 libwebrtc socket (ssrc=Consumed 值, PT=96, seq 连续)
+  · track=Live enabled=true, sink 挂载 — 但 on_frame 不触发 = libwebrtc 接收管线/webrtc-sys 集成缺陷
+  · C++ 对照程序半成品在 /tmp/opencode/pull_webrtc_test.cpp（编译通过, 链接未解）
+  · 归属: client 端开发时攻关（判别: C++ 收帧=Rust 绑定 bug; C++ 不收=libwebrtc 管线问题）
 - 诊断工具: push_observe/pull_observe examples + server producer on_trace/dump 观测
 
 ## SFU 多 announced IP (2026-08-17, db88829)
@@ -323,3 +328,9 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
   · 实测 3 网卡只报 ens32 (192.168.2.127)，排除 docker0/br-*/tun0
 - compose: 注释更新（CLI 自动注入; 直接 compose 需手动设 env）
 - 不写死要求: 宿主 IP 变化/多 IP 全动态
+
+## field 定位澄清 + PullSession 收口 (2026-08-18)
+
+- **field = 遥控车端 SDK**: 只需视频推流（PushSession 已完成并实证）— 拉流是舱端 client 的事
+- PullSession 收帧挂起为已知限制（libwebrtc 接收管线缺陷, RTP 全对但 on_frame 不触发）
+- field 剩余收尾: C ABI 绑定（ms_field_*）+ 推流示例/文档 + PushSession 测试补强
