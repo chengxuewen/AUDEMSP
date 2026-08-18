@@ -52,6 +52,8 @@ test-py = "MEDIASERVO_LIB_DIR=$PWD/target/debug python3 -m unittest discover -s 
 parity-bindings = "bash scripts/parity_bindings.sh"
 # ABI 漂移门禁（D248/L2: header 声明 ↔ .so 导出对照）
 abi-drift = "bash scripts/check-abi-drift.sh"
+# 绑定层 live e2e（三语言正向链路回归, 需 server）
+e2e-bindings = "bash scripts/e2e-bindings.sh"
 
 # mediaservo-server — Docker 编译 (mediasoup C++ Worker 需要 Linux + meson)
 check-server = "sh -c 'scripts/docker-cargo.sh check -p mediaservo-server --features sfu-mediasoup'"

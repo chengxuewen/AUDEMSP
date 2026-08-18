@@ -106,3 +106,63 @@ s.publish_video()
 - **deck Player**：C 面仅 open/frames/close（seek/set_rate YAGNI 押后，N2 标注）
 - **Python**：ctypes 首版（D227 两步走）；pyo3 加速后端待触发条件（帧路径 >10% 预算等）
 - **Windows/macOS**：soname 仅 Linux（R8 门控）；macOS 用默认 dylib 命名；Python `_lib_filename` 已按平台分派
+
+## 附录 A — SDD 追溯矩阵（函数 × 测试覆盖，2026-08-18）
+
+> 单测 = cargo test（c crate 内）；e2e = scripts/e2e-bindings.sh（真实 server/FFmpeg）；parity = parity-bindings。
+> ⚠️ = 覆盖缺口（见下）。错误路径/状态机未逐函数列出（c crate 内统一模式）。
+
+### field（7 函数）
+| 函数 | 单测 | 正向 e2e |
+|---|---|---|
+| push_connect | ✓（null/small-size/missing-required）| ✓ vehicle_push |
+| push_publish_video | ✓（null handle）| ✓ vehicle_push（track=video）|
+| push_start_video_frames | ⚠️ 无单测 | ✓ vehicle_push（frames running）|
+| push_stop_video_frames | ⚠️ 无单测（void 幂等）| ✓ vehicle_push（close 前调用）|
+| push_close | ✓（null/幂等）| ✓ vehicle_push |
+| last_error（+deprecated 别名）| ✓ roundtrip ×2 | ✓ parity |
+| version | ✓ roundtrip | ✓ parity（三端一致）|
+
+### link（12 函数）
+| 函数 | 单测 | 正向 e2e |
+|---|---|---|
+| signal_connect | ✓（null/small-size/missing-required/bad-role）| ✓ vehicle_signal |
+| signal_send | ✓（null/empty/未连接/closed）| ✓ vehicle_signal（encoder_status 回显）|
+| signal_on_event | ✓（null noop）| ✓ vehicle_signal（event 泵）|
+| signal_close | ✓（null）| ✓ vehicle_signal |
+| bus_attach | ✓（null）| ⚠️ 无（需 token/ACL 构造）|
+| bus_publish | ✓（null/未连接/closed）| ⚠️ 无 |
+| bus_subscribe | ✓（null）| ⚠️ 无 |
+| bus_recv | ✓（null）| ⚠️ 无（SHM 帧往返未自动化）|
+| stream_close | ⚠️ 无单测 | ⚠️ 无 |
+| bus_close | ⚠️ 无单测 | ⚠️ 无 |
+| last_error | ✓ roundtrip | ✓ parity |
+| version | ✓ roundtrip | ✓ parity |
+
+### deck（15 函数）
+| 函数 | 单测 | 正向 e2e |
+|---|---|---|
+| devices_enumerate | ✓（双调用/空/非法 kind）| ✓ record_playback |
+| camera_open | ✓（null/small-size/未知设备/roundtrip）| ✓ record_playback |
+| camera_start | ✓（double-start）| ✓ record_playback（帧泵）|
+| camera_frames_cb | ✓（null）| ✓ record_playback（90+ 帧回调）|
+| camera_stop | ✓（close roundtrip 内）| ✓ record_playback |
+| camera_close | ✓ | ✓ record_playback |
+| recorder_new | ✓（null/父目录缺失）| ✓ record_playback |
+| recorder_record | ✓（null/未 start 相机）| ✓ record_playback（mp4 产物）|
+| recorder_stop | ⚠️ 无独立单测 | ✓ record_playback |
+| recorder_close | ✓（null）| ✓ record_playback |
+| player_open | ✓（null/文件缺失）| ✓ record_playback |
+| player_frames_cb | ⚠️ 无单测 | ✓ record_playback（91 帧解码）|
+| player_close | ✓（null）| ✓ record_playback |
+| last_error | ✓ roundtrip | ✓ parity |
+| version | ✓ roundtrip | ✓ parity |
+
+### 跨语言
+- parity-bindings: version + 空配置 connect 错误路径（C/C++/Python 断言一致）✓
+- abi-drift: 34 声明 == 34 导出 ✓
+
+### 已知缺口（⚠️，按优先级）
+1. **link bus 正向链路**（attach→publish→subscribe→recv 真实 SHM 往返 + token/ACL）：单测只有错误路径，无自动化正向——iceoryx2 总线闭环待补（需构造 CapabilityToken + 验证密钥 fixture）
+2. **field start/stop_video_frames、link stream_close/bus_close、deck recorder_stop/player_frames_cb** 无独立单测（正向由 e2e 覆盖，错误路径薄弱）
+3. **cxx/py 正向 live**：仅 field push 手动验证过；cxx 无 live e2e（依赖 C 层已验证链路，风险低）
