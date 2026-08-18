@@ -347,3 +347,11 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
   · 实证: libwebrtc BWE 自适应降分辨率（低码率 scaling down）— 正常行为
   · D5 (PullSession 收帧) 标 #[ignore] 文档化已知限制
 - field 测试: lib 8 + push_e2e 6 + field-c 4 = 18 全绿
+
+## field C ABI 交付 — cxx/py 待决策 (2026-08-18)
+
+- **已交付**: C ABI (bindings/c/mediaservo-field-c, cd0fd29)
+- **未实现**: C++ (header-only RAII over C ABI) / Python (ctypes 加载 cdylib) —
+  按 D227/D240 设计是薄包装（各 ~30min 成本）
+- **待确认**: 车端真实消费语言（Rust 主控则 C ABI 即最终交付; C++/Python 主控则补绑定）
+- **扩展面**: 契约 §7 规划 link/field/deck/client × c/cxx/py = 12 绑定, 当前仅 field-c
