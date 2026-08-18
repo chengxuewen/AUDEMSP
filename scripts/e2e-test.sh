@@ -44,7 +44,7 @@ cargo build -p mediaservo-host -p mediaservo-client 2>/dev/null && \
 
 # 3. Start Host
 info "3. Starting Host..."
-cargo run -p mediaservo-host --bin mediaservo-host > "$TMPDIR/host.log" 2>&1 &
+cargo run -p mediaservo-host --bin host-legacy > "$TMPDIR/host.log" 2>&1 &
 HOST_PID=$!
 info "Host PID=$HOST_PID"
 

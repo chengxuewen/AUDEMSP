@@ -355,14 +355,14 @@ def _find_host_binary() -> Path:
     cargo_target = os.environ.get("CARGO_TARGET_DIR")
     candidates = []
     if cargo_target:
-        candidates.append(Path(cargo_target) / "debug/mediaservo-host")
+        candidates.append(Path(cargo_target) / "debug/host-legacy")
     candidates += [
-        ROOT / "target/debug/mediaservo-host",
-        ROOT / "target/release/mediaservo-host",
+        ROOT / "target/debug/host-legacy",
+        ROOT / "target/release/host-legacy",
     ]
     bin_path = next((p for p in candidates if p.exists()), None)
     if bin_path is None:
-        print("错误: 未找到 mediaservo-host 二进制 — 先运行: mediaservo build host", file=sys.stderr)
+        print("错误: 未找到 host-legacy 二进制 — 先运行: mediaservo build host", file=sys.stderr)
         sys.exit(1)
     return bin_path
 
@@ -370,7 +370,7 @@ def _find_host_binary() -> Path:
 def _run_host_foreground(bin_path: Path) -> None:
     """前台阻塞运行 host — 输出实时透传终端，Ctrl+C 同步退出（开发调试用）。
     host 单实例端口 9801 独占：启动前必须清旧（与后台路径一致）。"""
-    subprocess.run(["pkill", "-x", "mediaservo-host"], check=False)
+    subprocess.run(["pkill", "-x", "host-legacy"], check=False)
     time.sleep(1)
     env = {**os.environ, "RUST_LOG": "info"}
     proc = subprocess.Popen([str(bin_path)], cwd=ROOT, env=env)
@@ -393,10 +393,10 @@ def _cmd_run_host() -> None:
         sys.exit(1)
     bin_path = _find_host_binary()
     if bin_path is None:
-        print("错误: 未找到 mediaservo-host 二进制 — 先运行: mediaservo build-host", file=sys.stderr)
+        print("错误: 未找到 host-legacy 二进制 — 先运行: mediaservo build-host", file=sys.stderr)
         sys.exit(1)
     # 2) 杀旧进程（pkill -x 精确进程名，避免误杀）
-    subprocess.run(["pkill", "-x", "mediaservo-host"], check=False)
+    subprocess.run(["pkill", "-x", "host-legacy"], check=False)
     time.sleep(1)
     # 3) 后台启动（start_new_session 脱离终端，日志 /tmp/mediaservo-host.log）
     log_path = Path("/tmp/mediaservo-host.log")
@@ -423,7 +423,7 @@ def _cmd_stop(target: str) -> None:
         _check("docker", "安装 docker 并启动 daemon")
         _run_or_exit(COMPOSE_BASE + ["stop", "server"])
     elif target == "host":
-        subprocess.run(["pkill", "-x", "mediaservo-host"], check=False)
+        subprocess.run(["pkill", "-x", "host-legacy"], check=False)
         print("✓ host 已停止")
     else:  # client
         subprocess.run(["pkill", "-x", "mediaservo-client"], check=False)
