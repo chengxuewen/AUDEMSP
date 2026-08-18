@@ -107,7 +107,10 @@ pub fn build_remote_sdp(
             RemoteDirection::ServerSendonly => "a=mid:0".to_string(),
             RemoteDirection::ServerRecvonly => "a=mid:video".to_string(),
         },
-        // transport-cc + abs-capture-time extmap（BWE 反馈链路必需，id 3/5 对齐官方惯例）
+        // extmap 声明（对齐 mediasoup 默认配置）:
+        //   id=1 mid（BUNDLE demux 关键 — consumer RTP 带 mid 扩展, 不声明则 libwebrtc 无法解析）
+        //   id=3 transport-cc, id=5 abs-capture-time（BWE 反馈链路必需）
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:sdes:mid".to_string(),
         "a=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01".to_string(),
         "a=extmap:5 http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time".to_string(),
         match direction {

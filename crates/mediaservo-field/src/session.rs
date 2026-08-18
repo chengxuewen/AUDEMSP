@@ -478,8 +478,15 @@ impl PullSession {
                 peer_id: peer_id(&cfg.role),
                 producer_id: producer_id.to_string(),
                 rtp_capabilities: serde_json::json!({
+                    // 保持 e2e_sfu D2 验证过的最小 codec（加字段会触发 mediasoup
+                    // RtpCodecCapability 反序列化失败 missing field kind）
                     "codecs": [{"mimeType": "video/VP8", "clockRate": 90000, "kind": "video"}],
-                    "headerExtensions": []
+                    // headerExtensions 对齐 producer 协商的 extmap（mid/transport-cc/abs-capture-time）
+                    "headerExtensions": [
+                        {"uri": "urn:ietf:params:rtp-hdrext:sdes:mid", "preferredId": 1, "kind": "video", "preferredEncrypt": false, "direction": "sendrecv"},
+                        {"uri": "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01", "preferredId": 3, "kind": "video", "preferredEncrypt": false, "direction": "sendrecv"},
+                        {"uri": "http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time", "preferredId": 5, "kind": "video", "preferredEncrypt": false, "direction": "sendrecv"},
+                    ],
                 }),
             })
             .await
