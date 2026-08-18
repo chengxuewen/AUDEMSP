@@ -1,0 +1,9 @@
+[package]
+name = "mediaservo-field-cxx"
+version.workspace = true
+edition.workspace = true
+description = "MediaServo field C++ header-only RAII binding (over C ABI)"
+license.workspace = true
+
+[lib]
+# 空载体：header-only C++ 绑定，本 crate 仅承载测试与分发元数据
