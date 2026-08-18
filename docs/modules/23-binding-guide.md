@@ -188,6 +188,15 @@ s.publish_video()
 # Python: pip install bindings/python/mediaservo（薄包；运行时 .so 定位: LD_LIBRARY_PATH 或 ldconfig）
 ```
 
+## Node.js 绑定（napi-rs，livekit rtc-ffi-bindings 同构，2026-08-18）
+
+- **架构**: `bindings/node/rust/mediaservo-node`（napi 3 cdylib → .node）直绑 Rust SDK async API；TS 薄包装 `lib/index.mjs`（PushSession/SignalSession/CameraSource/Recorder/Player）；事件/帧经 ThreadsafeFunction → JS 主线程（livekit async_queue 同构）
+- **构建/安装**: `./mediaservo.sh build bindings`（含 mediaservo.node）+ `install bindings` → `<prefix>/node/mediaservo/`
+- **使用**: `import { PushSession } from '<prefix>/node/mediaservo/lib/index.mjs'`（或 NODE_PATH）
+- **运行前置**: LD_LIBRARY_PATH 含 pixi lib（FFmpeg 动态库 libavformat.so.63 等——conda 工具链）；测试 `npm test`（bindings/node/）
+- **已验证**: 真 server 推流（connected/published/frames）+ 信令事件桥 + 录制回放闭环（node:test 5/5）
+- **契约**: napi 方法 camelCase（publishVideo）；元组参数 → JS 数组（[meta, data]）；`Function<T,()>` + `build_threadsafe_function::<T>().build()`
+
 ## C++11 承诺与 Result 契约（2026-08-18）
 
 - **C++11 起步可用**: 三 SDK header-only 绑定 + 共享 Result 全部 `-std=c++11` 编译零警告（test-cxx 全量门禁）
