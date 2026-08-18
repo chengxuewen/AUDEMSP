@@ -120,7 +120,7 @@ def _cmd_install_bindings(prefix: str) -> None:
     for sdk in ("field", "link", "deck"):
         src = ROOT / f"target/debug/libmediaservo_{sdk}.so"
         if not src.exists():
-            print(f"错误: {src} 不存在 — 先运行: mediaservo build bindings", file=sys.stderr)
+            print(f"错误: {src} 不存在 — 先运行: mediaservo build bindings，或 mediaservo install bindings --build", file=sys.stderr)
             sys.exit(1)
         real = lib_dir / f"libmediaservo_{sdk}.so.{major}.{minor}.{patch}"
         shutil.copy2(src, real)
@@ -398,6 +398,8 @@ def _rm_tree(path: Path) -> None:
 def _cmd_install(args: argparse.Namespace) -> None:
     """install <target> — bindings。"""
     if args.target == "bindings":
+        if args.build:
+            _cmd_build_bindings()  # 一体化: 先构建再安装
         _cmd_install_bindings(args.prefix)
 
 
@@ -507,6 +509,7 @@ def main() -> None:
     install_p = sub.add_parser("install", help="安装 <target>: bindings（lib 三件套 D241 + include/mediaservo 头 D248）")
     install_p.add_argument("target", choices=["bindings"])
     install_p.add_argument("--prefix", default=str(ROOT / "install"), help="安装前缀（默认 <项目根>/install）")
+    install_p.add_argument("--build", action="store_true", help="先构建 bindings 再安装（等价 build bindings && install bindings）")
     install_p.set_defaults(func=_cmd_install)
     clean_p = sub.add_parser("clean", help="清理 <target>: all|server|host|client（默认 all）")
     clean_p.add_argument("target", nargs="?", choices=["all", "server", "host", "client"], default="all")
