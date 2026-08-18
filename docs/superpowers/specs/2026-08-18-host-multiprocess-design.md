@@ -155,6 +155,19 @@ host-monitor ──(期望态镜像)──▶ 拓扑验证/告警闭环
 - **车端**: host-audio 进程（麦克风采集 + 扬声器播放 + opus 编解码——codec FFmpeg 后端）
 - **Server 扩展**: 音频房间管理（join/leave + 房间成员列表 + 权限校验——dispatcher 任意车 / 舱端仅授权车）+ admin dashboard 音频面板（调度端）
 
+### D-H13: 应用包布局 — host 包 + SDK 包分开发布
+- **源码**: crates/mediaservo-host 改 lib + 多 bin（host.rs/host-agent/host-capturer/host-streamer/host-recorder/host-controller/host-emergency/host-audio，8 个 [[bin]] 共享 lib）；实例参数化（host-capturer --camera cam0）
+- **部署包**: /opt/mediaservo-host/{bin（8 进程 + oxmgr 随包锁定版本）,etc/{host.toml,link/{signing.pem,*.token}},run/{oxfile.toml,logs,oxmgr.db},recordings/,identity.json(0600)}
+- **发布形态**: 分两包——mediaservo-host（车端）+ mediaservo-sdk（install bindings 现有布局）；消费方不对称（ROS/算法只要 SDK）；版本兼容靠协议契约（FrameMeta version/令牌 claims schema）显式配对，非同包隐含
+- **link 令牌配发**: 令牌 = 车端部署产物（host init 签发）不随 SDK 包；**单文件自描述令牌**（verifying key + claims + signature 合并）→ 部署编排（脚本/Ansible）配发到 ROS 节点；ROS 端启动参数/env 指定路径，固定使用
+
+### D-H14: 顺序无关健壮性（启动时序容错）
+- **原则**: 所有跨进程/跨服务交互必须启动顺序无关——纯本地（验签）/容错重试（open_or_create/WS 重连）/停滞检测兜底（monitor 帧率）；OxMgr 启动顺序仅性能建议非正确性依赖
+- **已内建**: attach 验签纯本地（零 RPC 时序依赖）；iceoryx2 open_or_create 双向兼容（订阅者先起创建 service，发布者后 join）+ SystemInFlux 瞬态 5 次重试；service 配置统一（API 固定）
+- **增强点 1**: SignalClient 重连（指数退避 + jitter——coding-style retry_with_backoff 模式；重连 → 重新认证 → 会话恢复）
+- **增强点 2**: host init 导出 ros_bridge.yaml（topic 清单 + token 路径）——ROS 侧配置单一来源（车端），零手工漂移
+- **启动窗口 vs 故障**: monitor 期望态 + grace period（启动窗口告警抑制），区分"启动中"与"故障"
+
 ## 6. 已知缺口与后续工作
 
 1. **Server SFU data 域**：mediasoup DataProducer/DataConsumer（SFU 模式 DC 控制的前置）
