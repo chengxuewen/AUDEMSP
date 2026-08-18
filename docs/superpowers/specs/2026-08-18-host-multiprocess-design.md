@@ -22,20 +22,21 @@
 
 ```
 OxMgr（进程总管：重启策略/健康检查/日志轮转/CPU-RAM 指标/file-watch 配置热生效）
-├── capturer × N      每相机一进程 → FrameBus 发布 I420（ts_mono/ts_epoch 对齐）
-├── stitch × 1        环视拼接：订阅 N 路 → 缓冲对齐(ts) → GPU 拼接 → 发布 1 路全景
-├── streamer × N      每路一进程：订阅 RAW → 编码 → WebRTC 推流（各持一条协商 WS）
-├── recorder × 1      聚合：订阅全部路 → 各自编码落盘（磁盘故障不影响推流）
-├── controller × 1    控制通道：一条 PC（只开 DC 不开 track）+ 多 DataChannel label
-├── emergency × 1     急停：独立进程 + 独立 PC + 本地兜底（最高可靠性通道）
-└── host-monitor × 1  拓扑/数据流/信令状态监控 + 云端配置镜像 + 远程上报 Server
+├── host-capturer × N      每相机一进程 → FrameBus 发布 I420（ts_mono/ts_epoch 对齐）
+├── host-stitch × 1        环视拼接：订阅 N 路 → 缓冲对齐(ts) → GPU 拼接 → 发布 1 路全景
+├── host-streamer × N      每路一进程：订阅 RAW → 编码 → WebRTC 推流（协商 WS → 本地总线）
+├── host-recorder × 1      聚合：订阅全部路 → 各自编码落盘（磁盘故障不影响推流）
+├── host-controller × 1    控制通道：一条 PC（只开 DC 不开 track）+ 多 DataChannel label
+├── host-emergency × 1     急停：独立进程 + 独立 PC + 本地兜底（最高可靠性通道）
+└── host-agent × 1         信令网关（单 WS 聚合）+ 拓扑/数据流/信令状态监控
+                           + 云端配置镜像 + 远程上报 Server
 ```
 
 **link 角色 = 共享库（非进程）**：FrameBus（iceoryx2 SHM）+ 去中心化 Registry（D235：attach 即注册，iceoryx2 service discovery 枚举）+ 静态 ACL + 能力令牌，内嵌各进程。
 
-**媒体链路**：`capturer →(FrameBus I420)→ streamer / recorder / stitch`；`stitch →(FrameBus I420 全景)→ streamer(stitch)`
-**控制链路**：`舱端/Server →(WebRTC DataChannel)→ controller`（P2P 直连；SFU 经 Server data 域）
-**信令链路**：每 streamer 一条 WS（推流协商）；host-monitor 一条 WS/HTTP（远程上报 + 云端配置接收）
+**媒体链路**：`host-capturer →(FrameBus I420)→ host-streamer / host-recorder / host-stitch`；`host-stitch →(FrameBus I420 全景)→ host-streamer(stitch)`
+**控制链路**：`舱端/Server →(WebRTC DataChannel)→ host-controller`（P2P 直连；SFU 经 Server data 域）
+**信令链路**：`各进程 →(WS→127.0.0.1:PORT)→ host-agent（信令网关）→(单 WS)→ Server`——一个 host 在 Server 侧 = 一个 peer 会话
 
 ## 3. 关键决策记录
 
@@ -85,6 +86,17 @@ host-monitor ──(期望态镜像)──▶ 拓扑验证/告警闭环
 - **通道**: 信令 WS 扩展（复用连接 + 现有认证；配置下发/急停指令同一扩展面）
 - **安全**: 远程配置 = 安全敏感面（远程改采集/推流参数）→ 现有 PSK/JWT 认证 + 审计日志（C15/C16 纪律）
 - **生效**: 进程参数热生效（OxMgr file-watch debounce restart）；链路变更（增删路）动态启停进程
+
+### D-H5: 进程命名规范 — host- 前缀进程族
+- 所有 host 单元进程以 `host-` 前缀命名：host-capturer/host-stitch/host-streamer/host-recorder/host-controller/host-emergency/host-agent
+- 多实例区分：实例后缀（host-capturer-cam0、host-streamer-cam0）；OxMgr 命名空间（namespace: host）组织
+- **理由**: 进程族统一标识"车端 host 单元"；与 Server 侧进程（mediaservo-server）命名空间区分；agent 命名无占用（gateway 撞 GatewayComponent、signaling 撞模块名）
+
+### D-H6: 单 WS 信令总线（WS 代理模式）— Server 零改动
+- **形态**: 各进程 WS 连本地 127.0.0.1:PORT → host-agent 做 WS 网关（本地 accept + 远端单 WS + 双向转发 + 会话区分）→ Server 只见一个 peer = 一个车
+- **理由**: 多 peer 语义缺"车"聚合层（踢下线/凭证/拉流路由/admin 视图都按设备）；Server 零改动（多路 produce = 同 peer 多 transport，mediasoup 原生支持；P2P relay 仅 SDP/ICE 交换）
+- **影响**: 各进程代码零改动（信令地址一个配置项）；host-agent 兼信令网关（职责混合可接受——信令状态监控天然在手）；controller 的 PC 协商借道总线（不持独立信令）
+- **演进**: 真多车时升级 Server 设备聚合（方向 2），agent 网关平滑过渡
 
 ## 6. 已知缺口与后续工作
 
