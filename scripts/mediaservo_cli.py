@@ -489,7 +489,7 @@ def main() -> None:
     sub.add_parser("ci", help="CI 全链: fmt → clippy → test → e2e")
     install_p = sub.add_parser("install", help="安装 <target>: bindings（lib 三件套 D241 + include/mediaservo 头 D248）")
     install_p.add_argument("target", choices=["bindings"])
-    install_p.add_argument("--prefix", default="/usr/local", help="安装前缀（默认 /usr/local）")
+    install_p.add_argument("--prefix", default=str(ROOT / "install"), help="安装前缀（默认 <项目根>/install）")
     install_p.set_defaults(func=_cmd_install)
     clean_p = sub.add_parser("clean", help="清理 <target>: all|server|host|client（默认 all）")
     clean_p.add_argument("target", nargs="?", choices=["all", "server", "host", "client"], default="all")
