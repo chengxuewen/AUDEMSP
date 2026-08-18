@@ -120,6 +120,13 @@ host-monitor ──(期望态镜像)──▶ 拓扑验证/告警闭环
 - **消息格式**: JSON 起步（对象数组: class/confidence/bbox/text/color）；量级小（每路 10-30Hz 检测）；帧关联用 ts_mono/seq（FrameMeta 对齐语义）
 - **安全**: 视觉节点 attach 走 link ACL + 能力令牌（同 D-H7）
 
+### D-H9: host 二进制薄封装 — 业务配置模型 + 运维入口（不常驻）
+- **决策**: host（Rust CLI，按需执行不常驻）承载业务配置模型（host.toml：cameras/streams/record/control 业务语义）+ 翻译器（业务 → 进程拓扑 + oxfile.toml）+ oxmgr CLI 代理（业务视图运维）；**不重实现进程管理**（OxMgr 直管 host-* 进程）
+- **启动链**: systemd/TaskScheduler → oxmgr daemon（OxMgr 自装服务）→ host-* 进程；本地运维 `host start/stop/status/ps`（按相机/流视图）→ 代理 oxmgr
+- **配置链**: 云端 ConfigPush → host-agent → host.toml → `host apply`（翻译器）→ oxfile.toml → OxMgr file-watch 热生效（增删路 = 增量 apply）
+- **理由**: 云端下发业务配置而非进程管理配置（restart_policy 等是运维细节）；翻译层在 host 侧使 OxMgr 可替换（翻译器输出目标可换 systemd/pm2）；Windows CARLA 机同入口
+- **功能面**: host init/start/stop/restart/status/apply/doctor/version
+
 ## 6. 已知缺口与后续工作
 
 1. **Server SFU data 域**：mediasoup DataProducer/DataConsumer（SFU 模式 DC 控制的前置）
