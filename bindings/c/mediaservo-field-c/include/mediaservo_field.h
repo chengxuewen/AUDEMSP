@@ -7,7 +7,7 @@
  *   ms_push_config_t cfg = MS_PUSH_CONFIG_DEFAULT;
  *   cfg.url = "ws://host:9800/ws"; cfg.psk = "..."; cfg.room = "...";
  *   ms_field_push_t* s = NULL;
- *   if (ms_field_push_connect(&cfg, &s) != MS_OK) { /* 读 ms_last_error */ }
+ *   if (ms_field_push_connect(&cfg, &s) != MS_OK) { 读 ms_last_error }
  *   char track[64];
  *   ms_field_push_publish_video(s, track, sizeof(track));
  *   ms_field_push_start_video_frames(s);
