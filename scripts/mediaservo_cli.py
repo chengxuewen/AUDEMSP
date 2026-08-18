@@ -172,12 +172,34 @@ def _cmd_install_bindings(prefix: str, components: str = "all", release: bool = 
         content = content.replace("@SDK_LIST@", sdk_list)
         (cmake_dir / name).write_text(content)
 
+    # Python 绑定（fat 自包含）: 包复制到 <prefix>/lib/python3.x/site-packages/，
+    # 选中 SDK 的 .so 三件套进包内 _libs/（_ffi.py 加载顺序第 2 位；CDLL 打开 .so.<MAJOR>
+    # 实体使 DT_NEEDED 自包含解析，无需 LD_LIBRARY_PATH/ldconfig）
+    py_src = ROOT / "bindings/python/mediaservo/mediaservo"
+    site_packages = lib_dir / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    py_dst = site_packages / "mediaservo"
+    py_dst.mkdir(parents=True, exist_ok=True)
+    for f in ("__init__.py", "_ffi.py", "field.py", "link.py", "deck.py"):
+        shutil.copy2(py_src / f, py_dst)
+    libs_dst = py_dst / "_libs"
+    libs_dst.mkdir(exist_ok=True)
+    for sdk in sdks:
+        so = src_dir / f"libmediaservo_{sdk}.so"
+        so_major = libs_dst / f"libmediaservo_{sdk}.so.{major}"
+        shutil.copy2(so, so_major)  # 实体（SONAME 文件名，DT_NEEDED 自解析）
+        _symlink_force(f"libmediaservo_{sdk}.so.{major}", libs_dst / f"libmediaservo_{sdk}.so")
+    # 清理旧 SDK 的 _libs（组件缩减时防残留）
+    for stale in libs_dst.glob("libmediaservo_*.so*"):
+        if not any(sdk in stale.name for sdk in sdks):
+            stale.unlink()
+
     print(f"bindings 已安装到 {prefix}（组件: {', '.join(sdks)}；{'release' if release else 'debug'}）")
     print(f"  lib/    {', '.join(f'libmediaservo_{s}.so.{major}.{minor}.{patch}' for s in sdks)} + .so.{major} + .so")
     print(f"  lib/pkgconfig/   {', '.join(f'mediaservo-{s}.pc' for s in sdks)}（pkg-config 消费）")
     print(f"  lib/cmake/mediaservo/  mediaservoConfig.cmake + ConfigVersion.cmake（find_package(mediaservo COMPONENTS {'|'.join(sdks)})）")
     print(f"  include/mediaservo/  common.h + {', '.join(f'{s}.h' for s in sdks)} + {', '.join(f'{s}.hpp' for s in sdks)}")
-    print("Python: pip install bindings/python/mediaservo（薄包；运行时 .so 定位: LD_LIBRARY_PATH 或 ldconfig）")
+    print(f"Python: 包已装到 {site_packages}（fat 自包含, 含 _libs）")
+    print(f"  使用: export PYTHONPATH={site_packages} && python3 app.py")
 
 
 # 排除的接口类型/名称：docker 网桥、VPN 隧道、虚拟接口（这些 IP 客户端不可达）
