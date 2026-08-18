@@ -169,3 +169,14 @@ s.publish_video()
 
 ### 剩余缺口（可接受）
 - link bus 的 e2e 级覆盖依赖单测（无真实跨进程 server 场景）；cxx/py 其余 SDK 正向依赖 C 层已验证链路
+
+## CLI 集成（mediaservo.sh，统一入口）
+
+```bash
+./mediaservo.sh build bindings                # 构建三 cdylib + dev .so.<MAJOR> symlink
+./mediaservo.sh install bindings --prefix /usr/local
+  # lib/    libmediaservo_{field,link,deck}.so.0.1.0 + .so.0 + .so（D241 三件套）
+  # include/mediaservo/  {common,field,link,deck}.h + {field,link,deck}.hpp（D248）
+# 消费验证: gcc app.c -I <prefix>/include -L <prefix>/lib -lmediaservo_field
+# Python: pip install bindings/python/mediaservo（薄包；运行时 .so 定位: LD_LIBRARY_PATH 或 ldconfig）
+```

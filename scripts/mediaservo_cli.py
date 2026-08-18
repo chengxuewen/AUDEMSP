@@ -5,7 +5,7 @@
 环境内 PATH/LIBCLANG_PATH 已注入，subprocess 直接调 cargo/docker 等。
 平台差异仅 e2e（bash 脚本）与 clean（删除命令）两处。
 
-用法: mediaservo [-h] {build,build-host,build-server,up,down,logs,e2e,test,ci,clean,config,status,version} ...
+用法: mediaservo [-h] {build,build-host,build-server,up,down,logs,e2e,test,ci,install,clean,config,status,version} ...
 """
 
 from __future__ import annotations
@@ -60,13 +60,85 @@ def _cmd_build_client() -> None:
 
 
 def _cmd_build(target: str) -> None:
-    """build <target> — all|host|server|client（默认 all）。"""
+    """build <target> — all|host|server|client|bindings（默认 all）。"""
     if target in ("all", "host"):
         _cmd_build_host()
     if target in ("all", "server"):
         _cmd_build_server()
     if target in ("all", "client"):
         _cmd_build_client()
+    if target == "bindings":
+        _cmd_build_bindings()
+
+
+def _workspace_version() -> str:
+    """workspace 版本（[workspace.package] version，如 0.1.0）。py3.10 无 tomllib，轻量解析。"""
+    text = (ROOT / "Cargo.toml").read_text()
+    seg = text.split("[workspace.package]", 1)[1].split("[", 1)[0]
+    for line in seg.splitlines():
+        line = line.strip()
+        if line.startswith("version") and "=" in line:
+            return line.split("=", 1)[1].strip().strip('"')
+    raise SystemExit("错误: workspace version 未找到")
+
+
+def _symlink_force(target: str, link: Path) -> None:
+    """幂等符号链接（存在则先删）。"""
+    try:
+        link.unlink()
+    except FileNotFoundError:
+        pass
+    os.symlink(target, link)
+
+
+def _cmd_build_bindings() -> None:
+    """构建三 SDK cdylib + dev .so.<MAJOR> symlink（D241: DT_NEEDED 解析）。"""
+    _check("cargo", "pixi 环境未激活? 先运行: source bootstrap.sh / pixi.bat")
+    _run_or_exit([
+        "cargo", "build",
+        "-p", "mediaservo-field-c", "-p", "mediaservo-link-c", "-p", "mediaservo-deck-c",
+    ])
+    major = _workspace_version().split(".")[0]
+    for sdk in ("field", "link", "deck"):
+        _symlink_force(
+            f"libmediaservo_{sdk}.so",
+            ROOT / f"target/debug/libmediaservo_{sdk}.so.{major}",
+        )
+    print("bindings 构建完成: libmediaservo_{field,link,deck}.so (dev symlink .so.%s)" % major)
+
+
+def _cmd_install_bindings(prefix: str) -> None:
+    """安装 bindings: libmediaservo_<sdk>.so.<MAJOR>.<MINOR>.<PATCH> 三件套（D241）
+    + C/cxx 头文件（D248 include/mediaservo 布局）。"""
+    ver = _workspace_version()
+    major, minor, patch = ver.split(".")
+    lib_dir = Path(prefix) / "lib"
+    inc_dir = Path(prefix) / "include" / "mediaservo"
+    lib_dir.mkdir(parents=True, exist_ok=True)
+    inc_dir.mkdir(parents=True, exist_ok=True)
+
+    for sdk in ("field", "link", "deck"):
+        src = ROOT / f"target/debug/libmediaservo_{sdk}.so"
+        if not src.exists():
+            print(f"错误: {src} 不存在 — 先运行: mediaservo build bindings", file=sys.stderr)
+            sys.exit(1)
+        real = lib_dir / f"libmediaservo_{sdk}.so.{major}.{minor}.{patch}"
+        shutil.copy2(src, real)
+        _symlink_force(real.name, lib_dir / f"libmediaservo_{sdk}.so.{major}")
+        _symlink_force(f"libmediaservo_{sdk}.so.{major}", lib_dir / f"libmediaservo_{sdk}.so")
+
+    for h in (ROOT / "bindings/c/include/mediaservo").glob("*.h"):
+        shutil.copy2(h, inc_dir)
+    for sdk in ("field", "link", "deck"):
+        for h in (ROOT / f"bindings/c/mediaservo-{sdk}-c/include/mediaservo").glob("*.h"):
+            shutil.copy2(h, inc_dir)
+        for h in (ROOT / f"bindings/cxx/mediaservo-{sdk}-cxx/include/mediaservo").glob("*.hpp"):
+            shutil.copy2(h, inc_dir)
+
+    print(f"bindings 已安装到 {prefix}")
+    print(f"  lib/    libmediaservo_{{field,link,deck}}.so.{major}.{minor}.{patch} + .so.{major} + .so")
+    print(f"  include/mediaservo/  {{common,field,link,deck}}.h + {{field,link,deck}}.hpp")
+    print("Python: pip install bindings/python/mediaservo（薄包；运行时 .so 定位: LD_LIBRARY_PATH 或 ldconfig）")
 
 
 # 排除的接口类型/名称：docker 网桥、VPN 隧道、虚拟接口（这些 IP 客户端不可达）
@@ -306,6 +378,12 @@ def _rm_tree(path: Path) -> None:
         )
 
 
+def _cmd_install(args: argparse.Namespace) -> None:
+    """install <target> — bindings。"""
+    if args.target == "bindings":
+        _cmd_install_bindings(args.prefix)
+
+
 def _cmd_clean(args: argparse.Namespace) -> None:
     """clean <target> — all|server|host|client（默认 all）。
     server: 停容器(+--all 删卷+builder prune); host/client: 清宿主 cargo target。"""
@@ -392,8 +470,8 @@ def main() -> None:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    build_p = sub.add_parser("build", help="构建 <target>: all|host|server|client（默认 all）")
-    build_p.add_argument("target", nargs="?", choices=["all", "host", "server", "client"], default="all")
+    build_p = sub.add_parser("build", help="构建 <target>: all|host|server|client|bindings（默认 all）")
+    build_p.add_argument("target", nargs="?", choices=["all", "host", "server", "client", "bindings"], default="all")
     for verb, help_txt in (
         ("stop", "停止 <target>: server(compose stop 保留容器) | host/client(进程)"),
         ("restart", "重启 <target>: 清旧再启（保留卷）"),
@@ -409,6 +487,10 @@ def main() -> None:
     )
     sub.add_parser("test", help="workspace 测试（排除 mediaservo-server）")
     sub.add_parser("ci", help="CI 全链: fmt → clippy → test → e2e")
+    install_p = sub.add_parser("install", help="安装 <target>: bindings（lib 三件套 D241 + include/mediaservo 头 D248）")
+    install_p.add_argument("target", choices=["bindings"])
+    install_p.add_argument("--prefix", default="/usr/local", help="安装前缀（默认 /usr/local）")
+    install_p.set_defaults(func=_cmd_install)
     clean_p = sub.add_parser("clean", help="清理 <target>: all|server|host|client（默认 all）")
     clean_p.add_argument("target", nargs="?", choices=["all", "server", "host", "client"], default="all")
     clean_p.add_argument("--all", action="store_true", help="显式删卷 + docker builder prune（15-30 分钟重建代价）")
