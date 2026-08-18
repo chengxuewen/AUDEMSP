@@ -130,6 +130,11 @@ git add crates/mediaservo-host/
 git commit -m "refactor(host): lib + 9 bin 骨架（host CLI + 7 进程占位 + host-legacy 保留）"
 ```
 
+### Task A4: 外部脚本适配 + 接口契约记录（A1 审查 I1/I2）
+- **Files**: `scripts/e2e-test.sh:47`（`--bin mediaservo-host` → host-legacy）、`scripts/mediaservo_cli.py:358-373`（run-host/stop-host 二进制路径 + pkill）、`scripts/install.sh:11`（BIN_NAME）、`scripts/run-e2e-sfu.sh:24`（pgrep）——4 文件全部更新为 host-legacy 或新 CLI
+- **接口记录**: `run_placeholder` 为 **async** 签名（brief 原文 sync 为漂移——实现以 `pub async fn run_placeholder(role: &str)` 为准，tokio 信号所需）；`init_logging(role)` 同步
+- **验证**: `./mediaservo.sh e2e`（9/9）+ run-host/stop-host 冒烟 + install.sh 安装冒烟
+
 ### Task A2: host CLI init/status/start/stop + oxfile 翻译器雏形
 
 **Files:**
