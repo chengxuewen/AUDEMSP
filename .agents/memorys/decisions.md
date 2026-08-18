@@ -584,3 +584,19 @@ facade 仍是纯编解码（不吞 mux，D229）；后续如果 playback 落地�
 **原因**: ① 头文件是"契约型"而非纯签名投影——含审核 R2 生命周期/线程契约注释、`#pragma pack(1)`（cbindgen packed 支持有限）、`sizeof` 初始化宏、跨 crate 共享 common.h（cbindgen 单 crate 生成需复杂 include 处理）；② 函数面小（三 SDK ~30 函数），手工维护成本低；③ 主流对照：iceoryx2 用 cbindgen（其头是纯签名投影）而 livekit C++ API 层/Arrow C Data Interface 均手工（契约型）；④ L2 漂移门禁比 cbindgen 更直接——头文件含 C 专属内容，生成+手工合并维护成本更高。修订 D227"-c（cbindgen 生成）"字面取向。
 
 **影响**: 头文件必须随 ABI 变更 review（git diff = ABI 变更记录）；新导出函数必须同步头文件（drift 门禁强制）；cbindgen 迁移路径保留（iceoryx2 模板在 .refinfo）。
+
+## D249: Node 绑定路线 — napi-rs 直绑 Rust（livekit 同构），非 FFI (2026-08-18)
+
+**决策**: Node.js 绑定采用 **napi-rs 直绑 Rust SDK**（`bindings/node/rust/mediaservo-node`，napi 3 cdylib → .node），TS 薄包装层 `lib/index.mjs`。否决 koffi/ffi-napi（FFI 加载 .so）首步。
+
+**原因**: ① livekit 实证（.refinfo/livekit-rust/livekit-ffi-node-bindings + node-sdks/livekit-rtc）：Node 生态用 napi-rs 编译 .node + 独立 TS 包装层（ffi_client/async_queue 模式），非 FFI 动态加载；② **Node 单线程事件循环使同步阻塞 C ABI 首步不可行**（connect/publish 阻塞 = 冻结进程；ctypes 在 Python 可行因多线程）；③ 与 README 技术栈承诺（napi-rs）一致；④ 绕 C ABI 分层代价被 livekit 先例接受（napi 绑 Rust ffi 层）。
+
+**影响**: node 走 Rust async API 面（与 pyo3 二步同位置）；C ABI 面不变（C/cxx/嵌入式契约）；napi 平台二进制按目标系统编译（conda libstdc++ 6.0.35 vs 系统 6.0.30 → LD_PRELOAD 或平台编译）。
+
+## D250: C++ 绑定完全迁移 tl::expected — C++11 硬约束裁决 (2026-08-18)
+
+**决策**: C++ header-only 绑定（bindings/cxx）的 Result 完全迁移为 `tl::expected<T, Error>` alias（原生 API：has_value()/value()/error()/value_or()，无 operator bool，误用抛 bad_expected_access），vendor 1.2.0（CC0）至 `mediaservo/3rdparty/tl/expected.hpp`。执行计划: docs/superpowers/plans/2026-08-18-cxx-tl-expected.md（单 commit 5d0aa5c）。
+
+**原因**: ① **C++11 起步可用为硬约束**（用户；车端嵌入式旧工具链）——手写 std::variant Result 是 C++17（-std=c++11 编译 38 错误实证），tl::expected C++11 全绿（0 错误实证）；② C++11 手写替代（aligned_storage/union）= 重造轮子（C18）；③ 零真实消费者 → source-breaking 可接受（D241 只锁 C ABI）；④ 完全迁移优于兼容层（"半迁移比不迁移糟"——integration 视角）；⑤ 未来 Jetson 编译器升级 → 一行 swap std::expected。
+
+**影响**: 契约变更（误用异常 logic_error → bad_expected_access，catch(std::exception) 兼容）；error() on success 为标准 UB（旧手写防御抛被标准替代）；契约测试 test_result_common.cpp 为 std::expected swap 回归锚；三头+测试全站 -std=c++11 门禁。

@@ -376,3 +376,11 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **pixi tasks**: build-c / test-cxx / test-py / parity-bindings / abi-drift
 - **PIT-98**: 代理并发仓级重命名被 git checkout 冲掉（edit-safety 规则 14）
 - workspace 16 members（10 crates + 3 c ABI + 3 空 cxx 载体）; 测试: field-c 8 + link-c 20 + deck-c 19 + cxx 3 套 + py 22
+
+## 绑定矩阵四语言完成 — c/cxx/py/node (2026-08-18, D249/D250)
+
+- **C++ 迁移**: Result 完全迁移 tl::expected 1.2.0（CC0 vendor 3rdparty/ + 原生 API + C++11 门禁，单 commit 5d0aa5c）——计划 docs/superpowers/plans/2026-08-18-cxx-tl-expected.md
+- **Node 绑定**: napi-rs 直绑（field/link/deck + Recorder/Player，livekit 同构）+ TS 薄包装 + node:test 5/5 + CLI 接入（build/install bindings 含 node）——真 server 推流/事件桥/录制回放闭环实证
+- **关键修复**: FFmpeg 链接补齐（PIT-99）、Recorder 死锁（PIT-100）、libstdc++ ABI（PIT-101）
+- workspace 17 members（+ mediaservo-node）; 测试: c 47 + cxx 4 套 + py 22 + node 5
+- 运行前置: node 需 LD_PRELOAD pixi libstdc++ 或平台编译; FFmpeg 动态库 LD_LIBRARY_PATH

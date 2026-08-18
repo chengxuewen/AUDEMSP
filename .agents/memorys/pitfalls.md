@@ -1050,3 +1050,24 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: 重命名/批量替换后立即验证（grep ms_ = 0）；重做时确认代理已全部结束（git log 静止 + 无 background 任务在跑）。代理侧: 禁止对未触碰文件执行 git checkout/restore 全目录。
 - **验证**: `grep -rc "ms_" bindings/c/*/src bindings/c/*/include bindings/c/*/examples` 全 0；`readelf -W --dyn-syms target/debug/libmediaservo_*.so | grep -c " ms_"` = 0。
 - **教训**: 仓级重命名/跨文件批量编辑是"代理并发禁区"——必须先等全部子代理完成（含其后续修复提交），再执行；重命名后必须符号级验证（readelf），不能只看文件内容。
+
+## PIT-99: ffmpeg-the-third 链接标志跨 crate 传播不完整 — .node 仅 libavdevice 致 Protocol not found (2026-08-18)
+- **症状**: napi-rs 绑定（bindings/node）的 Player open 报 `open input: Protocol not found`；deck-c 的 .so 同环境工作（90 帧回放）
+- **根因**: ffmpeg-the-third 的 build.rs 链接标志（cargo:rustc-link-lib）跨依赖链传播不完整——napi cdylib 产物 DT_NEEDED 仅 libavdevice.so.63（缺 avformat/avcodec/avutil），deck-c 产物 4 库齐全
+- **解法**: napi crate build.rs 显式补 `cargo:rustc-link-search=native=<pixi lib>` + `rustc-link-lib=dylib={avformat,avcodec,avutil,avdevice,swscale,swresample}`（PIXI_PROJECT_ROOT env）
+- **验证**: `readelf -d libmediaservo_node.so | grep NEEDED` 含 4 个 libav*；Player 打开 mp4 解码 16 帧
+- **教训**: 依赖第三方 C 库的 cdylib，构建后必须 readelf 核对 DT_NEEDED 与对照产物一致；链接标志传播不能假设跨 crate 完整
+
+## PIT-100: deck Recorder::record 阻塞至 stop — 直接 await 致 JS 死锁 (2026-08-18)
+- **症状**: node 绑定 `await rec.record(cam)` 永不返回（timeout 杀）；录制已启动（x264 日志）但 stop 永远不执行
+- **根因**: `Recorder::record(frames)` 语义 = 消费帧流至 stop/结束才返回（worker 生命周期）；napi 直接 await = 死锁（stop 在 await 后，永不达）
+- **解法**: 后台任务 + stop_signal（deck-c C ABI 同款模式）：take recorder + recorder.stop_signal() 存共享 → spawn task → stop() 触发 signal → worker flush+trailer
+- **验证**: 录制→回放闭环（1.5s/16 帧）+ node:test 闭环用例
+- **教训**: 异步 API 的"阻塞至外部信号"语义，绑定层必须后台化（spawn + 信号），await 直调 = 死锁
+
+## PIT-101: conda 工具链 libstdc++ 与系统 node ABI 不匹配 (2026-08-18)
+- **症状**: require .node 报 `libstdc++.so.6: version CXXABI_1.3.15 not found`（系统 6.0.30/gcc12 无 1.3.15；conda gcc14 产物需要）
+- **根因**: pixi conda 工具链（gcc 14.4 → CXXABI_1.3.15）编译的 .node 被系统 node 用系统 libstdc++（gcc 12）加载
+- **解法**: 运行加 `LD_PRELOAD=$PWD/.pixi/envs/default/lib/libstdc++.so.6`；分发按目标系统编译 napi 平台二进制（livekit 同——每平台预编译）
+- **验证**: LD_PRELOAD 后 .node 加载成功（exports 正常）
+- **教训**: 混合工具链（conda 编译 + 系统运行时）的 C++ ABI 匹配检查；napi 平台二进制分发矩阵的必要性

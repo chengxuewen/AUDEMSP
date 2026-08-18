@@ -427,3 +427,11 @@ conda 交叉编译器（会 PIT-85 复发）。
 **检查**: `grep -c '"models"' .omo/omo.jsonc` 应为 0；`grep -c '"model"' .omo/omo.jsonc` 应为 19；`grep -c '"fallback_models"' .omo/omo.jsonc` 应为 19；配置迁移后先 `diff` 新旧再重启。
 
 **来源**: PIT-97 (2026-08-18)，延续 D246/C26 的 OMO 配置治理
+
+## C28: napi-rs 绑定 API 要点 — napi 3.12 实证 (2026-08-18)
+
+**约束**: ① 回调参数用 `Function<T, ()>`（FromNapiValue ✓），TSFN 构建 = `cb.build_threadsafe_function::<T>().build()`（Builder 的 Args 须 == T；T 自动转 JS 参数，元组 → **JS 数组**如 `[meta, data]`）；② 同步 napi 方法**无 tokio 上下文**——`tokio::spawn` 必 panic，需全局共享 runtime（OnceLock multi_thread，field-c 同款）；③ 事件/帧回调经 ThreadsafeFunction（线程安全，JS 主线程执行）；④ 方法名自动 camelCase（publish_video → publishVideo）；⑤ 结构体字段 u64 用 i64（napi FromNapiValue 无 u64）；⑥ async 方法参数需 'static（Function 生命周期）。
+
+**检查**: `grep -rn "build_threadsafe_function" bindings/node/rust/mediaservo-node/src/` — 应为 `build()` 形态（非 build_callback 闭包）；`grep -rn "tokio::spawn" bindings/node/rust/mediaservo-node/src/` — 应仅 event_runtime().spawn。
+
+**来源**: Node 绑定实现实证（2026-08-18，D249）
