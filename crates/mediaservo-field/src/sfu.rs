@@ -101,6 +101,7 @@ pub fn build_remote_sdp(
         format!("m=video 7 UDP/TLS/RTP/SAVPF {}", payload_type),
         format!("c=IN IP4 {}", conn_ip),
         "a=rtcp-mux".to_string(),
+        "a=rtcp-rsize".to_string(),  // 对齐 libmediasoupclient recv offer（rtcp reduced size）
         match direction {
             // mediasoup consumer 的 RTP mid 固定为 "0" — 接收侧 answer 必须对齐
             // （不匹配 → libwebrtc demux 丢弃 RTP → 收不到帧）

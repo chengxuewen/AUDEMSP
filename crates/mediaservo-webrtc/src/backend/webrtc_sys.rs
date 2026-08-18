@@ -1220,6 +1220,29 @@ impl webrtc_sys::peer_connection_factory::PeerConnectionObserver for RealObserve
         };
         let tr = TrackReceiver::new(track.id(), kind);
 
+        // PIT 诊断: receiver 协商参数（确认 ssrc/PT 是否配置到接收流）
+        {
+            let params = receiver.get_parameters();
+            tracing::info!(
+                "webrtc-sys on_track receiver params: codecs={} encodings={} mid={:?}",
+                params.codecs.len(), params.encodings.len(), params.mid
+            );
+            for enc in &params.encodings {
+                tracing::info!("  encoding ssrc={:?} rid={:?}", enc.ssrc, enc.rid);
+            }
+        }
+
+        // PIT 诊断: 远端 track 状态（Live/Ended + enabled）— 判断解码流是否绑定
+        let track_state = match track.state() {
+            webrtc_sys::media_stream_track::ffi::TrackState::Live => "Live",
+            webrtc_sys::media_stream_track::ffi::TrackState::Ended => "Ended",
+            _ => "Unknown",
+        };
+        tracing::info!(
+            "webrtc-sys on_track: track_id={} kind={:?} state={} enabled={}",
+            track.id(), kind, track_state, track.enabled()
+        );
+
         // Invoke user callback
         if let Some(ref cb) = *self.callbacks.on_track.lock().unwrap() {
             cb(tr.clone());

@@ -508,12 +508,9 @@ impl PullSession {
         // 注入 a=ssrc（consumer 的 encodings[0].ssrc）
         let remote_sdp = sfu::inject_remote_ssrc(&remote_sdp, &consumer_rtp);
         tracing::info!("PullSession remote SDP (after ssrc inject):\n{remote_sdp}");
-        let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
-        pc.set_remote_description(&remote_desc)
-            .await
-            .map_err(|e| FieldError::WebRtc(format!("set remote description: {e}")))?;
-
-        // kind 版 add_transceiver（webrtc-sys 后端已支持，recvonly 纯接收）
+        // W3C 推荐顺序: 先 add_transceiver（预建 recv transceiver）→ set_remote_description
+        // （remote sendonly m-line 匹配已有 transceiver — 否则 libwebrtc 自动创建
+        //   导致双 transceiver, receiver 参数不完整 codecs=0）
         pc.add_transceiver(
             TrackKind::Video,
             RTCRtpTransceiverInit {
@@ -522,6 +519,11 @@ impl PullSession {
             },
         )
         .map_err(|e| FieldError::WebRtc(format!("add_transceiver: {e}")))?;
+
+        let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
+        pc.set_remote_description(&remote_desc)
+            .await
+            .map_err(|e| FieldError::WebRtc(format!("set remote description: {e}")))?;
 
         let answer = pc
             .create_answer(&mediaservo_webrtc::RTCAnswerOptions::default())
