@@ -179,7 +179,8 @@ s.publish_video()
   # include/mediaservo/  {common,field,link,deck}.h + {field,link,deck}.hpp（D248）
 # 消费方式（三选一）:
 #   pkg-config:  PKG_CONFIG_PATH=<prefix>/lib/pkgconfig cc app.c $(pkg-config --cflags --libs mediaservo-field)
-#   CMake:       find_package(mediaservo REQUIRED) → target_link_libraries(app mediaservo::field)（-DCMAKE_PREFIX_PATH=<prefix>）
+#   CMake:       find_package(mediaservo COMPONENTS field REQUIRED) → target_link_libraries(app mediaservo::field)
+#                （单包多组件，OpenCV/Boost 模式；仅需 link: COMPONENTS link → mediaservo::link；-DCMAKE_PREFIX_PATH=<prefix>）
 #   gcc 直链:    gcc app.c -I <prefix>/include -L <prefix>/lib -lmediaservo_field
 # Python: pip install bindings/python/mediaservo（薄包；运行时 .so 定位: LD_LIBRARY_PATH 或 ldconfig）
 ```

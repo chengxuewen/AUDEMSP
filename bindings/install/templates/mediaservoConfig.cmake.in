@@ -1,4 +1,6 @@
-# mediaservoConfig.cmake — find_package(mediaservo) → mediaservo::field/link/deck
+# mediaservoConfig.cmake — find_package(mediaservo [COMPONENTS field|link|deck])
+# 单包多组件模式（OpenCV/Boost 惯例）: 三个 INTERFACE target 全定义（链接粒度由
+# target_link_libraries 决定），COMPONENTS 声明性校验（缺失/未知组件报错）。
 # 手工模板（等价 iceoryx2 Config.cmake.in 输出纪律，D248）: 安装时渲染 @VERSION@/@MAJOR@
 # 可重定位: 前缀从本文件位置推导（lib/cmake/mediaservo → ../../..）
 
@@ -29,3 +31,14 @@ set(mediaservo_FOUND TRUE)
 set(mediaservo_VERSION "@VERSION@")
 set(mediaservo_SDK_ABI_MAJOR "@MAJOR@")
 set(mediaservo_INCLUDE_DIRS "${_mediaservo_prefix}/include")
+
+# ── COMPONENTS 声明性校验（OpenCV/Boost 模式）────────────────
+# 手写校验（FPHSA CONFIG_MODE+HANDLE_COMPONENTS 组合行为不稳）；
+# 版本检查由 CMake 自动 include 本目录 mediaservoConfigVersion.cmake。
+set(mediaservo_KNOWN_COMPONENTS field link deck)
+foreach(_comp IN LISTS mediaservo_FIND_COMPONENTS)
+    if(NOT _comp IN_LIST mediaservo_KNOWN_COMPONENTS)
+        message(FATAL_ERROR
+            "mediaservo: unknown component '${_comp}' (known: ${mediaservo_KNOWN_COMPONENTS})")
+    endif()
+endforeach()
