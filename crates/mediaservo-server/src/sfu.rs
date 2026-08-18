@@ -553,6 +553,14 @@ mod imp {
             transport.connect(mediasoup::prelude::WebRtcTransportRemoteParameters { dtls_parameters: ms_dtls }).await
                 .map_err(|e| format!("Failed to connect transport: {e}"))?;
 
+            // PIT 观测: dump transport selected tuple（server 学到的客户端地址 — RTP 发送目标）
+            if let Ok(dump) = transport.dump().await {
+                tracing::info!(
+                    "SFU: transport {transport_id} dump: ice={:?} dtls={:?} selected_tuple={:?}",
+                    dump.ice_state, dump.dtls_state, dump.ice_selected_tuple
+                );
+            }
+
             tracing::info!(
                 "SFU: transport {transport_id} connected for peer {peer_id} in room {room_id}"
             );
