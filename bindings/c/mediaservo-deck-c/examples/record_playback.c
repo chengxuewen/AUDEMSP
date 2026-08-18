@@ -137,6 +137,10 @@ int main(void) {
         fprintf(stderr, "player_close failed (%d): %s\n", rc, err);
         return 1;
     }
+    if (g_playback_frames == 0) {
+        ms_deck_last_error(err, sizeof(err));
+        fprintf(stderr, "playback produced 0 frames; last_error: %s\n", err);
+    }
     printf("playback decoded %ld frames\n", g_playback_frames);
 
     printf("verify: ffprobe -v error -show_entries format=duration -of csv=p=0 %s\n",

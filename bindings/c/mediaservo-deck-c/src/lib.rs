@@ -809,10 +809,10 @@ pub extern "C" fn ms_deck_player_frames_cb(
             .name("deck-player-pump".into())
             .spawn(move || {
                 let user = user_tag as *mut c_void;
+                // 泵运行至 EOF（或解码错误）自然结束 — 不被 close 中止：
+                // close 语义 = join（阻塞至解码完成），否则 frames_cb 返回后
+                // 立即 close 会竞态杀死尚未解码任何帧的泵（0 帧输出）。
                 loop {
-                    if shared.closed.load(Ordering::SeqCst) {
-                        break; // close 请求 → 下一帧边界退出
-                    }
                     match player.next_frame() {
                         Ok(Some(frame)) => {
                             let mf = to_ms_frame(&frame);
@@ -843,7 +843,7 @@ pub extern "C" fn ms_deck_player_frames_cb(
     })
 }
 
-/// 关闭回放器并释放 handle（幂等）：置 closed → join 解码泵 → 释放。
+/// 关闭回放器并释放 handle（幂等）：置 closed → join 解码泵（阻塞至 EOF/错误）→ 释放。
 #[unsafe(no_mangle)]
 pub extern "C" fn ms_deck_player_close(p: *mut ms_deck_player_t) -> c_int {
     catch_unwind(AssertUnwindSafe(|| {

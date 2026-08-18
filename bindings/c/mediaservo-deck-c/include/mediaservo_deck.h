@@ -6,10 +6,10 @@
  *
  * 用法:
  *   ms_deck_camera_t* cam = NULL;
- *   ms_deck_capture_options_t copts = MS_DECK_CAPTURE_OPTIONS_DEFAULT; /* 1280x720@30 */
+ *   ms_deck_capture_options_t copts = MS_DECK_CAPTURE_OPTIONS_DEFAULT;  // 1280x720@30
  *   ms_deck_camera_open("stub:test-camera", &copts, &cam);
  *   ms_deck_camera_start(cam);
- *   ms_deck_camera_frames_cb(cam, on_frame, NULL);  /* 泵线程逐帧回调 */
+ *   ms_deck_camera_frames_cb(cam, on_frame, NULL);  // 泵线程逐帧回调
  *   ...
  *   ms_deck_camera_stop(cam);
  *   ms_deck_camera_close(cam);
@@ -110,10 +110,11 @@ ms_err_t ms_deck_recorder_close(ms_deck_recorder_t* r);
 /* 打开媒体文件（demux + 解码器就绪）。 */
 ms_err_t ms_deck_player_open(const char* path, ms_deck_player_t** out);
 
-/* 逐帧解码回调泵（EOF 或 close 后退出；只允许一次）。 */
+/* 逐帧解码回调泵（运行至 EOF 自然结束；只允许一次）。
+ * close 为阻塞 join（等待解码完成）—— 长文件需等待，无法中途中止（YAGNI）。 */
 ms_err_t ms_deck_player_frames_cb(ms_deck_player_t* p, ms_deck_frame_cb cb, void* user);
 
-/* 关闭回放器并释放 handle（幂等）。 */
+/* 关闭回放器并释放 handle（幂等；join 解码泵至完成）。 */
 ms_err_t ms_deck_player_close(ms_deck_player_t* p);
 
 /* ── 通用 ── */
