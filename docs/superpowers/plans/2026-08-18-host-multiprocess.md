@@ -77,7 +77,7 @@
 fn all_bins_declared() {
     // 读取 Cargo.toml [[bin]] 段：必须含 host, host-agent, host-capturer,
     // host-streamer, host-recorder, host-controller, host-emergency, host-audio, host-legacy
-    let manifest = std::fs::read_to_string("Cargo.toml").unwrap();
+    let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")).unwrap();
     for bin in ["host", "host-agent", "host-capturer", "host-streamer",
                 "host-recorder", "host-controller", "host-emergency", "host-audio", "host-legacy"] {
         assert!(manifest.contains(&format!("name = \"{bin}\"")), "missing bin {bin}");
@@ -141,10 +141,15 @@ git commit -m "refactor(host): lib + 9 bin 骨架（host CLI + 7 进程占位 + 
 - Consumes: A1 的 lib.rs（init_logging）
 - Produces:
   - `translate.rs`: `pub fn to_oxfile(cfg: &str) -> Result<String, String>`——输入 host.toml 内容，输出 oxfile.toml 文本（apps 含 8 个 host 进程 + 每 camera 实例化 capturer + 每 stream 实例化 streamer；Phase A 的 oxfile 只含占位进程与参数化实例骨架）
-  - `host init <dir>`: 写 `etc/host.toml` 模板 + 空 `etc/link/` 目录（0600）
-  - `host start`: 读 etc/host.toml → translate → 写 run/oxfile.toml → 执行 `oxmgr apply run/oxfile.toml`（oxmgr 不在 PATH 时报清晰错误并提示 install）
-  - `host stop`: 执行 `oxmgr stop --namespace host` + `oxmgr delete --namespace host`（幂等）
-  - `host status`: 执行 `oxmgr list` 并过滤 host 命名空间，输出每进程状态表
+  - `host init <dir>`: 写 `etc/host.toml` 模板 + 生成 `etc/link/signing.pem`（Ed25519 keypair，0600）+ 空 `etc/link/` 目录
+  - `host start --dir <dir>`: 读 etc/host.toml → translate → 写 run/oxfile.toml → 执行 `oxmgr apply run/oxfile.toml`（oxmgr 不在 PATH 时报清晰错误并提示 install）
+  - `host stop --dir <dir>`: 执行 `oxmgr stop --namespace host` + `oxmgr delete --namespace host`（幂等）
+  - `host status --dir <dir>`: 执行 `oxmgr list` 并过滤 host 命名空间，输出每进程状态表
+  - 进程数: 7 类型 + 参数化实例（agent + capturer×N + streamer×N + recorder + controller + emergency + audio）——host CLI 本身非进程
+
+- [ ] **Step 0: 确认 OxMgr CLI 动词与 oxfile 格式（C11/C18）**
+
+按 C11 读 OxMgr 官方文档（README 已确认 `oxmgr apply`/`oxmgr list`/oxfile `version=1 + [[apps]]` ✓；**未确认**: `oxmgr stop --namespace host` / `oxmgr delete --namespace host` 语法——官方 docs/CLI.md 或 AI Skill Reference docs/SKILL.md 核对后定，冒烟测试按确认后的动词实现）
 
 - [ ] **Step 1: 写失败测试**
 
@@ -230,7 +235,7 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 
 ### Task B1: SignalClient 重连（指数退避 + jitter）
 - **Files**: `crates/mediaservo-link/src/signal.rs`（connect 增加重连参数 `RetryConfig { max_retries, base_delay, max_delay }`，复用 coding-style retry_with_backoff 模式）、`tests/` mock WS server 断线测试
-- **接口**: `SignalClient::connect_with_retry(cfg: RetryConfig) -> Result<SignalSession, LinkError>`；`SignalSession` 增加 `on_disconnect(cb)`（断线通知，供上层触发重连）
+- **接口**: `SignalClient::connect_with_retry(cfg: RetryConfig) -> Result<SignalSession, LinkError>`；`SignalSession` 增加 `on_disconnect(cb)`（断线通知，供上层触发重连）；**重连后重新认证**（设备凭证/session token → 会话恢复——spec D-H14）
 - **测试**: mock server 先拒后收 → 重连成功；连续拒 → 退避次数上限报错
 - **验证**: `cargo test -p mediaservo-link` + clippy
 
@@ -266,6 +271,11 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 - **Files**: `crates/mediaservo-host/src/bin/host-recorder.rs`：订阅 camera/* → deck Recorder（复用——deck 已实证 FrameBus→Recorder 闭环）
 - **测试**: 闭环 e2e（capturer → FrameBus → recorder 落盘 → ffprobe 验证 h264/moov）
 
+### Task C5: 崩溃重启故障注入 e2e（Momus MEDIUM-3——架构核心价值验证）
+- **Files**: `crates/mediaservo-host/tests/crash_recovery.rs`
+- **测试**: 杀 capturer 进程 → OxMgr 拉起（restart_policy=always）→ **同 topic 重发布成功**（max_publishers(1) + iceoryx2 残留 service 不阻塞——若失败需生产级 SHM 残留清理机制，不能靠人工 rm，C25）→ 订阅端（streamer/recorder）恢复收帧 + monitor 无持续告警
+- **验证**: `cargo test -p mediaservo-host --test crash_recovery` + 手动冒烟
+
 ### Task C4: e2e 适配
 - **Files**: `scripts/`（host 9/9 E2E 脚本：`host start` 起多进程对替代单进程 host）
 - **验证**: 全量回归（e2e_sfu 4/4 + codec_prefs 6/6 + 新多进程闭环）
@@ -276,10 +286,14 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 
 **目标**: host-agent WS 网关——各进程 WS 连本地 127.0.0.1:PORT，agent 聚合单 WS 上 Server（D-H6）。
 
-### Task D1: agent 网关核心
-- **Files**: `crates/mediaservo-host/src/bin/host-agent.rs`（真实实现）：本地 WS accept（tokio-tungstenite）→ 远端单 WS（SignalClient 重连——B1 产物）→ 双向转发 + 会话区分（本地连接 id → 远端消息加 `from` 前缀字段或按序复用——协议扩展点）
-- **接口**: 本地协议 = SignalingMessage JSON（复用 common SignalingMessage）包一层 `{src: "host-streamer-cam0", msg: ...}`；远端 = 同包装（Server 端不动——Server 看到的是普通 SignalingMessage？——**关键设计**：聚合后 Server 侧单 peer 多 transport 的语义要求 Server 无感知——D 阶段验证 Server 零改动成立）
-- **测试**: mock Server（本地起 WS）验证多本地客户端 → 单远端连接转发正确 + 断线重连恢复转发
+### Task D1: agent 网关核心（Momus HIGH-1 修正：协议语义必须先落定）
+- **Files**: `crates/mediaservo-host/src/bin/host-agent.rs`（真实实现）：本地 WS accept（tokio-tungstenite）→ 远端单 WS（SignalClient 重连——B1 产物）→ 双向转发 + 响应路由
+- **协议语义（实证依据——Momus 已核对 signaling.rs）**:
+  - (a) **RoomJoin 拦截**: 各本地进程的 RoomJoin 由 agent 拦截（不再逐进程上行——signaling.rs 实证 RoomJoin 只在建连阶段处理，relay 循环内再收 RoomJoin 被静默丢弃；relay 白名单仅 Sdp/RTCIceCandidate/Frame/EncoderStatus）；agent 以整车身份单次 join
+  - (b) **响应路由**: SFU 消息按 msg_peer_id/transport_id 映射回本地连接（signaling.rs 已按此语义实现，PIT-65）；P2P relay 的 Sdp/RTCIceCandidate 无 transport 标识 → 按协商归属追踪（agent 维护 transport↔本地连接映射表）或显式串行化
+  - (c) **删除不可行选项**: "远端加 from 前缀"（改变线上格式，破坏 Server 零改动）与"按序复用"（并发协商必错乱）均不采用
+- **接口**: 本地协议 = `{src: "host-streamer-cam0", msg: SignalingMessage}`；远端 = 纯 SignalingMessage（零 wire 改动）；agent 维护 `transport_id/peer_id → 本地连接` 映射
+- **测试**: mock Server 验证: ① 多本地客户端转发正确 ② RoomJoin 拦截（子进程 RoomJoin 不上行、agent 单次 join）③ **并发协商**（两路同时 create offer → 响应路由不串）④ 断线重连恢复转发
 
 ### Task D2: 各进程信令地址配置化
 - **Files**: host.toml 加 `[signaling] local_gateway = "127.0.0.1:PORT"`（默认开）+ 各进程 WS 目标从 Server 地址改为本地网关；翻译器传参
@@ -295,7 +309,8 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 **目标**: 拓扑/数据流/信令状态监控 + 期望态对比 + 上报（D-H4）。
 
 ### Task E1: 拓扑监控
-- **Files**: `crates/mediaservo-host/src/monitor/topology.rs`：期望态（host.toml 声明：N capturer + N streamer + recorder + controller...）vs 实际态（oxmgr list 进程存活 + link Registry/iceoryx2 discovery 发布者枚举）→ 差异列表
+- **Files**: `crates/mediaservo-host/src/monitor/topology.rs`：期望态（host.toml 声明：N capturer + N streamer + recorder + controller...）vs 实际态（oxmgr list 进程存活 + 发布者枚举）→ 差异列表
+- **发布者枚举数据源决策（Momus MEDIUM-2）**: link 跨进程 discovery 未实现（status.md "跨进程发现留 Phase 2"）——E1 二选一: ① E 阶段新增 discovery 实现任务（iceoryx2 ServiceRegistry 枚举——D-H4 完整兑现）② MVP 降级：仅 oxmgr list 进程级拓扑 + FrameBus 订阅统计（数据平面拓扑延后）。**默认选 ①**（D-H4 声明式期望+发现式实际是监控核心），任务并入 E1
 - **测试**: 期望 3 capturer 实际 2 → 报告缺失；grace period 抑制启动窗口
 
 ### Task E2: 数据流监控
@@ -312,9 +327,14 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 
 **目标**: host-controller（DC 多 label）+ host-emergency（独立 PC + 本地兜底）——P2P 模式先行（D-H3/H8）。
 
+### Task E4: 云端配置闭环（spec §5——Momus HIGH-3 补）
+- **Files**: `crates/mediaservo-host/src/bin/host-agent.rs`（扩展：ConfigPush 接收）+ `crates/mediaservo-host/src/bin/host.rs`（补 `host apply`/`host restart` 子命令）
+- **接口**: 信令扩展消息 `ConfigPush { config: String, version: u64 }`（PSK/JWT 认证 + 审计日志——C15/C16 纪律）→ 校验 → 写 host.toml（备份旧版）→ 调 `host apply` → 翻译器 → oxfile.toml → OxMgr file-watch 热生效（增删路 = 增量 apply）
+- **测试**: mock Server 下发 ConfigPush → host.toml 更新 + oxfile 重新生成 + 进程重启生效；非法配置拒绝 + 审计日志断言
+
 ### Task F1: controller 进程
 - **Files**: `crates/mediaservo-host/src/bin/host-controller.rs`：纯 DC PC（create_data_channel × 3 label: chassis/gimbal/light）→ 舱端 client 直连（P2P）→ DC 消息路由到执行器接口（Phase A 先 stub 执行器：日志 + 回执）
-- **测试**: 双进程 e2e（controller ↔ mock 舱端 PC：DC 消息往返 + label 区分 + reliable 顺序断言）
+- **测试**: 双进程 e2e（controller ↔ mock 舱端 PC：DC 消息往返 + label 区分 + reliable 顺序断言；执行器 stub 在 Phase F 本阶段实现——"Phase A 先 stub"为笔误）
 
 ### Task F2: emergency 进程
 - **Files**: `crates/mediaservo-host/src/bin/host-emergency.rs`：独立 PC + DC（label emergency）+ 本地兜底接口（trait `EmergencyActuator`——stub 实现：日志；CAN/GPIO 实现在 Phase I 后）
@@ -325,6 +345,10 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 ## Phase G: 安全（阶段级任务清单）
 
 **目标**: 设备凭证 + 会话 token（Server 侧）+ 令牌签发流程（D-H10/H11 落地）。
+
+### Task F3: streamer 视觉 DC（D-H8 链路——Momus HIGH-2 补）
+- **Files**: `crates/mediaservo-host/src/bin/host-streamer.rs`（扩展）：独立 transport B（纯 DC，无 track——mediasoup 官方 send/recv 分离）+ label "vision"；订阅视觉 topic（如 `vision/cam0`，源 = ROS 视觉节点）→ DC JSON 消息（对象数组: class/confidence/bbox/text/color + 帧关联 ts_mono/seq）转发舱端 HMI
+- **测试**: ① 外部发布者（ROS 模拟进程，link SDK attach 视觉 topic）→ streamer 订阅 → DC 收到 JSON（D-H7 外部节点验证缺口一并补上）② vision DC 与视频 track 分离 transport 断言（SDP 两 m-line）③ ts/seq 帧关联字段存在
 
 ### Task G1: link 令牌签发流程
 - **Files**: host CLI `host token issue --role <R> --topic <T> --out <path>`（signing key 读 etc/link/signing.pem）+ ros_bridge.yaml 接线
@@ -343,6 +367,11 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 ## Phase H: Server 扩展（阶段级任务清单）
 
 **目标**: 音频会议房间 + data 域（SFU 模式 DC）+ dispatcher 拉流权限。
+
+### Task G4: host 设备身份配发（Momus MEDIUM-4——G2 测试的前置）
+- **Files**: `crates/mediaservo-host/src/bin/host.rs`（`host init` 生成）+ `crates/mediaservo-host/src/bin/host-agent.rs`（Join 携带）
+- **接口**: host init/install 生成 `identity.json`（device_id + device_secret，0600——D-H13 布局）；host-agent Join 认证流程携带设备凭证 → session token
+- **测试**: init 生成 → agent Join 成功；凭证错误 → 认证失败明确报错
 
 ### Task H1: SFU data 域
 - **Files**: `crates/mediaservo-server/src/sfu.rs`：DataProducer/DataConsumer（mediasoup 原生——官方 API 用法，C18）+ 信令消息扩展（produce_data/consume_data）
@@ -367,6 +396,7 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 - **测试**: 干净目录安装 → host doctor 全绿 → start/stop 冒烟
 
 ### Task I2: 双包发布脚本
+- **Windows 验证（spec §7）**: CARLA 机（x86-Windows）capturer 采集 + 推流最小闭环——打包验证纳入本任务
 - **Files**: `scripts/`（打包 mediaservo-host-<ver>.tar.gz + mediaservo-sdk-<ver>.tar.gz——SDK 复用 install bindings 产物）
 - **验证**: 解包到干净机验证两包独立可用 + 协议版本声明文件
 
@@ -382,3 +412,5 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 | 单 WS 聚合与 Server 协议不兼容 | Phase D 先 mock Server 验证协议包装；真 Server 回归兜底 |
 | 音频/控制依赖 Server data 域 | F 阶段 P2P 先行验证；H1 单独可测 |
 | C22（host 禁 Docker）| 所有 host 测试宿主原生；Server 仅 Docker |
+| host-agent 单点（Momus MEDIUM-5）| 崩溃窗口内信令中断（远程急停通道受影响）——OxMgr 秒级拉起 + 本地兜底缓解；F2 验收含"controller 崩不影响 emergency" |
+| P2P 控制 NAT 失败（Momus MEDIUM-5）| 无 TURN 时 P2P DC 可能不可用——F 验收加 ICE 失败降级说明；SFU data 域（H1）为最终兜底，风险窗口 = F→H 阶段 |
