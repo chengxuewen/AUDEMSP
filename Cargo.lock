@@ -4213,6 +4213,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mediaservo-field-c"
+version = "0.1.0"
+dependencies = [
+ "mediaservo-field",
+ "tokio",
+]
+
+[[package]]
 name = "mediaservo-host"
 version = "0.1.0"
 dependencies = [

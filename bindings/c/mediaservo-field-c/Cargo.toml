@@ -1,0 +1,14 @@
+[package]
+name = "mediaservo-field-c"
+version.workspace = true
+edition.workspace = true
+description = "MediaServo Field C ABI — ms_field_* opaque handle bindings (推流面)"
+license.workspace = true
+
+[lib]
+name = "mediaservo_field_c"
+crate-type = ["cdylib"]
+
+[dependencies]
+mediaservo-field = { path = "../../../crates/mediaservo-field" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
