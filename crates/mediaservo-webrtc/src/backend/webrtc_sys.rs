@@ -1236,6 +1236,7 @@ impl webrtc_sys::peer_connection_factory::PeerConnectionObserver for RealObserve
                 }
                 impl webrtc_sys::video_track::VideoSink for VideoSinkAdapter {
                     fn on_frame(&self, frame: cxx::UniquePtr<vff::VideoFrame>) {
+                        tracing::debug!("VideoSinkAdapter::on_frame fired (w={} h={})", frame.width(), frame.height());
                         if let Some(ref sink) = *self.sink.lock().unwrap() {
                             let w = frame.width();
                             let h = frame.height();
@@ -1267,6 +1268,7 @@ impl webrtc_sys::peer_connection_factory::PeerConnectionObserver for RealObserve
                 let wrapper = webrtc_sys::video_track::VideoSinkWrapper::new(std::sync::Arc::new(adapter));
 
                 // Register sink with the video track
+                tracing::debug!("VideoSinkAdapter: attaching native sink to video track");
                 unsafe {
                     let video_track = webrtc_sys::video_track::ffi::media_to_video(track);
                     let native_sink = webrtc_sys::video_track::ffi::new_native_video_sink(Box::new(wrapper));

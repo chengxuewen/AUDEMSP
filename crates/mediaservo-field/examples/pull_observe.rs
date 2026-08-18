@@ -9,6 +9,9 @@ use mediaservo_webrtc::traits::PeerConnectionApi;
 
 #[tokio::main]
 async fn main() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .try_init();
     let url = std::env::var("SFU_E2E_WS_URL").expect("SFU_E2E_WS_URL");
     let psk = std::env::var("SFU_E2E_PSK").expect("SFU_E2E_PSK");
     let room = format!("pull-obs-{}", std::process::id());
@@ -41,28 +44,12 @@ async fn main() {
         .await.expect("subscribe timeout").expect("subscribe failed");
     println!("subscribed to {producer_id}");
 
-    // 监控 inbound 10s — 用 pc 内部统计（get_receivers 可能不含 on_track 新建的 receiver）
+    // 监控: 每 1s 打点（确认进程存活 + server 转发持续）
     let pc = pull.peer_connection().expect("pc");
-    for i in 0..10 {
+    for i in 0..15 {
         tokio::time::sleep(Duration::from_secs(1)).await;
-        // 遍历 pc 已知 track_id（on_track 回调里的 receiver 未入 tracks）
-        let mut saw = false;
-        for tid in pc.track_ids() {
-            let stats = pc.sender_get_stats(&tid);
-            for st in &stats {
-                if let RTCStats::InboundRtp(o) = st {
-                    println!("t={i}s inbound(track={tid}): bytes_received={} packets_received={}",
-                        o.bytes_received, o.packets_received);
-                    saw = true;
-                }
-            }
-        }
-        if !saw {
-            // 尝试 backend 原生 get_stats 全量
-            let stats = pc.sender_get_stats("video");
-            let kinds: Vec<String> = stats.iter().map(|s| format!("{s:?}").chars().take(40).collect()).collect();
-            println!("t={i}s no-inbound, stats={kinds:?}");
-        }
+        let state = pc.connection_state();
+        println!("t={i}s pc_state={state:?}");
     }
     push.stop_video_frames();
     push.close().await.unwrap();

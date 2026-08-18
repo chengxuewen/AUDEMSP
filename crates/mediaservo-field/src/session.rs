@@ -470,8 +470,24 @@ impl PullSession {
             }
         });
 
-        // 5. 标准 answerer 协商：remote SDP → add_transceiver(recvonly) → answer
-        let codec = sfu::codec_spec("vp8"); // 消费侧默认 VP8（与 produce 默认一致）
+        // 5. 先 Consume（拿 consumer 的 ssrc — 需注入 remote SDP，否则 libwebrtc
+        // demux 不识别 ssrc 丢弃 RTP）。Consumed 在 transport 创建后即可返回。
+        self.signal
+            .send(SignalingMessage::Consume {
+                room_id: cfg.room.clone(),
+                peer_id: peer_id(&cfg.role),
+                producer_id: producer_id.to_string(),
+                rtp_capabilities: serde_json::json!({
+                    "codecs": [{"mimeType": "video/VP8", "clockRate": 90000, "kind": "video"}],
+                    "headerExtensions": []
+                }),
+            })
+            .await
+            .map_err(FieldError::Link)?;
+        let consumer_rtp = self.await_consumed(&mut transport_events).await?;
+
+        // 6. 构造含 consumer ssrc 的 remote SDP（a=ssrc 声明接收流）
+        let codec = sfu::codec_spec("vp8");
         let remote_sdp = sfu::build_remote_sdp(
             &ice_parameters,
             &dtls_parameters,
@@ -482,6 +498,8 @@ impl PullSession {
             codec.fmtp,
             sfu::RemoteDirection::ServerSendonly,
         );
+        // 注入 a=ssrc（consumer 的 encodings[0].ssrc）
+        let remote_sdp = sfu::inject_remote_ssrc(&remote_sdp, &consumer_rtp);
         let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
         pc.set_remote_description(&remote_desc)
             .await
@@ -526,24 +544,6 @@ impl PullSession {
             .await
             .map_err(FieldError::Link)?;
 
-        // 7. Consume（rtp_capabilities 透传，对齐 e2e D2）
-        self.signal
-            .send(SignalingMessage::Consume {
-                room_id: cfg.room.clone(),
-                peer_id: peer_id(&cfg.role),
-                producer_id: producer_id.to_string(),
-                rtp_capabilities: serde_json::json!({
-                    "codecs": [{"mimeType": "video/VP8", "clockRate": 90000, "kind": "video"}],
-                    "headerExtensions": []
-                }),
-            })
-            .await
-            .map_err(FieldError::Link)?;
-
-        // 8. 等待 Consumed 确认
-        self.await_consumed(&mut transport_events).await?;
-
-
 
         let pc_state = pc.connection_state();
         let ice_state = pc.ice_connection_state();
@@ -557,18 +557,22 @@ impl PullSession {
         Ok(frame_rx)
     }
 
-    /// 消费信令直到 `Consumed` 确认。
+    /// 消费信令直到 `Consumed` 确认；返回 consumer 的 rtp_parameters（含 ssrc）。
     async fn await_consumed(
         &self,
         events: &mut tokio::sync::broadcast::Receiver<SignalEvent>,
-    ) -> Result<(), FieldError> {
+    ) -> Result<serde_json::Value, FieldError> {
         loop {
             match events.recv().await {
                 Ok(SignalEvent::Message(SignalingMessage::Consumed {
-                    producer_id, ..
+                    producer_id,
+                    rtp_parameters,
+                    ..
                 })) => {
-                    tracing::info!("PullSession consumer created for {producer_id}");
-                    return Ok(());
+                    tracing::info!(
+                        "PullSession consumer created for {producer_id} rtp={rtp_parameters}"
+                    );
+                    return Ok(rtp_parameters);
                 }
                 // transport_connected 是 Connect 确认（非真错误）
                 Ok(SignalEvent::Message(SignalingMessage::Error { code: 0, message }))

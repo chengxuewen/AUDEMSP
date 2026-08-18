@@ -210,7 +210,7 @@ mod imp {
                 send_buffer_size: None,
                 recv_buffer_size: None,
             });
-            for ip in &announced_ips[1..] {
+            for ip in announced_ips.iter().skip(1) {
                 listen_infos = listen_infos.insert(ListenInfo {
                     protocol: Protocol::Udp,
                     ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),

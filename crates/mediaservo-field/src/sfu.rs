@@ -82,7 +82,10 @@ pub fn build_remote_sdp(
         "o=- 0 0 IN IP4 0.0.0.0".to_string(),
         "s=-".to_string(),
         "t=0 0".to_string(),
-        "a=group:BUNDLE video".to_string(),
+        match direction {
+            RemoteDirection::ServerSendonly => "a=group:BUNDLE 0".to_string(),
+            RemoteDirection::ServerRecvonly => "a=group:BUNDLE video".to_string(),
+        },
         "a=ice-lite".to_string(),
         format!("a=ice-ufrag:{}", ice_parameters.username_fragment),
         format!("a=ice-pwd:{}", ice_parameters.password),
@@ -98,7 +101,12 @@ pub fn build_remote_sdp(
         format!("m=video 7 UDP/TLS/RTP/SAVPF {}", payload_type),
         format!("c=IN IP4 {}", conn_ip),
         "a=rtcp-mux".to_string(),
-        "a=mid:video".to_string(),
+        match direction {
+            // mediasoup consumer 的 RTP mid 固定为 "0" — 接收侧 answer 必须对齐
+            // （不匹配 → libwebrtc demux 丢弃 RTP → 收不到帧）
+            RemoteDirection::ServerSendonly => "a=mid:0".to_string(),
+            RemoteDirection::ServerRecvonly => "a=mid:video".to_string(),
+        },
         // transport-cc + abs-capture-time extmap（BWE 反馈链路必需，id 3/5 对齐官方惯例）
         "a=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01".to_string(),
         "a=extmap:5 http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time".to_string(),
@@ -143,6 +151,38 @@ pub fn build_remote_sdp(
 
     lines.push(String::new());
     lines.join("\r\n")
+}
+
+/// 将 consumer 的 rtp_parameters（Consumed 返回）中的 ssrc 注入 remote SDP。
+/// libwebrtc demux 需要 remote offer 声明接收 ssrc，否则丢弃 RTP。
+pub fn inject_remote_ssrc(remote_sdp: &str, consumer_rtp: &serde_json::Value) -> String {
+    let ssrc = consumer_rtp
+        .get("encodings")
+        .and_then(|e| e.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|enc| enc.get("ssrc"))
+        .and_then(|s| s.as_u64());
+    let Some(ssrc) = ssrc else {
+        return remote_sdp.to_string();
+    };
+    // 在 a=mid 行后追加 a=ssrc 行（保留原 CRLF 分隔，避免破坏 SDP）
+    let sep = if remote_sdp.contains("\r\n") { "\r\n" } else { "\n" };
+    let lines: Vec<&str> = remote_sdp.split(sep).collect();
+    let mut out = Vec::with_capacity(lines.len() + 2);
+    let mut injected = false;
+    for line in lines {
+        out.push(line.to_string());
+        if !injected && line.starts_with("a=mid:") {
+            out.push(format!("a=ssrc:{ssrc} cname:mediaservo-pull"));
+            out.push(format!("a=ssrc:{ssrc} msid:pull video"));
+            injected = true;
+        }
+    }
+    if !injected {
+        // 无 mid 行（异常）→ 追加到末尾
+        out.push(format!("a=ssrc:{ssrc} cname:mediaservo-pull"));
+    }
+    out.join(sep)
 }
 
 /// 从协商结果 (RTCRtpParameters) 构造 mediasoup produce 的 rtp_parameters。
