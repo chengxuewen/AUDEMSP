@@ -192,7 +192,7 @@ Run（手动冒烟，oxmgr 需已安装）:
 cargo build -p mediaservo-host
 rm -rf /tmp/host-smoke && ./target/debug/host init /tmp/host-smoke
 ./target/debug/host start --dir /tmp/host-smoke   # 预期: oxmgr apply 成功
-./target/debug/host status --dir /tmp/host-smoke  # 预期: 9 进程（legacy 不在此列——8 host 进程）
+./target/debug/host status --dir /tmp/host-smoke  # 预期: 7 进程（模板配置: 5 固定 + capturer + streamer——Momus/A2 审查修正算术）
 ./target/debug/host stop --dir /tmp/host-smoke    # 预期: 全部停止
 ```
 Expected: 全流程 0 退出码；oxmgr list 显示进程起停
