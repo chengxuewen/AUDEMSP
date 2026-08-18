@@ -91,36 +91,53 @@ def _symlink_force(target: str, link: Path) -> None:
     os.symlink(target, link)
 
 
-def _cmd_build_bindings() -> None:
+def _cmd_build_bindings(release: bool = False) -> None:
     """构建三 SDK cdylib + dev .so.<MAJOR> symlink（D241: DT_NEEDED 解析）。"""
     _check("cargo", "pixi 环境未激活? 先运行: source bootstrap.sh / pixi.bat")
-    _run_or_exit([
-        "cargo", "build",
-        "-p", "mediaservo-field-c", "-p", "mediaservo-link-c", "-p", "mediaservo-deck-c",
-    ])
+    cmd = ["cargo", "build"]
+    if release:
+        cmd.append("--release")
+    cmd += ["-p", "mediaservo-field-c", "-p", "mediaservo-link-c", "-p", "mediaservo-deck-c"]
+    _run_or_exit(cmd)
     major = _workspace_version().split(".")[0]
+    out_dir = ROOT / ("target/release" if release else "target/debug")
     for sdk in ("field", "link", "deck"):
         _symlink_force(
             f"libmediaservo_{sdk}.so",
-            ROOT / f"target/debug/libmediaservo_{sdk}.so.{major}",
+            out_dir / f"libmediaservo_{sdk}.so.{major}",
         )
-    print("bindings 构建完成: libmediaservo_{field,link,deck}.so (dev symlink .so.%s)" % major)
+    print("bindings 构建完成: libmediaservo_{field,link,deck}.so (%s, symlink .so.%s)"
+          % ("release" if release else "debug", major))
 
 
-def _cmd_install_bindings(prefix: str) -> None:
-    """安装 bindings: libmediaservo_<sdk>.so.<MAJOR>.<MINOR>.<PATCH> 三件套（D241）
-    + C/cxx 头文件（D248 include/mediaservo 布局）。"""
+ALL_SDKS = ("field", "link", "deck")
+
+
+def _cmd_install_bindings(prefix: str, components: str = "all", release: bool = False) -> None:
+    """安装 bindings（按需分发）: libmediaservo_<sdk>.so.<MAJOR>.<MINOR>.<PATCH> 三件套（D241）
+    + C/cxx 头文件（D248 include/mediaservo 布局）+ .pc + cmake config（组件裁剪）。"""
     ver = _workspace_version()
+    src_dir = ROOT / ("target/release" if release else "target/debug")
     major, minor, patch = ver.split(".")
+    if components == "all":
+        sdks = list(ALL_SDKS)
+    else:
+        sdks = [c.strip() for c in components.split(",")]
+        unknown = [c for c in sdks if c not in ALL_SDKS]
+        if unknown:
+            print(f"错误: 未知组件 {unknown}（可选: {ALL_SDKS} 或 all）", file=sys.stderr)
+            sys.exit(1)
+        sdks = [c for c in ALL_SDKS if c in sdks]  # 保持稳定顺序
+
     lib_dir = Path(prefix) / "lib"
     inc_dir = Path(prefix) / "include" / "mediaservo"
     lib_dir.mkdir(parents=True, exist_ok=True)
     inc_dir.mkdir(parents=True, exist_ok=True)
 
-    for sdk in ("field", "link", "deck"):
-        src = ROOT / f"target/debug/libmediaservo_{sdk}.so"
+    for sdk in sdks:
+        src = src_dir / f"libmediaservo_{sdk}.so"
         if not src.exists():
-            print(f"错误: {src} 不存在 — 先运行: mediaservo build bindings，或 mediaservo install bindings --build", file=sys.stderr)
+            print(f"错误: {src} 不存在 — 先运行: mediaservo build bindings{' --release' if release else ''}，或 mediaservo install bindings --build", file=sys.stderr)
             sys.exit(1)
         real = lib_dir / f"libmediaservo_{sdk}.so.{major}.{minor}.{patch}"
         shutil.copy2(src, real)
@@ -128,8 +145,8 @@ def _cmd_install_bindings(prefix: str) -> None:
         _symlink_force(f"libmediaservo_{sdk}.so.{major}", lib_dir / f"libmediaservo_{sdk}.so")
 
     for h in (ROOT / "bindings/c/include/mediaservo").glob("*.h"):
-        shutil.copy2(h, inc_dir)
-    for sdk in ("field", "link", "deck"):
+        shutil.copy2(h, inc_dir)  # common.h 总是装（所有头依赖）
+    for sdk in sdks:
         for h in (ROOT / f"bindings/c/mediaservo-{sdk}-c/include/mediaservo").glob("*.h"):
             shutil.copy2(h, inc_dir)
         for h in (ROOT / f"bindings/cxx/mediaservo-{sdk}-cxx/include/mediaservo").glob("*.hpp"):
@@ -143,18 +160,23 @@ def _cmd_install_bindings(prefix: str) -> None:
     cmake_dir.mkdir(parents=True, exist_ok=True)
     prefix_abs = str(lib_dir.parent)  # 规范绝对 prefix（configure 传统；模板用 ${pcfiledir} 保持可重定位）
     for t in sorted(tpl.glob("*.pc.in")):
+        sdk = t.name.removeprefix("mediaservo-").removesuffix(".pc.in")
+        if sdk not in sdks:
+            continue  # 按需: 只装选中的 .pc
         content = t.read_text().replace("@VERSION@", ver).replace("${pcfiledir}/../..", prefix_abs)
         (pc_dir / t.name[:-3]).write_text(content)  # .pc.in → .pc
+    sdk_list = " ".join(sdks)  # cmake config 组件裁剪
     for name, t in (("mediaservoConfig.cmake", "mediaservoConfig.cmake.in"),
                     ("mediaservoConfigVersion.cmake", "mediaservoConfigVersion.cmake.in")):
         content = (tpl / t).read_text().replace("@VERSION@", ver).replace("@MAJOR@", major)
+        content = content.replace("@SDK_LIST@", sdk_list)
         (cmake_dir / name).write_text(content)
 
-    print(f"bindings 已安装到 {prefix}")
-    print(f"  lib/    libmediaservo_{{field,link,deck}}.so.{major}.{minor}.{patch} + .so.{major} + .so")
-    print(f"  lib/pkgconfig/   mediaservo-{{field,link,deck}}.pc（pkg-config 消费）")
-    print(f"  lib/cmake/mediaservo/  mediaservoConfig.cmake + ConfigVersion.cmake（find_package(mediaservo)）")
-    print(f"  include/mediaservo/  {{common,field,link,deck}}.h + {{field,link,deck}}.hpp")
+    print(f"bindings 已安装到 {prefix}（组件: {', '.join(sdks)}；{'release' if release else 'debug'}）")
+    print(f"  lib/    {', '.join(f'libmediaservo_{s}.so.{major}.{minor}.{patch}' for s in sdks)} + .so.{major} + .so")
+    print(f"  lib/pkgconfig/   {', '.join(f'mediaservo-{s}.pc' for s in sdks)}（pkg-config 消费）")
+    print(f"  lib/cmake/mediaservo/  mediaservoConfig.cmake + ConfigVersion.cmake（find_package(mediaservo COMPONENTS {'|'.join(sdks)})）")
+    print(f"  include/mediaservo/  common.h + {', '.join(f'{s}.h' for s in sdks)} + {', '.join(f'{s}.hpp' for s in sdks)}")
     print("Python: pip install bindings/python/mediaservo（薄包；运行时 .so 定位: LD_LIBRARY_PATH 或 ldconfig）")
 
 
@@ -399,8 +421,8 @@ def _cmd_install(args: argparse.Namespace) -> None:
     """install <target> — bindings。"""
     if args.target == "bindings":
         if args.build:
-            _cmd_build_bindings()  # 一体化: 先构建再安装
-        _cmd_install_bindings(args.prefix)
+            _cmd_build_bindings(args.release)  # 一体化: 先构建再安装
+        _cmd_install_bindings(args.prefix, args.components, args.release)
 
 
 def _cmd_clean(args: argparse.Namespace) -> None:
@@ -491,6 +513,7 @@ def main() -> None:
 
     build_p = sub.add_parser("build", help="构建 <target>: all|host|server|client|bindings（默认 all）")
     build_p.add_argument("target", nargs="?", choices=["all", "host", "server", "client", "bindings"], default="all")
+    build_p.add_argument("--release", action="store_true", help="release 构建（bindings: target/release，strip+LTO）")
     for verb, help_txt in (
         ("stop", "停止 <target>: server(compose stop 保留容器) | host/client(进程)"),
         ("restart", "重启 <target>: 清旧再启（保留卷）"),
@@ -510,6 +533,9 @@ def main() -> None:
     install_p.add_argument("target", choices=["bindings"])
     install_p.add_argument("--prefix", default=str(ROOT / "install"), help="安装前缀（默认 <项目根>/install）")
     install_p.add_argument("--build", action="store_true", help="先构建 bindings 再安装（等价 build bindings && install bindings）")
+    install_p.add_argument("--components", default="all",
+                           help="按需分发: field|link|deck|all|逗号组合（如 link,deck；默认 all）")
+    install_p.add_argument("--release", action="store_true", help="安装 release 产物（target/release，配合 build bindings --release）")
     install_p.set_defaults(func=_cmd_install)
     clean_p = sub.add_parser("clean", help="清理 <target>: all|server|host|client（默认 all）")
     clean_p.add_argument("target", nargs="?", choices=["all", "server", "host", "client"], default="all")
@@ -535,7 +561,20 @@ def main() -> None:
     args = parser.parse_args(argv)
     if args.command == "start":
         _cmd_start(args.target, args.foreground)
-    elif args.command in ("build", "stop", "restart", "logs"):
+    elif args.command == "build":
+        if args.target == "bindings":
+            _cmd_build_bindings(args.release)
+        elif args.target == "all":
+            _cmd_build_host()
+            _cmd_build_server()
+            _cmd_build_client()
+        elif args.target == "host":
+            _cmd_build_host()
+        elif args.target == "server":
+            _cmd_build_server()
+        elif args.target == "client":
+            _cmd_build_client()
+    elif args.command in ("stop", "restart", "logs"):
         globals()[f"_cmd_{args.command}"](args.target)
     elif args.command in ("e2e", "test", "ci"):
         globals()[f"_cmd_{args.command}"]()

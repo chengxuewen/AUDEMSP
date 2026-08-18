@@ -17,7 +17,9 @@ else()
     set(_mediaservo_lib_prefix "lib")
 endif()
 
-foreach(_sdk field link deck)
+set(mediaservo_INSTALLED_SDK @SDK_LIST@)
+set(mediaservo_KNOWN_COMPONENTS ${mediaservo_INSTALLED_SDK})
+foreach(_sdk IN LISTS mediaservo_INSTALLED_SDK)
     if(NOT TARGET mediaservo::${_sdk})
         add_library(mediaservo::${_sdk} INTERFACE IMPORTED)
         set_target_properties(mediaservo::${_sdk} PROPERTIES
@@ -35,7 +37,6 @@ set(mediaservo_INCLUDE_DIRS "${_mediaservo_prefix}/include")
 # ── COMPONENTS 声明性校验（OpenCV/Boost 模式）────────────────
 # 手写校验（FPHSA CONFIG_MODE+HANDLE_COMPONENTS 组合行为不稳）；
 # 版本检查由 CMake 自动 include 本目录 mediaservoConfigVersion.cmake。
-set(mediaservo_KNOWN_COMPONENTS field link deck)
 foreach(_comp IN LISTS mediaservo_FIND_COMPONENTS)
     if(NOT _comp IN_LIST mediaservo_KNOWN_COMPONENTS)
         message(FATAL_ERROR
