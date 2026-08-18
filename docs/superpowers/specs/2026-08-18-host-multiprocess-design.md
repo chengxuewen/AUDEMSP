@@ -31,15 +31,20 @@ OxMgr（进程总管：重启策略/健康检查/日志轮转/CPU-RAM 指标/fil
 └── host-agent × 1         信令网关（单 WS 聚合）+ 拓扑/数据流/信令状态监控
                            + 云端配置镜像 + 远程上报 Server
 
-外部生产者（不归 OxMgr 管，自带生命周期）：
-└── ROS 拼接节点（如环视 AVM）经 link SDK（C++ 绑定）attach → 订阅 N 路相机
-    → GPU 拼接 → 发布 1 路全景 topic → host-streamer 推流 + host-recorder 录制
+外部生产者（不归 OxMgr 管，自带生命周期，roslaunch 管）：
+├── ROS 拼接节点（如环视 AVM）经 link SDK（C++ 绑定）attach → 订阅 N 路相机
+│   → GPU 拼接 → 发布 1 路全景 topic → host-streamer 推流 + host-recorder 录制
+└── ROS 视觉节点 经 link SDK attach → 订阅每路相机视频 → 检测（障碍物/人物/车道线等）
+    → 发布视觉结果 topic（对象坐标 bbox + 提示文本 + 建议显示颜色，帧关联 ts/seq）
+    → host-streamer 订阅后经 DataChannel 转发 → 舱端 HMI overlay 渲染
 ```
 
 **link 角色 = 共享库（非进程）**：FrameBus（iceoryx2 SHM）+ 去中心化 Registry（D235：attach 即注册，iceoryx2 service discovery 枚举）+ 静态 ACL + 能力令牌，内嵌各进程。
 
 **媒体链路**：`host-capturer →(FrameBus I420)→ host-streamer / host-recorder / 外部节点(ROS 拼接)`；`外部节点 →(FrameBus 1 路全景)→ host-streamer(stitch) / host-recorder`
 **控制链路**：`舱端/Server →(WebRTC DataChannel)→ host-controller`（P2P 直连；SFU 经 Server data 域）
+**视觉结果链路**：`ROS 视觉节点 →(FrameBus 视觉 topic)→ host-streamer →(同 PC DataChannel label "vision")→ 舱端 HMI overlay`
+——视频走 RTP、视觉结果走同 PC 的 DC（每路 streamer 转发自己那路的检测结果，与视频帧 ts/seq 关联）
 **信令链路**：`各进程 →(WS→127.0.0.1:PORT)→ host-agent（信令网关）→(单 WS)→ Server`——一个 host 在 Server 侧 = 一个 peer 会话
 
 ## 3. 关键决策记录
@@ -108,10 +113,18 @@ host-monitor ──(期望态镜像)──▶ 拓扑验证/告警闭环
 - **安全**: 外部节点 attach 走 link ACL（D237 静态 ACL）+ 能力令牌（D238）——ROS 节点配置订阅/发布权限
 - **影响**: host-streamer/host-recorder 输入通用化为"任意 link topic"（源不限于 host-capturer）；FrameMeta.format 支持 I420 及变体
 
+### D-H8: 视觉处理结果 = 元数据流，经 streamer 的 DC 转发（舱端 HMI overlay）
+- **决策**: ROS 视觉节点经 link SDK 发布检测结果 topic（对象 bbox + 提示文本 + 建议显示颜色 + 帧关联 ts/seq）；host-streamer 订阅后经**同一 PC 的 DataChannel（label "vision"）**转发；舱端 HMI 本地 overlay 渲染（视频 RTP + 检测 DC 同连接）
+- **理由**: 检测结果是帧级元数据非视频帧——DC 传输（延迟低、按帧关联）；overlay 在舱端渲染（车端不烧录标注，带宽与画质无损）；"视频+视觉同连接"使 HMI 天然对齐（无需额外订阅关系）
+- **通道语义**: 视觉 DC 是信息展示流（非控制流）——不并入 controller 的 PC（控制/信息分离）；挂在 streamer PC 上（与对应视频流同生共死）
+- **消息格式**: JSON 起步（对象数组: class/confidence/bbox/text/color）；量级小（每路 10-30Hz 检测）；帧关联用 ts_mono/seq（FrameMeta 对齐语义）
+- **安全**: 视觉节点 attach 走 link ACL + 能力令牌（同 D-H7）
+
 ## 6. 已知缺口与后续工作
 
 1. **Server SFU data 域**：mediasoup DataProducer/DataConsumer（SFU 模式 DC 控制的前置）
-2. **拼接节点（ROS/第三方）**：经 link SDK 接入（D-H7）；帧同步/ts 对齐由外部节点承担（FrameMeta ts_mono/ts_epoch 提供对齐输入）
+2. **外部节点（ROS：拼接 + 视觉处理）**：经 link SDK 接入（D-H7/D-H8）；帧同步/ts 对齐由外部节点承担（FrameMeta ts_mono/ts_epoch 提供对齐输入）
+2b. **视觉 DC 消息格式**：JSON 起步，量级增长（高频多对象）时评估二进制紧凑编码
 3. **帧同步策略**：stitch 缓冲对齐窗口（多路帧到达时刻差异）
 4. **采集 zero-copy**：MIPI/CSI 采集进 SHM 的零拷贝优化（immediate transfer）
 5. **emergency 本地兜底**：执行器直连形态（CAN/GPIO/串口）与控制器冗余
