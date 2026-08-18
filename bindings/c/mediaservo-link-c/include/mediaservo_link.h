@@ -9,7 +9,7 @@
  *   cfg.url = "ws://host:9800/ws"; cfg.psk = "..."; cfg.room = "...";
  *   ms_link_signal_t* s = NULL;
  *   if (ms_link_signal_connect(&cfg, &s) != MS_OK) { 读 ms_link_last_error }
- *   ms_link_signal_on_event(s, on_event, NULL);   /* 任意时刻注册；重复注册替换 */
+ *   ms_link_signal_on_event(s, on_event, NULL);   -- 任意时刻注册；重复注册替换
  *   ms_link_signal_send(s, "{\"type\":\"frame\",...}", len);
  *   ...
  *   ms_link_signal_close(s);
