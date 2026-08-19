@@ -50,6 +50,9 @@ pub enum SignalingMessage {
     },
 
     /// ICE candidate relayed through Server.
+    /// PIT-106 (I2 review): `alias = "rtc_ice_candidate"` — 浏览器 W3C 惯例 wire 名
+    /// （sfu-client.ts 发送）; 规范名 r_t_c_ice_candidate 保持向后兼容（host/Rust 客户端）。
+    #[serde(alias = "rtc_ice_candidate")]
     RTCIceCandidate {
         room_id: String,
         target: Option<String>,
@@ -1000,5 +1003,21 @@ mod tests {
         assert!(json2.contains(r#"type":"sfu_stats"#));
         let parsed2: SignalingMessage = serde_json::from_str(&json2).unwrap();
         assert!(matches!(parsed2, SignalingMessage::SfuStats { .. }));
+    }
+
+    /// PIT-106 (I2 review): 浏览器 W3C 惯例发 `rtc_ice_candidate`（sfu-client.ts:236），
+    /// 规范 wire 名是 `r_t_c_ice_candidate`（serde snake_case）→ 服务端 alias 兼容。
+    #[test]
+    fn ice_candidate_alias_parses_browser_wire_name() {
+        let json = r#"{"type":"rtc_ice_candidate","room_id":"r1","target":null,"candidate":"candidate:1 1 UDP 2130706431 10.0.0.1 8000 typ host","sdp_mid":"0","sdp_mline_index":0}"#;
+        let parsed: SignalingMessage = serde_json::from_str(json).unwrap();
+        match parsed {
+            SignalingMessage::RTCIceCandidate { room_id, candidate, sdp_mline_index, .. } => {
+                assert_eq!(room_id, "r1");
+                assert_eq!(candidate, "candidate:1 1 UDP 2130706431 10.0.0.1 8000 typ host");
+                assert_eq!(sdp_mline_index, Some(0));
+            }
+            other => panic!("expected RTCIceCandidate, got {other:?}"),
+        }
     }
 }

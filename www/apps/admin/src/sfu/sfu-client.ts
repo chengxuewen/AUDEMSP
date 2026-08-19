@@ -354,7 +354,9 @@ export class SfuConsumerClient {
         } catch (err) {
           console.warn('SfuClient: SDP handling failed', err);
         }
-      } else if (msg.type === 'rtc_ice_candidate' && this.pc) {
+      } else if ((msg.type === 'rtc_ice_candidate' || msg.type === 'r_t_c_ice_candidate') && this.pc) {
+        // PIT-106 (I2 review): server 中继重序列化为规范名 r_t_c_ice_candidate（serde snake_case）
+        // — 两 tag 都收，兼容旧 server 与新 alias 两种 wire。
         console.log('SfuClient: ICE candidate received', msg.candidate);
         this.pc.addIceCandidate({
           candidate: msg.candidate,

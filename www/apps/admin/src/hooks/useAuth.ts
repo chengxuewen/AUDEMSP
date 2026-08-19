@@ -17,8 +17,10 @@ export function useAuth() {
 
   const isAdmin = role === 'admin';
   const isDispatcher = role === 'dispatcher';
-  // G3 矩阵: can_status = operator/admin/dispatcher（音频 + 状态视图同矩阵）。
-  const canMonitor = role === 'operator' || isAdmin || isDispatcher;
+  // I1 review 修复: 与 server auth_middleware 准入对齐（admin|dispatcher）—
+  // G3 can_status 含 operator，但 admin REST 只放行 admin/dispatcher；
+  // operator 显 nav 会全 401 → 前端收紧，operator 回落默认视图。
+  const canMonitor = isAdmin || isDispatcher;
 
   return { token, role, username, isAdmin, isDispatcher, canMonitor };
 }

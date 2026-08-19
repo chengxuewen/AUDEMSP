@@ -20,8 +20,9 @@
 #     password_hash: "sha256:<64 hex>"
 #     role: admin
 # 开发用账号（占位 — 部署前请替换）: 仅用于本地 Docker dev + H3 前端 e2e。
-#   admin:      admin123   → role admin（全部能力）
+#   admin:      admin123     → role admin（全部能力）
 #   dispatcher: dispatch123 → role dispatcher（音频/状态/视频监控只读）
+#   operator:   operator123 → role operator（I1: 无 admin REST 准入 → 前端不显示监控导航）
 accounts:
   admin:
     password_hash: "sha256:bf6b5bdb74c79ece9fc0ad0ac9fb0359f9555d4f35a83b2e6ec69ae99e09603d"
@@ -29,3 +30,7 @@ accounts:
   dispatcher:
     password_hash: "sha256:51f00e625e5fb3aff1c5a55eff96d1f2f03273afd8b0bc2514961e33dd82f8b2"
     role: dispatcher
+  operator:
+    password_hash: "sha256:21cfc6b0fe8e257247937406f1ee83ae8acd3dc447c38b8431abecaf6d7ea437"
+    role: operator
+    vehicles: ["ms-dev-vehicle"]

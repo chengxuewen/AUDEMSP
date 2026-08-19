@@ -14,6 +14,7 @@ export default async function globalSetup() {
   for (const creds of [
     { username: 'admin', password: 'admin123', role: 'admin', file: 'admin.json' },
     { username: 'dispatcher', password: 'dispatch123', role: 'dispatcher', file: 'dispatcher.json' },
+    { username: 'operator', password: 'operator123', role: 'operator', file: 'operator.json' },
   ]) {
     const context = await browser.newContext();
     const page = await context.newPage();
