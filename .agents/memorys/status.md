@@ -384,3 +384,10 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **关键修复**: FFmpeg 链接补齐（PIT-99）、Recorder 死锁（PIT-100）、libstdc++ ABI（PIT-101）
 - workspace 17 members（+ mediaservo-node）; 测试: c 47 + cxx 4 套 + py 22 + node 5
 - 运行前置: node 需 LD_PRELOAD pixi libstdc++ 或平台编译; FFmpeg 动态库 LD_LIBRARY_PATH
+
+## C2 streamer 进程完成 (2026-08-19, 105e854)
+
+- **host-streamer 真实现**: --stream/--config/--token → host.toml [[streams]]（camera/codec 缺省 id/vp8）→ FrameBus 订阅 camera/<id>（FrameMeta+紧凑 I420, C1 线格式）→ field PushSession（connect→publish_video 全链路复用）→ TrackSender write_raw_i420_with_ts（C17 ts_mono_ns 透传）→ 2s 出站 stats 日志 → 10s 无帧看门狗退出待重启 → SIGTERM 优雅 0
+- **复用**: field PushSession 推流链路 + video_sender() 访问器（additive 6 行）+ link FrameBus::subscribe（latest-slot 背压）+ field D4 证据模式
+- **测试**: streamer_e2e 2（坏参 exit 2 + capturer/streamer 双进程→外部 Docker server 收流 bytes_sent=8144 frames_encoded=55, SIGTERM 双 0）; translate +1; host 全量 51 绿; field 18 绿; pixi run check 0 error
+- **遗留**: ① oxfile streamer 令牌文件角色须为 Recorder（签发属 B 阶段）② SFU_E2E_* 环境变量是测试约定名，Phase D 正规化
