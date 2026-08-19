@@ -347,13 +347,13 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 
 ---
 
-## Phase G: 安全（阶段级任务清单）
-
-**目标**: 设备凭证 + 会话 token（Server 侧）+ 令牌签发流程（D-H10/H11 落地）。
-
 ### Task F3: streamer 视觉 DC（D-H8 链路——Momus HIGH-2 补）
 - **Files**: `crates/mediaservo-host/src/bin/host-streamer.rs`（扩展）：独立 transport B（纯 DC，无 track——mediasoup 官方 send/recv 分离）+ label "vision"；订阅视觉 topic（如 `vision/cam0`，源 = ROS 视觉节点）→ DC JSON 消息（对象数组: class/confidence/bbox/text/color + 帧关联 ts_mono/seq）转发舱端 HMI
 - **测试**: ① 外部发布者（ROS 模拟进程，link SDK attach 视觉 topic）→ streamer 订阅 → DC 收到 JSON（D-H7 外部节点验证缺口一并补上）② vision DC 与视频 track 分离 transport 断言（SDP 两 m-line）③ ts/seq 帧关联字段存在
+
+## Phase G: 安全（阶段级任务清单）
+
+**目标**: 设备凭证 + 会话 token（Server 侧）+ 令牌签发流程（D-H10/H11 落地）。
 
 ### Task G1: link 令牌签发流程
 - **Files**: host CLI `host token issue --role <R> --topic <T> --out <path>`（signing key 读 etc/link/signing.pem）+ ros_bridge.yaml 接线
