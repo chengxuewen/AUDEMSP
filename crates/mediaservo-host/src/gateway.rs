@@ -13,9 +13,12 @@
 //!   Produce/Consume）每请求恰好一响应，server 单 WS 严格顺序处理（forward 循环
 //!   await `handle_sfu_message` 后才读下一条）→ agent 维护**待决请求 FIFO**
 //!   （conn id），响应到达即弹出匹配发起者。并发协商正确（与"按序复用"拒绝项不同
-//!   ——不串行化协商，只按序配对在途请求）。P2P relay 的 Sdp/RTCIceCandidate 无
-//!   transport 标识 → 按**协商归属**追踪（最后一个上行 relay 消息的本地连接），
-//!   单协商串行语义。
+//!   ——不串行化协商，只按序配对在途请求）。FIFO 的三个边界不变量（D1 审查修复）：
+//!   ① joined 检查先于 push（断线窗口 5001 不留陈旧槽）；② push 与远端 send 同一
+//!   临界区（wire 顺序 ≡ pending 顺序）；③ 断连连接不位移队列（mark-dead 严格
+//!   FIFO 消费——死槽被其自身响应弹出丢弃）。P2P relay 的 Sdp/RTCIceCandidate 无
+//!   transport 标识 → 按**协商归属**追踪（最后一个上行 Sdp/ICE 的本地连接；
+//!   Frame/EncoderStatus 等媒体/状态消息不更新归属），单协商串行语义。
 //! - (c) 拒绝项均未实现："远端 from 前缀"（破坏 Server 零改动）/"按序复用"（并发
 //!   协商必错乱）。
 //!
@@ -140,11 +143,27 @@ impl State {
             }
             mut m => {
                 rewrite_room(&mut m, &self.vehicle_room);
+                // CRITICAL-1: joined 检查先于一切状态记录 — 断线窗口内的请求
+                // 不得留下 pending 槽（否则重连后 [A陈旧, C真实] → C 的响应弹 A
+                // → 串线；单客户端自愈掩盖了该缺陷）
+                if !self.joined {
+                    return UpstreamAction::Reply(SignalingMessage::Error {
+                        code: ERR_GATEWAY_DISCONNECTED,
+                        message: "gateway not connected to server".into(),
+                    });
+                }
                 if is_sfu_request(&m) {
                     self.pending.push_back(conn_id);
                 }
-                if is_relay_msg(&m) {
+                // IMPORTANT-3: 仅 Sdp/RTCIceCandidate 更新 P2P 协商归属 —
+                // Frame/EncoderStatus 是媒体/状态上报，抢归属会杀死在途协商
+                if matches!(
+                    m,
+                    SignalingMessage::Sdp { .. } | SignalingMessage::RTCIceCandidate { .. }
+                ) {
                     self.p2p_owner = Some(conn_id);
+                }
+                if is_relay_msg(&m) {
                     let text = serde_json::to_string(&m).unwrap_or_default();
                     self.echo_cache.push_back(text);
                     if self.echo_cache.len() > ECHO_CACHE_CAP {
@@ -219,7 +238,9 @@ impl State {
 
     fn remove_conn(&mut self, conn_id: u64) {
         self.conns.remove(&conn_id);
-        self.pending.retain(|id| *id != conn_id);
+        // IMPORTANT-4: 不在 pending 中移除（mark-dead，严格 FIFO 消费）— 断连
+        // 连接的请求可能仍在 server 在途，其响应必须按序弹出死槽丢弃；若移除
+        // 槽位造成位移（[A,B] 移 A → [B]），A 的响应会弹走 B → 串线
         if self.p2p_owner == Some(conn_id) {
             self.p2p_owner = None;
         }
@@ -396,32 +417,33 @@ async fn conn_task(
                                 continue;
                             }
                         };
-                        let action = lock_state(&state).upstream(conn_id, env.msg);
-                        match action {
-                            UpstreamAction::Forward(msg) => {
-                                let joined = lock_state(&state).joined;
-                                if joined {
+                        // CRITICAL-2: push（upstream 内）与 send（此处）必须在同一
+                        // 临界区 — 两个 conn_task 若交错（A push, B push, B send, A
+                        // send）则 wire 顺序 ≠ pending 顺序 → 响应错配。Unbounded
+                        // Sender 同步发送、无 await，锁内安全。
+                        let mut reply: Option<SignalingMessage> = None;
+                        {
+                            let mut st = lock_state(&state);
+                            match st.upstream(conn_id, env.msg) {
+                                UpstreamAction::Forward(msg) => {
                                     if remote_tx.send(msg).is_err() {
+                                        // 远端任务已退出（网关关闭）：回滚本请求的
+                                        // pending 槽（锁内唯一 push，pop_back 安全）
+                                        st.pending.pop_back();
                                         tracing::warn!(conn_id, "远端任务已退出");
                                         break;
                                     }
-                                } else if let Some(t) = env_json(&LocalEnvelope {
-                                    src: "server".into(),
-                                    msg: gateway_disconnected_error(),
-                                }) {
-                                    if ws_tx.send(Message::Text(t.into())).await.is_err() {
-                                        break;
-                                    }
+                                }
+                                UpstreamAction::Reply(m) => reply = Some(m),
+                                UpstreamAction::Drop => {}
+                            }
+                        }
+                        if let Some(msg) = reply {
+                            if let Some(t) = env_json(&LocalEnvelope { src: "server".into(), msg }) {
+                                if ws_tx.send(Message::Text(t.into())).await.is_err() {
+                                    break;
                                 }
                             }
-                            UpstreamAction::Reply(msg) => {
-                                if let Some(t) = env_json(&LocalEnvelope { src: "server".into(), msg }) {
-                                    if ws_tx.send(Message::Text(t.into())).await.is_err() {
-                                        break;
-                                    }
-                                }
-                            }
-                            UpstreamAction::Drop => {}
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => break,

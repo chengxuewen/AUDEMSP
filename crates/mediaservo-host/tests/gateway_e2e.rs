@@ -138,15 +138,19 @@ async fn join<S: WsIo>(ws: &mut WebSocketStream<S>, room: &str) -> String {
     panic!("join 重试耗尽");
 }
 
-/// 读 2 条消息：transport 响应 + NewProducer 广播（任意顺序），返回 transport_id。
-async fn collect_transport(ws: &mut WsClient, room: &str) -> String {
+/// 读 2 条消息：transport 响应 + NewProducer 广播（任意顺序）。
+/// 返回 (transport_id, 响应 peer_id)——mock 回显请求标识（peer_id 作标记），
+/// 串线即可检测（A 收到 req-b 的响应 = 错配）。
+async fn collect_transport(ws: &mut WsClient, room: &str) -> (String, String) {
     let mut transport: Option<String> = None;
+    let mut peer: Option<String> = None;
     for _ in 0..2 {
         let (_, m) = read_env(ws).await;
         match m {
-            SignalingMessage::WebRtcTransportCreated { transport_id, room_id, .. } => {
+            SignalingMessage::WebRtcTransportCreated { transport_id, room_id, peer_id, .. } => {
                 assert_eq!(room_id, room, "transport 响应房间应改写为 {room}");
                 transport = Some(transport_id);
+                peer = Some(peer_id);
             }
             SignalingMessage::NewProducer { room_id, .. } => {
                 assert_eq!(room_id, room, "NewProducer 广播房间应改写为 {room}");
@@ -154,13 +158,13 @@ async fn collect_transport(ws: &mut WsClient, room: &str) -> String {
             other => panic!("{room} 意外消息: {other:?}"),
         }
     }
-    transport.expect("应收到 transport 响应")
+    (transport.expect("应收到 transport 响应"), peer.expect("响应应携带身份回显"))
 }
 
-fn transport_created(transport_id: &str) -> SignalingMessage {
+fn transport_created_for(transport_id: &str, peer_id: &str) -> SignalingMessage {
     SignalingMessage::WebRtcTransportCreated {
         room_id: VEHICLE_ROOM.into(),
-        peer_id: VEHICLE_PEER.into(),
+        peer_id: peer_id.into(),
         transport_id: transport_id.into(),
         ice_parameters: IceParameters {
             username_fragment: "ufrag".into(),
@@ -174,6 +178,20 @@ fn transport_created(transport_id: &str) -> SignalingMessage {
             role: "auto".into(),
         },
         ice_candidates: None,
+    }
+}
+
+/// mock 响应：transport 创建确认（peer_id 身份回显）。
+fn transport_created(transport_id: &str) -> SignalingMessage {
+    transport_created_for(transport_id, VEHICLE_PEER)
+}
+
+/// CreateWebRtcTransport 请求（peer_id 作请求标识；room 由网关重写）。
+fn create(room: &str, peer_id: &str) -> SignalingMessage {
+    SignalingMessage::CreateWebRtcTransport {
+        room_id: room.into(),
+        peer_id: peer_id.into(),
+        direction: TransportDirection::Send,
     }
 }
 
@@ -304,18 +322,22 @@ async fn concurrent_sfu_negotiation_routes_responses() {
     let server = tokio::spawn(async move {
         let (mut ws, _room, _role) = mock_handshake(&listener).await;
 
-        // 两路 Create（顺序与响应一致），房间均为整车房间
+        // 两路 Create（顺序 = 响应顺序）：提取请求标识（peer_id 作标记）
+        let mut markers = Vec::new();
         for _ in 0..2 {
             let c: SignalingMessage =
                 serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
-            assert!(
-                matches!(&c, SignalingMessage::CreateWebRtcTransport { room_id, direction, .. }
-                    if room_id == VEHICLE_ROOM && *direction == TransportDirection::Send),
-                "Create 房间应重写为整车房间, got {c:?}"
-            );
+            match &c {
+                SignalingMessage::CreateWebRtcTransport { peer_id, room_id, direction, .. } => {
+                    assert_eq!(room_id, VEHICLE_ROOM, "Create 房间应重写为整车房间");
+                    assert_eq!(direction, &TransportDirection::Send);
+                    markers.push(peer_id.clone());
+                }
+                other => panic!("期望 CreateWebRtcTransport, got {other:?}"),
+            }
         }
-        // 响应序列：t1 → NewProducer 广播（夹在响应之间）→ t2
-        ws.send(Message::Text(serde_json::to_string(&transport_created("t1")).unwrap().into()))
+        // 响应序列：t1(markers[0]) → NewProducer 广播（夹在响应之间）→ t2(markers[1])
+        ws.send(Message::Text(serde_json::to_string(&transport_created_for("t1", &markers[0])).unwrap().into()))
             .await
             .unwrap();
         ws.send(Message::Text(
@@ -330,7 +352,7 @@ async fn concurrent_sfu_negotiation_routes_responses() {
         ))
         .await
         .unwrap();
-        ws.send(Message::Text(serde_json::to_string(&transport_created("t2")).unwrap().into()))
+        ws.send(Message::Text(serde_json::to_string(&transport_created_for("t2", &markers[1])).unwrap().into()))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -342,24 +364,16 @@ async fn concurrent_sfu_negotiation_routes_responses() {
     join(&mut a, "room-a").await;
     join(&mut b, "room-b").await;
 
-    // 两路同时发送 Create（在途）
-    for (ws, room) in [(&mut a, "room-a"), (&mut b, "room-b")] {
-        ws.send(Message::Text(env(
-            "child",
-            SignalingMessage::CreateWebRtcTransport {
-                room_id: room.into(),
-                peer_id: "host".into(),
-                direction: TransportDirection::Send,
-            },
-        )))
-        .await
-        .unwrap();
-    }
+    // 两路同时发送 Create（在途；peer_id 携带各自请求标识）
+    a.send(Message::Text(env("a", create("room-a", "req-a")))).await.unwrap();
+    b.send(Message::Text(env("b", create("room-b", "req-b")))).await.unwrap();
 
     // 各读 2 条：自己的 transport 响应 + NewProducer 广播（顺序不定——server 的
     // 广播通道与直连响应并发，广播可能先于第二个响应到达）
-    let ta = collect_transport(&mut a, "room-a").await;
-    let tb = collect_transport(&mut b, "room-b").await;
+    let (ta, pa) = collect_transport(&mut a, "room-a").await;
+    let (tb, pb) = collect_transport(&mut b, "room-b").await;
+    assert_eq!(pa, "req-a", "A 必须收到自己请求的响应（身份回显）");
+    assert_eq!(pb, "req-b", "B 必须收到自己请求的响应（身份回显）");
     assert_ne!(ta, tb, "两路 transport_id 不得串线");
     assert!(ta == "t1" || ta == "t2");
     assert!(tb == "t1" || tb == "t2");
@@ -529,6 +543,189 @@ async fn p2p_sdp_ice_single_negotiation_routing() {
         matches!(&m, SignalingMessage::RTCIceCandidate { candidate, room_id, .. }
             if candidate == "peer-cand" && room_id == "room-b"),
         "B 应收到远端候选（非自身回显），房间改写, got {m:?}"
+    );
+    server.await.unwrap();
+}
+
+// ── CRITICAL-1 回归：断线窗口的 5001 不得留下陈旧 pending 槽 ────────────────
+
+#[tokio::test]
+async fn disconnect_window_stale_pending_not_cross_routed() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    // 闸门：mock2 在测试放行前不 accept → agent 阻塞在 WS 握手，joined 保持
+    // false（确定性断线窗口——connect 在途且无超时）
+    let (gate_tx, gate_rx) = tokio::sync::watch::channel(false);
+    let server = tokio::spawn(async move {
+        // 连接 1：收 A 的在途请求 → 无响应关闭
+        let (mut ws1, _r, _role) = mock_handshake(&listener).await;
+        let m1 = ws1.next().await.unwrap().unwrap();
+        let m1: SignalingMessage = serde_json::from_str(m1.to_text().unwrap()).unwrap();
+        assert!(
+            matches!(&m1, SignalingMessage::CreateWebRtcTransport { peer_id, .. } if peer_id == "req-a1"),
+            "mock1 应收到 A 的在途请求, got {m1:?}"
+        );
+        drop(ws1);
+        // 等测试放行 mock2
+        let mut g = gate_rx.clone();
+        while !*g.borrow() {
+            g.changed().await.unwrap();
+        }
+        // 连接 2：收 B 的请求 → 响应（身份回显）
+        let (mut ws2, _r2, _role2) = mock_handshake(&listener).await;
+        let c2 = ws2.next().await.unwrap().unwrap();
+        let c2: SignalingMessage = serde_json::from_str(c2.to_text().unwrap()).unwrap();
+        assert!(
+            matches!(&c2, SignalingMessage::CreateWebRtcTransport { peer_id, .. } if peer_id == "req-b"),
+            "mock2 应收到 B 的请求, got {c2:?}"
+        );
+        ws2.send(Message::Text(
+            serde_json::to_string(&transport_created_for("t-b", "req-b")).unwrap().into(),
+        ))
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    });
+
+    let port = run_gateway(cfg(addr)).await.unwrap();
+    let mut a = local(port).await;
+    let mut b = local(port).await;
+    join(&mut a, "room-a").await;
+    join(&mut b, "room-b").await;
+
+    // A 在断线前发出在途请求（mock1 收后无响应关闭 → 断线窗口开始）
+    a.send(Message::Text(env("a", create("room-a", "req-a1")))).await.unwrap();
+
+    // 窗口期：A 反复发 Create 直到 5001（修复后：未 join 不入 pending）
+    let mut saw_5001 = false;
+    for _ in 0..50 {
+        a.send(Message::Text(env("a", create("room-a", "req-a2")))).await.unwrap();
+        match tokio::time::timeout(Duration::from_millis(300), read_env(&mut a)).await {
+            Ok((_, SignalingMessage::Error { code: 5001, .. })) => {
+                saw_5001 = true;
+                break;
+            }
+            Ok((_, m)) => panic!("断线窗口不应有响应: {m:?}"),
+            Err(_) => {} // 转发已死连接：无应答，重试
+        }
+    }
+    assert!(saw_5001, "A 应命中断线窗口（5001）");
+
+    // 放行 mock2 → agent 重连完成
+    gate_tx.send(true).unwrap();
+
+    // B 发请求（5001/无应答重试，有界防挂起）→ 必须收到自己的响应
+    let resp = 'b_loop: {
+        for _ in 0..50 {
+            b.send(Message::Text(env("b", create("room-b", "req-b")))).await.unwrap();
+            match tokio::time::timeout(Duration::from_millis(300), read_env(&mut b)).await {
+                Ok((_, SignalingMessage::Error { code: 5001, .. })) => {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                Ok((_, m)) => break 'b_loop m,
+                Err(_) => {}
+            }
+        }
+        panic!("B 重试耗尽未收到响应（陈旧 pending 串线）");
+    };
+    assert!(
+        matches!(&resp, SignalingMessage::WebRtcTransportCreated { peer_id, transport_id, .. }
+            if peer_id == "req-b" && transport_id == "t-b"),
+        "B 应收到自己请求的响应, got {resp:?}"
+    );
+
+    // A 不得收到任何响应（修复前：陈旧槽弹出 → A 收到 B 的响应 = 串线）
+    let extra = tokio::time::timeout(Duration::from_millis(300), read_env(&mut a)).await;
+    assert!(
+        extra.is_err(),
+        "A 不应收到响应（陈旧 pending 串线）, got {:?}",
+        extra.ok().map(|(_, m)| m)
+    );
+    server.await.unwrap();
+}
+
+// ── IMPORTANT-3 回归：relay 的 Frame 不得抢占 P2P 协商归属 ──────────────────
+
+#[tokio::test]
+async fn frame_relay_does_not_steal_p2p_ownership() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (mut ws, _r, _role) = mock_handshake(&listener).await;
+        // 收 offer（A）+ Frame（B），任意顺序；随后回显两者 + 发远端应答
+        let mut offer: Option<Message> = None;
+        let mut frame: Option<Message> = None;
+        for _ in 0..2 {
+            let m = ws.next().await.unwrap().unwrap();
+            let t = m.to_text().unwrap().to_string();
+            if t.contains("\"type\":\"sdp\"") {
+                offer = Some(m);
+            } else if t.contains("\"type\":\"frame\"") {
+                frame = Some(m);
+            } else {
+                panic!("mock 意外消息: {t}");
+            }
+        }
+        ws.send(offer.unwrap()).await.unwrap();
+        ws.send(frame.unwrap()).await.unwrap();
+        ws.send(Message::Text(
+            serde_json::to_string(&SignalingMessage::Sdp {
+                room_id: VEHICLE_ROOM.into(),
+                target: Some("remote-peer".into()),
+                sdp: "b-answer".into(),
+            })
+            .unwrap()
+            .into(),
+        ))
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    });
+
+    let port = run_gateway(cfg(addr)).await.unwrap();
+    let mut a = local(port).await;
+    let mut b = local(port).await;
+    join(&mut a, "room-a").await;
+    join(&mut b, "room-b").await;
+
+    // A 发 offer（协商归属 = A）
+    a.send(Message::Text(env(
+        "a",
+        SignalingMessage::Sdp {
+            room_id: "room-a".into(),
+            target: None,
+            sdp: "a-offer".into(),
+        },
+    )))
+    .await
+    .unwrap();
+    // B 发 Frame（relay 消息；修复前 is_relay_msg 会抢走归属）
+    b.send(Message::Text(env(
+        "b",
+        SignalingMessage::Frame {
+            room_id: "room-b".into(),
+            codec: "vp8".into(),
+            sequence: 1,
+            is_keyframe: true,
+            data_base64: "AA==".into(),
+        },
+    )))
+    .await
+    .unwrap();
+
+    // A 收到远端应答（自身 offer 回显去重；归属未被 Frame 抢占）
+    let (_, m) = read_env(&mut a).await;
+    assert!(
+        matches!(&m, SignalingMessage::Sdp { sdp, room_id, .. }
+            if sdp == "b-answer" && room_id == "room-a"),
+        "A 应收到远端应答（归属未被 Frame 抢占）, got {m:?}"
+    );
+    // B 不得收到任何消息（Frame 回显去重；应答不属于 B）
+    let extra = tokio::time::timeout(Duration::from_millis(300), read_env(&mut b)).await;
+    assert!(
+        extra.is_err(),
+        "B 不应收到消息, got {:?}",
+        extra.ok().map(|(_, m)| m)
     );
     server.await.unwrap();
 }
