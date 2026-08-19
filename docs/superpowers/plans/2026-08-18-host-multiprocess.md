@@ -369,14 +369,14 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 
 ---
 
-## Phase H: Server 扩展（阶段级任务清单）
-
-**目标**: 音频会议房间 + data 域（SFU 模式 DC）+ dispatcher 拉流权限。
-
 ### Task G4: host 设备身份配发（Momus MEDIUM-4——G2 测试的前置）
 - **Files**: `crates/mediaservo-host/src/bin/host.rs`（`host init` 生成）+ `crates/mediaservo-host/src/bin/host-agent.rs`（Join 携带）
 - **接口**: host init/install 生成 `identity.json`（device_id + device_secret，0600——D-H13 布局）；host-agent Join 认证流程携带设备凭证 → session token
 - **测试**: init 生成 → agent Join 成功；凭证错误 → 认证失败明确报错
+
+## Phase H: Server 扩展（阶段级任务清单）
+
+**目标**: 音频会议房间 + data 域（SFU 模式 DC）+ dispatcher 拉流权限。
 
 ### Task H1: SFU data 域
 - **Files**: `crates/mediaservo-server/src/sfu.rs`：DataProducer/DataConsumer（mediasoup 原生——官方 API 用法，C18）+ 信令消息扩展（produce_data/consume_data）
