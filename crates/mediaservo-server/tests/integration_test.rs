@@ -447,6 +447,25 @@ async fn psk_join_and_recv(ws_url: &str, join: &SignalingMessage) -> String {
     resp.to_text().unwrap().to_string()
 }
 
+/// 同 `psk_join_and_recv` 但保持连接存活（返回 ws + 响应）— 绑定生命周期断言需要。
+type KeepAliveWs = tokio_tungstenite::WebSocketStream<
+    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+>;
+async fn connect_join_keepalive(
+    ws_url: &str,
+    join: &SignalingMessage,
+) -> (KeepAliveWs, String) {
+    let (mut ws, _) = tokio_tungstenite::connect_async(ws_url).await.unwrap();
+    ws.send(WsMsg::Text(PSK.into())).await.unwrap();
+    let ack = ws.next().await.unwrap().unwrap();
+    assert!(ack.to_text().unwrap().contains("authenticated"));
+    ws.send(WsMsg::Text(serde_json::to_string(join).unwrap().into()))
+        .await
+        .unwrap();
+    let resp = ws.next().await.unwrap().unwrap();
+    (ws, resp.to_text().unwrap().to_string())
+}
+
 const TEST_DEVICE: &str = "ms-car1";
 const TEST_DEVICE_SECRET: &str = "car1-secret";
 
@@ -467,9 +486,10 @@ fn device_join(device_id: Option<&str>, device_secret: Option<&str>) -> Signalin
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn g2_device_auth_success_binds_peer_id() {
+async fn g2_device_auth_success_binds_and_unbinds_on_disconnect() {
     let (server, ws_url) = spawn_server_with_devices(Some(&test_device_yaml())).await;
-    let resp = psk_join_and_recv(
+    // 保持连接存活（绑定是连接级生命周期 — 见 review #2 语义）。
+    let (ws, resp) = connect_join_keepalive(
         &ws_url,
         &device_join(Some(TEST_DEVICE), Some(TEST_DEVICE_SECRET)),
     )
@@ -485,6 +505,16 @@ async fn g2_device_auth_success_binds_peer_id() {
         Some(TEST_DEVICE),
         "peer_id 必须绑定 device_id"
     );
+    assert_eq!(server.device_binding_count(), 1);
+    // 断开 → cleanup 必须解除绑定（review #2: 断开清理验证）。
+    drop(ws);
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(
+        server.device_id_of(&peer_id),
+        None,
+        "断开后绑定必须解除"
+    );
+    assert_eq!(server.device_binding_count(), 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -496,7 +526,10 @@ async fn g2_device_auth_unknown_device_rejected() {
     match msg {
         SignalingMessage::Error { code, message } => {
             assert_eq!(code, 4010, "未知设备必须 4010");
-            assert!(message.contains("not registered"), "message: {message}");
+            assert!(
+                message.contains("invalid device credentials"),
+                "message: {message}"
+            );
         }
         other => panic!("expected Error, got {other:?}"),
     }
@@ -511,7 +544,10 @@ async fn g2_device_auth_wrong_secret_rejected() {
     match msg {
         SignalingMessage::Error { code, message } => {
             assert_eq!(code, 4010, "错误 secret 必须 4010");
-            assert!(message.contains("invalid device secret"), "message: {message}");
+            assert!(
+                message.contains("invalid device credentials"),
+                "message: {message}"
+            );
         }
         other => panic!("expected Error, got {other:?}"),
     }
@@ -552,4 +588,73 @@ async fn g2_psk_path_regression_with_registry_loaded() {
         None,
         "PSK 路径不得产生设备绑定"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g2_unknown_vs_wrong_secret_wire_identical() {
+    // review #1 TDD: 未知设备与错误 secret 的完整 wire 响应必须逐字节一致
+    // （同 code 4010 + 同消息 — 防枚举; 内部区分仅进审计日志）。
+    let (_server, ws_url) = spawn_server_with_devices(Some(&test_device_yaml())).await;
+    let r_unknown =
+        psk_join_and_recv(&ws_url, &device_join(Some("ms-not-registered"), Some("x"))).await;
+    let r_bad = psk_join_and_recv(
+        &ws_url,
+        &device_join(Some(TEST_DEVICE), Some("wrong-secret")),
+    )
+    .await;
+    assert_eq!(
+        r_unknown, r_bad,
+        "未知设备与错误 secret 的 wire 响应必须逐字节一致（防枚举/防时序）"
+    );
+    let msg: SignalingMessage = serde_json::from_str(&r_unknown).unwrap();
+    match msg {
+        SignalingMessage::Error { code, message } => {
+            assert_eq!(code, 4010);
+            assert!(
+                message.contains("invalid device credentials"),
+                "message: {message}"
+            );
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g2_join_failure_leaves_no_binding() {
+    // review #2: 绑定必须发生在 join 成功之后 — RoomFull(4002) 不得产生残留绑定。
+    let (server, ws_url) = spawn_server_with_devices(Some(&test_device_yaml())).await;
+    // conn1: 第一个 Host 加入成功（保持连接）→ 绑定建立。
+    let (ws1, resp1) = connect_join_keepalive(
+        &ws_url,
+        &device_join(Some(TEST_DEVICE), Some(TEST_DEVICE_SECRET)),
+    )
+    .await;
+    let joined: SignalingMessage = serde_json::from_str(&resp1).unwrap();
+    let peer1 = match joined {
+        SignalingMessage::RoomJoined { peer_id, .. } => peer_id,
+        other => panic!("expected RoomJoined, got {other:?}"),
+    };
+    assert_eq!(
+        server.device_id_of(&peer1).as_deref(),
+        Some(TEST_DEVICE),
+        "conn1 绑定应建立"
+    );
+    assert_eq!(server.device_binding_count(), 1);
+    // conn2: 同房间第二个 Host → RoomFull(4002)，认证通过但 join 失败。
+    let resp2 = psk_join_and_recv(
+        &ws_url,
+        &device_join(Some(TEST_DEVICE), Some(TEST_DEVICE_SECRET)),
+    )
+    .await;
+    let msg: SignalingMessage = serde_json::from_str(&resp2).unwrap();
+    match msg {
+        SignalingMessage::Error { code, .. } => assert_eq!(code, 4002, "第二 Host 应 RoomFull"),
+        other => panic!("expected Error, got {other:?}"),
+    }
+    assert_eq!(
+        server.device_binding_count(),
+        1,
+        "join 失败不得残留绑定（review #2）"
+    );
+    drop(ws1);
 }

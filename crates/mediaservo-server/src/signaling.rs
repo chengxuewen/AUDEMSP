@@ -97,6 +97,11 @@ impl SignalingServer {
         self.device_bindings.get(peer_id).map(|v| v.clone())
     }
 
+    /// 当前设备绑定数（运维/测试用 — join 失败零残留的断言依据）。
+    pub fn device_binding_count(&self) -> usize {
+        self.device_bindings.len()
+    }
+
     /// Subscribe to the shutdown signal — cloned receivers are given to each
     /// WebSocket handler so they can detect when draining has been requested.
     pub fn subscribe_shutdown(&self) -> watch::Receiver<bool> {
@@ -351,16 +356,19 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                             break (room_id, peer_role, None);
                         }
                         Some(Err(auth_err)) => {
+                            // review #1: wire 消息统一（防枚举），但日志/审计保留内部区分
+                            // （Unknown vs BadSecret — 运维可辨别，客户端不可探测）。
                             tracing::warn!(
-                                "Peer {} device auth failed: {}",
+                                "Peer {} device auth failed: {:?} (wire: {})",
                                 peer_id,
+                                auth_err,
                                 auth_err.message()
                             );
                             audit::log_event(AuditEvent::AuthFailure {
                                 peer_id: peer_id.clone(),
                                 reason: format!(
-                                    "device auth failed (device={:?}): {}",
-                                    device_id, auth_err.message()
+                                    "device auth failed (device={:?}): {:?}",
+                                    device_id, auth_err
                                 ),
                             });
                             let error = SignalingMessage::Error {
@@ -396,15 +404,17 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
         }
     };
 
-    // G2: 设备认证成功的会话绑定连接级身份（peer_id → device_id, D-H11）。
-    // join 成功后才绑定 — join 失败路径（4001/4002）不产生绑定，断开无残留。
-    if let Some(device) = device_id {
-        server.device_bindings.insert(peer_id.clone(), device.clone());
-    }
-
     // Join the room
     match server.room_manager.join_room(&room_id, &peer_id, &role) {
         Ok(()) => {
+            // G2: 设备认证成功的会话在此绑定连接级身份（peer_id → device_id, D-H11）。
+            // review #2: 绑定必须发生在 join 成功之后 — 失败路径（4001/4002）零残留;
+            // 断开时 cleanup 解除（见 relay 循环结束处）。
+            if let Some(device) = &device_id {
+                server
+                    .device_bindings
+                    .insert(peer_id.clone(), device.clone());
+            }
             audit::log_event(AuditEvent::PeerJoin {
                 peer_id: peer_id.clone(),
                 room_id: room_id.clone(),

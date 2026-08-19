@@ -12,7 +12,9 @@
 # 注册表仅存 sha256(device_id + ":" + device_secret) 单向哈希 — device_id 充当每设备盐。
 # 比较用常量时间（subtle），防时序侧信道。升级路径: H 阶段换 argon2id（前缀 argon2:）。
 # 删除设备: 删掉对应条目即可（新连接立即拒绝，已连接会话保持到断开）。
-# 错误码: 认证失败统一 Error 4010（未知设备/错误 secret/半带凭证共用，消息区分 — 防设备枚举）。
+# 错误码: 认证失败统一 Error 4010 + 统一消息 "device authentication failed: invalid
+# device credentials"（未知设备与错误 secret 逐字一致 — 防枚举防时序; 内部区分仅进审计日志）。
+# 半带凭证（只带 id 或只带 secret）单独消息提示形状错误。
 #
 # 示例（占位 — 请删除或替换）:
 # devices:

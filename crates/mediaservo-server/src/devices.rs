@@ -32,15 +32,17 @@ pub enum DeviceAuthError {
 }
 
 impl DeviceAuthError {
-    /// 面向客户端的可读消息（C15: 错误响应必须信息充分；4010 单一错误码防设备枚举）。
+    /// 面向客户端的可读消息（C15: 错误响应必须信息充分）。
+    /// 防枚举（review #1）: 未知设备与错误 secret 必须返回**逐字一致**的消息 —
+    /// 区分会泄漏注册表成员资格。内部区分（Unknown/BadSecret）仅保留在审计日志。
+    /// 4010 单一错误码（signaling.rs 认证点常量）+ 此单一消息。
     pub fn message(&self) -> &'static str {
         match self {
             DeviceAuthError::Incomplete => {
                 "device authentication failed: both device_id and device_secret are required"
             }
-            DeviceAuthError::Unknown => "device authentication failed: device not registered",
-            DeviceAuthError::BadSecret => {
-                "device authentication failed: invalid device secret"
+            DeviceAuthError::Unknown | DeviceAuthError::BadSecret => {
+                "device authentication failed: invalid device credentials"
             }
         }
     }
@@ -58,14 +60,22 @@ struct DeviceEntry {
 }
 
 /// 设备注册表（启动时加载，只读）。
-#[derive(Debug, Clone, Default)]
+/// 注意: 不实现 Default — dummy_hash 必须启动时随机生成（Default 会给空串,
+/// 长度与真实哈希不同 → 未知设备比较路径的时序与已知设备可区分, 重开侧信道）。
+#[derive(Debug, Clone)]
 pub struct DeviceRegistry {
     devices: HashMap<String, String>, // device_id → "sha256:<hex>"
+    /// 未知设备的固定比较目标（启动时随机生成, 与真实哈希同长, 永不匹配）。
+    /// review #1: 未知设备也必须走完整 sha256 + ct_eq 路径, 响应时间不可区分。
+    dummy_hash: String,
 }
 
 impl DeviceRegistry {
     pub fn empty() -> Self {
-        Self::default()
+        Self {
+            devices: HashMap::new(),
+            dummy_hash: new_dummy_hash(),
+        }
     }
 
     /// 从 YAML 文件加载；文件缺失视为空注册表（PSK 路径不受影响）。
@@ -92,7 +102,10 @@ impl DeviceRegistry {
             }
             devices.insert(id, entry.secret_hash);
         }
-        Ok(Self { devices })
+        Ok(Self {
+            devices,
+            dummy_hash: new_dummy_hash(),
+        })
     }
 
     pub fn len(&self) -> usize {
@@ -104,18 +117,17 @@ impl DeviceRegistry {
     }
 
     fn verify(&self, device_id: &str, secret: &str) -> Result<(), DeviceAuthError> {
-        let stored = self
-            .devices
-            .get(device_id)
-            .ok_or(DeviceAuthError::Unknown)?;
+        let known = self.devices.contains_key(device_id);
+        // review #1 防时序: 未知设备也用 dummy_hash 走完整 sha256 + ct_eq（无提前返回）。
+        // 已知/未知的响应时间不可区分; 匹配与否经 same-length ct_eq 判定。
+        let stored = self.devices.get(device_id).unwrap_or(&self.dummy_hash);
         let want = hash_secret(device_id, secret);
-        // 常量时间比较（subtle）: 防时序侧信道恢复哈希字节（secret 不落地比较）。
-        let stored_bytes = stored.as_bytes();
-        let want_bytes = want.as_bytes();
-        if stored_bytes.ct_eq(&want_bytes).into() {
-            Ok(())
-        } else {
-            Err(DeviceAuthError::BadSecret)
+        let matched: bool = stored.as_bytes().ct_eq(want.as_bytes()).into();
+        match (matched, known) {
+            (true, _) => Ok(()),
+            // 内部区分保留（审计用）; 对外 wire 响应两者完全一致（见 message()）。
+            (false, true) => Err(DeviceAuthError::BadSecret),
+            (false, false) => Err(DeviceAuthError::Unknown),
         }
     }
 }
@@ -130,6 +142,12 @@ pub fn hash_secret(device_id: &str, secret: &str) -> String {
     let digest = hasher.finalize();
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
     format!("sha256:{hex}")
+}
+
+/// 启动时生成一次的 dummy 比较目标（review #1）: 随机 device_id 保证与任何
+/// 注册设备不冲突（uuid v4），长度与真实哈希一致（71 字符）保证 ct_eq 路径恒等。
+fn new_dummy_hash() -> String {
+    hash_secret(&format!("ms-dummy-{}", uuid::Uuid::new_v4()), "dummy")
 }
 
 /// 设备认证决策点（RoomJoin 处理调用；纯函数便于单测）。
@@ -242,10 +260,51 @@ mod tests {
     }
 
     #[test]
-    fn error_messages_are_informative_and_share_code_family() {
-        // C15: 消息可读；4010 单一错误码防设备枚举（G2 决策）。
+    fn error_messages_informative_and_unknown_badsecret_identical() {
+        // C15: 消息可读；4010 单一错误码（signaling.rs 常量）+ 单一消息。
         assert!(DeviceAuthError::Incomplete.message().contains("both device_id"));
-        assert!(DeviceAuthError::Unknown.message().contains("not registered"));
-        assert!(DeviceAuthError::BadSecret.message().contains("invalid device secret"));
+        assert!(DeviceAuthError::Incomplete.message().contains("device authentication failed"));
+        // review #1: 未知设备与错误 secret 的 wire 消息必须逐字一致（防枚举）。
+        assert_eq!(
+            DeviceAuthError::Unknown.message(),
+            DeviceAuthError::BadSecret.message()
+        );
+        assert!(
+            DeviceAuthError::Unknown
+                .message()
+                .contains("invalid device credentials")
+        );
+    }
+
+    #[test]
+    fn unknown_vs_bad_secret_wire_response_identical() {
+        // review #1 TDD: 两种失败路径的完整 wire 响应（code=4010 + message）必须一致。
+        // code 由 signaling.rs 认证点统一为 4010；此处锁定 message 层等价。
+        let reg = test_registry();
+        let e_unknown = authenticate(&reg, Some("ms-nope"), Some("x"))
+            .expect("creds present")
+            .unwrap_err();
+        let e_bad = authenticate(&reg, Some("ms-0a1b2c3d4e5f"), Some("wrong"))
+            .expect("creds present")
+            .unwrap_err();
+        assert_eq!(e_unknown, DeviceAuthError::Unknown);
+        assert_eq!(e_bad, DeviceAuthError::BadSecret);
+        // 内部错误类型不同（审计可区分）但 wire 消息相同 — 防枚举。
+        assert_ne!(e_unknown, e_bad);
+        assert_eq!(e_unknown.message(), e_bad.message());
+        // 两路径都必须走"设备认证失败"家族消息（客户端按 4010+前缀识别）。
+        assert!(e_unknown.message().starts_with("device authentication failed"));
+    }
+
+    #[test]
+    fn dummy_hash_is_per_instance_random_and_same_length() {
+        // review #1: dummy 每次启动生成、与真实哈希同长（ct_eq 路径恒等）。
+        let a = DeviceRegistry::empty();
+        let b = DeviceRegistry::empty();
+        assert_ne!(a.dummy_hash, b.dummy_hash, "dummy 必须每实例随机");
+        assert_eq!(a.dummy_hash.len(), "sha256:".len() + 64, "dummy 与真实哈希同长");
+        assert_eq!(a.dummy_hash.len(), hash_secret("ms-x", "s").len());
+        // 未知设备仍走 verify 全路径（返回 Unknown 但内部已完成 sha256+ct_eq）。
+        assert_eq!(a.verify("ms-anyone", "x"), Err(DeviceAuthError::Unknown));
     }
 }
