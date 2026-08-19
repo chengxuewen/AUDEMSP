@@ -227,11 +227,16 @@ impl FrameBus {
                         std::thread::sleep(std::time::Duration::from_millis(1));
                     }
                     Err(e) => {
-                        tracing::warn!(topic = %topic_for_thread.as_str(), "subscribe receive error: {e:?}");
-                        // 连接层错误：重建一次；失败则终止（旧行为，流停投递）
-                        if !try_rebuild(&mut subscriber, &mut last_frame, &mut last_rebuild) {
-                            break;
+                        // 连接层错误：冷却期内不重建（避免热循环）且不刷日志；重建失败则
+                        // 终止（旧行为，流停投递）。重建成功后 receive 可能继续 Err（瞬态/
+                        // 持续）→ 每次错误至少 1ms 让步，防止 100% CPU 自旋。
+                        if last_rebuild.elapsed() > REBUILD_COOLDOWN {
+                            tracing::warn!(topic = %topic_for_thread.as_str(), "subscribe receive error: {e:?}");
+                            if !try_rebuild(&mut subscriber, &mut last_frame, &mut last_rebuild) {
+                                break;
+                            }
                         }
+                        std::thread::sleep(std::time::Duration::from_millis(1));
                     }
                 }
             }

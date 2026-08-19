@@ -131,3 +131,64 @@ async fn crash_recovery_run(frame_bytes: usize, fps: u64) {
     kill9(&mut pub2);
     let _ = pub2.wait();
 }
+
+/// C5 重建兜底路径覆盖: 发布端被杀后空闲 >5s（> REBUILD_IDLE）→ 订阅线程重建
+/// subscriber → 新发布端重发布 → 同一句柄恢复收帧。
+///
+/// 时间线（30s 冷却不触发）: kill t=0 → 重建 t≈5.0（空闲跨 5s 阈值，首次冷却满足）
+/// → 重发布 t≈6.0 → 收帧 t≈6.1。断言: 恢复帧与杀前最后一帧间隔 >5s（只有
+/// idle>5s 分支能桥接该间隔）；重建 warn 经 logging::init 打到 stderr 作证据
+/// （--nocapture 可见 "subscriber 重建完成"）。
+#[tokio::test]
+async fn same_subscriber_recovers_after_long_gap_via_rebuild() {
+    // 重建 warn（tracing::warn!）默认 level=info 会输出 → 测试证据
+    mediaservo_common::logging::init(mediaservo_common::logging::LoggingConfig::default());
+    cleanup_iceoryx();
+    let sk = Ed25519SigningKey::from_pem(PRIV_PEM.as_bytes());
+    let vk = Ed25519VerifyingKey::from_pem(PUB_PEM.as_bytes());
+    let acl = NodeAcl::for_role(NodeId::new("crash-sub"), Role::Recorder);
+    let tok = CapabilityToken::sign(&acl, 3600, &sk).unwrap();
+    let bus = FrameBus::attach("", &tok, &vk).unwrap();
+    let topic = FrameTopic::new(format!("camera/crash/gap/{}/raw", std::process::id()));
+
+    // 订阅端先挂载
+    let stream = bus.subscribe(&topic).unwrap();
+
+    // 发布端 v1 → 收帧基线（记录最后一帧时间）
+    let mut pub1 = spawn_pub_loop(topic.as_str(), 64, 10);
+    let seq_before = wait_frames(&stream, 3, Duration::from_secs(10)).await;
+    let last_frame_before = std::time::Instant::now();
+
+    // SIGKILL 发布端 v1 → 空闲 > REBUILD_IDLE(5s): 订阅线程在 t≈5.0 重建 subscriber
+    kill9(&mut pub1);
+    let _ = pub1.wait();
+    tokio::time::sleep(Duration::from_secs(6)).await;
+
+    // 发布端 v2 重发布 → 同一句柄恢复收帧（间隔 >5s → 由重建路径桥接）
+    let mut pub2 = spawn_pub_loop(topic.as_str(), 64, 10);
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut resumed = false;
+    let mut resumed_gap = None;
+    while std::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_millis(500), stream.recv()).await {
+            Ok(Some(frame)) => {
+                if frame.meta().seq < seq_before {
+                    resumed = true;
+                    resumed_gap = Some(last_frame_before.elapsed());
+                    break;
+                }
+            }
+            Ok(None) => panic!("订阅流关停"),
+            Err(_) => {}
+        }
+    }
+    let gap = resumed_gap.expect("恢复帧间隔");
+    eprintln!("[crash_recovery] 长间隔变体: seq_before={seq_before} 恢复帧间隔={gap:?} (>5s 重建路径)");
+    assert!(
+        resumed && gap > Duration::from_secs(5),
+        "同一句柄恢复帧与杀前最后一帧间隔应 >5s（重建路径）: gap={gap:?} resumed={resumed}"
+    );
+
+    kill9(&mut pub2);
+    let _ = pub2.wait();
+}
