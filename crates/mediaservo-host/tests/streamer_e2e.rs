@@ -72,6 +72,36 @@ fn bad_args_exit_2_with_usage() {
     }
 }
 
+/// I1 审查: fps != 30 必须在启动即拒绝（推流编码器内置 30fps，PIT-64 类
+/// rate-control 失配）。纯配置校验路径 — fps 检查先于令牌/信令，无需 server。
+#[test]
+fn rejects_non_30_fps_with_clear_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cfg_path = dir.path().join("host.toml");
+    std::fs::write(
+        &cfg_path,
+        "[[cameras]]\nid = \"cam0\"\nfps = 25\n[[streams]]\nid = \"s0\"\ncamera = \"cam0\"\n",
+    )
+    .expect("write host.toml");
+    let tok_path = dir.path().join("t.token");
+    std::fs::write(&tok_path, b"garbage").expect("write token");
+    let out = Command::new(env!("CARGO_BIN_EXE_host-streamer"))
+        .args([
+            "--stream",
+            "s0",
+            "--config",
+            cfg_path.to_str().expect("cfg utf8"),
+            "--token",
+            tok_path.to_str().expect("token utf8"),
+        ])
+        .output()
+        .expect("spawn host-streamer");
+    assert_eq!(out.status.code(), Some(1), "fps=25 应 exit 1");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("fps"), "应指明 fps 字段, got: {stderr}");
+    assert!(stderr.contains("25"), "应含实际值 25, got: {stderr}");
+}
+
 /// 读取子进程日志（stdout+stderr 合并到同一文件）。
 fn read_log(file: &tempfile::NamedTempFile) -> String {
     let mut out = String::new();

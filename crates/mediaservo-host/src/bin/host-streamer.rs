@@ -155,6 +155,19 @@ async fn main() -> ExitCode {
         }
     };
 
+    // C17 fps 对齐守卫（I1 审查）: 推流路径的编码帧率由 libwebrtc 内置 30fps
+    // 决定 — cfg.framerate 仅语义传递，无下游消费（field publish_video 不读它），
+    // 非 30 会在编码器 rate control 产生 PIT-64 类失配。任意 fps 的接线点在
+    // webrtc_sys.rs:133 的 max_framerate codec prefs 面（TODO: 接线后移除守卫）。
+    if cam.fps != 30 {
+        eprintln!(
+            "streamer: 相机 {} fps={} 不支持 — 推流编码器内置 30fps \
+             （TODO: webrtc_sys.rs:133 max_framerate 接线后放开）",
+            cam.id, cam.fps
+        );
+        return ExitCode::from(1);
+    }
+
     // 令牌 → FrameBus attach → 订阅 camera/<camera-id>
     let token_bytes = match std::fs::read(&args.token) {
         Ok(b) => b,
@@ -189,7 +202,9 @@ async fn main() -> ExitCode {
 
     // 推流会话（field PushSession 复用；P2P 信令直连 Server）
     let mut cfg = PushConfig::new(signal_url(), psk(), format!("stream-{}", stream.id));
-    cfg.framerate = cam.fps; // C17: 帧率语义与采集配置一致
+    // framerate 仅语义传递（供未来编码器配置消费）— field publish_video 与
+    // libwebrtc 编码器均不读此字段（编码帧率 = 内置 30fps）；对齐由上方 fps 守卫保证（I1）
+    cfg.framerate = cam.fps;
     let (mut session, mut events) = match PushSession::connect(cfg.clone()).await {
         Ok(se) => se,
         Err(e) => {
