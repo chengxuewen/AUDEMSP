@@ -5,9 +5,14 @@
 //! 缺省: 端口 17980；remote/psk 走 `SFU_E2E_WS_URL`/`SFU_E2E_PSK`（缺省
 //! `ws://127.0.0.1:9800/ws` / `mediaservo-dev`，对齐 streamer/e2e 约定）；room 缺省
 //! `vehicle`（D3 起由 host.toml 配置接入）。
+//!
+//! E1-E3 监控（拓扑/数据流/信令 + 状态上报）统一由 [`spawn_status_reporter`]
+//! 单循环驱动（E3 起替换 E1/E2 独立循环；行为与日志不变）。
 
 use mediaservo_host::gateway::{run_gateway, GatewayConfig};
 use mediaservo_host::init_logging;
+use mediaservo_host::monitor::signal::{spawn_status_reporter, STATUS_INTERVAL};
+use mediaservo_link::{CapabilityToken, Ed25519VerifyingKey};
 
 const USAGE: &str = "用法: host-agent [--port <本地端口>] [--remote <ws url>] [--psk <psk>] [--room <房间>] [--config <host.toml>] [--token <令牌文件>]";
 fn parse_args() -> Result<(GatewayConfig, Option<String>, Option<String>), String> {
@@ -69,102 +74,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     // E1 审查: grace 起点 = 进程启动（main 入口，含网关慢连窗口），非 monitor 任务启动后
     let monitor_started = std::time::Instant::now();
-    let port = run_gateway(cfg).await.map_err(|e| std::io::Error::other(e))?;
+    let (port, gateway) = run_gateway(cfg).await.map_err(std::io::Error::other)?;
     tracing::info!(port, "host-agent 网关就绪");
-    spawn_topology_monitor(host_toml.clone(), monitor_started);
-    // E2: 数据流监控（token 缺省 → 跳过；部署侧 oxfile 签发 Monitor 角色令牌后启用）
-    match &token_path {
+    // E2 数据流监控令牌（缺省 → 跳过；部署侧 oxfile 签发 Monitor 角色令牌后启用）
+    let token: Option<(CapabilityToken, Ed25519VerifyingKey)> = match &token_path {
         Some(p) => match std::fs::read(p) {
             Ok(b) => match mediaservo_link::TokenFile::decode(&b) {
-                Ok((vk, tok)) => spawn_flow_monitor(host_toml, tok, vk),
-                Err(e) => tracing::warn!(path = %p, "令牌无效: {e} — 数据流监控跳过"),
+                Ok((vk, tok)) => Some((tok, vk)),
+                Err(e) => {
+                    tracing::warn!(path = %p, "令牌无效: {e} — 数据流监控跳过");
+                    None
+                }
             },
-            Err(e) => tracing::warn!(path = %p, "令牌读取失败: {e} — 数据流监控跳过"),
+            Err(e) => {
+                tracing::warn!(path = %p, "令牌读取失败: {e} — 数据流监控跳过");
+                None
+            }
         },
-        None => tracing::warn!("未提供 --token，数据流监控跳过（拓扑监控不受影响）"),
-    }
+        None => {
+            tracing::warn!("未提供 --token，数据流监控跳过（拓扑监控不受影响）");
+            None
+        }
+    };
+    // E1-E3: 拓扑 + 数据流 + 信令监控 + StatusReport 上报（单循环, 5s）
+    spawn_status_reporter(host_toml, monitor_started, token, gateway, STATUS_INTERVAL);
     wait_shutdown().await;
     Ok(())
-}
-
-/// E1: 拓扑监控周期任务（5s 采集一次；grace 窗口内抑制 mismatch 上报）。
-/// 数据喂给 E2/E3（snapshot 结构 + 日志），上报 Server 在 E3 接入。
-fn spawn_topology_monitor(host_toml: String, started: std::time::Instant) {
-    tokio::spawn(async move {
-        use mediaservo_host::monitor::topology::{DEFAULT_GRACE, TopologyMonitor};
-        let monitor = TopologyMonitor::new_at(host_toml, DEFAULT_GRACE, started);
-        let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
-        tick.tick().await; // 首个间隔立即 tick 一次，这里消费掉
-        loop {
-            tick.tick().await;
-            let snap = monitor.collect();
-            tracing::info!(
-                expected = snap.expected_processes.len(),
-                actual_procs = snap.actual_processes.len(),
-                actual_topics = snap.actual_topics.len(),
-                mismatches = snap.mismatches.len(),
-                grace = snap.grace_active,
-                "拓扑快照"
-            );
-            if snap.grace_active {
-                continue; // 启动窗口: 抑制 mismatch 上报（D-H14）
-            }
-            for m in &snap.mismatches {
-                match m {
-                    mediaservo_host::monitor::topology::Mismatch::ProcessMissing { name } => {
-                        tracing::warn!(process = %name, "拓扑差异: 期望进程缺失/未运行");
-                    }
-                    mediaservo_host::monitor::topology::Mismatch::PublisherMissing { topic } => {
-                        tracing::warn!(topic = %topic, "拓扑差异: 期望相机无活跃发布者");
-                    }
-                }
-            }
-        }
-    });
-}
-
-/// E2: 数据流监控周期任务（5s 采集一次；停滞/连接是数据面事实，无 grace）。
-/// 数据喂给 E3（FlowSnapshot 结构 + 日志），上报 Server 在 E3 接入。
-fn spawn_flow_monitor(
-    host_toml: String,
-    token: mediaservo_link::CapabilityToken,
-    vk: mediaservo_link::Ed25519VerifyingKey,
-) {
-    tokio::spawn(async move {
-        use mediaservo_host::monitor::flow::FlowMonitor;
-        let monitor = match FlowMonitor::attach(host_toml, &token, &vk) {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::error!("数据流监控 attach 失败: {e} — 跳过（拓扑监控不受影响）");
-                return;
-            }
-        };
-        let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
-        tick.tick().await; // 消费首个立即 tick
-        loop {
-            tick.tick().await;
-            let snap = monitor.collect();
-            for tf in &snap.topics {
-                tracing::info!(
-                    topic = %tf.topic,
-                    fps = tf.fps,
-                    bps = tf.bps,
-                    frames = tf.frames,
-                    stalled = tf.stalled,
-                    "数据流 topic 统计"
-                );
-            }
-            for sf in &snap.streams {
-                tracing::info!(
-                    stream = %sf.id,
-                    bytes_sent = sf.bytes_sent,
-                    frames_encoded = sf.frames_encoded,
-                    connected = sf.connected,
-                    "推流状态"
-                );
-            }
-        }
-    });
 }
 
 /// 等待 SIGINT/SIGTERM（unix 主路径；其他平台仅 ctrl_c）。

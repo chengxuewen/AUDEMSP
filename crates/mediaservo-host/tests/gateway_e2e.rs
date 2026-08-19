@@ -236,7 +236,7 @@ async fn multiple_clients_forward_with_room_rewrite() {
         tokio::time::sleep(Duration::from_secs(1)).await; // 保持连接至断言完成
     });
 
-    let port = run_gateway(cfg(addr)).await.unwrap();
+    let (port, _handle) = run_gateway(cfg(addr)).await.unwrap();
     let mut a = local(port).await;
     let mut b = local(port).await;
     join(&mut a, "room-a").await;
@@ -306,7 +306,7 @@ async fn room_join_intercepted_not_forwarded() {
         );
     });
 
-    let port = run_gateway(cfg(addr)).await.unwrap();
+    let (port, _handle) = run_gateway(cfg(addr)).await.unwrap();
     let mut a = local(port).await;
     let peer_id = join(&mut a, "child-room").await;
     assert_eq!(peer_id, VEHICLE_PEER, "合成 RoomJoined 应携带整车 peer_id");
@@ -358,7 +358,7 @@ async fn concurrent_sfu_negotiation_routes_responses() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     });
 
-    let port = run_gateway(cfg(addr)).await.unwrap();
+    let (port, _handle) = run_gateway(cfg(addr)).await.unwrap();
     let mut a = local(port).await;
     let mut b = local(port).await;
     join(&mut a, "room-a").await;
@@ -411,7 +411,7 @@ async fn reconnect_resumes_forwarding() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     });
 
-    let port = run_gateway(cfg(addr)).await.unwrap();
+    let (port, _handle) = run_gateway(cfg(addr)).await.unwrap();
     let mut a = local(port).await;
     join(&mut a, "room-a").await;
 
@@ -500,7 +500,7 @@ async fn p2p_sdp_ice_single_negotiation_routing() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     });
 
-    let port = run_gateway(cfg(addr)).await.unwrap();
+    let (port, _handle) = run_gateway(cfg(addr)).await.unwrap();
     let mut a = local(port).await;
     let mut b = local(port).await;
     join(&mut a, "room-a").await;
@@ -587,7 +587,7 @@ async fn disconnect_window_stale_pending_not_cross_routed() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     });
 
-    let port = run_gateway(cfg(addr)).await.unwrap();
+    let (port, _handle) = run_gateway(cfg(addr)).await.unwrap();
     let mut a = local(port).await;
     let mut b = local(port).await;
     join(&mut a, "room-a").await;
@@ -682,7 +682,7 @@ async fn frame_relay_does_not_steal_p2p_ownership() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     });
 
-    let port = run_gateway(cfg(addr)).await.unwrap();
+    let (port, _handle) = run_gateway(cfg(addr)).await.unwrap();
     let mut a = local(port).await;
     let mut b = local(port).await;
     join(&mut a, "room-a").await;

@@ -33,7 +33,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use mediaservo_common::protocol::{PeerRole, SignalingMessage};
@@ -88,6 +88,10 @@ struct Conn {
     id: u64,
     /// 子进程 RoomJoin 声明（拦截时记录；下行响应房间改写目标）。
     room: String,
+    /// 子进程标识（LocalEnvelope.src，最近一条上行消息的声明；E3 快照数据源）。
+    src: String,
+    /// 最近一条上行消息到达时刻（E3 快照数据源；None = 尚未收到消息）。
+    last_msg: Option<Instant>,
     tx: mpsc::UnboundedSender<LocalEnvelope>,
 }
 
@@ -105,6 +109,8 @@ struct State {
     vehicle_peer_id: String,
     /// 远端会话是否在途。
     joined: bool,
+    /// 本次远端会话建立时刻（E3 快照数据源；reset_remote 清空）。
+    remote_since: Option<Instant>,
     /// 整车房间（不可变）。
     vehicle_room: String,
 }
@@ -244,6 +250,7 @@ impl State {
     /// 远端断线：清空一切与远端会话绑定的状态（server 已回收全部 transport）。
     fn reset_remote(&mut self) {
         self.joined = false;
+        self.remote_since = None;
         self.pending.clear();
         self.p2p_owner = None;
         self.echo_cache.clear();
@@ -300,6 +307,89 @@ fn rewrite_room(msg: &mut SignalingMessage, room: &str) {
         | Consume { room_id, .. }
         | Consumed { room_id, .. } => *room_id = room.to_string(),
         Error { .. } => {}
+        StatusReport { .. } => {}
+    }
+}
+
+/// 信令平面快照（E3 监控数据源；连接状态唯一持有者 = 网关）。
+#[derive(Debug, Clone, Default)]
+pub struct GatewayStatus {
+    /// 本地子进程 WS 连接（按 src 排序，确定性）。
+    pub children: Vec<ChildStatus>,
+    /// 远端 server WS 连接状态。
+    pub remote: RemoteStatus,
+}
+
+/// 单个本地子进程连接状态。
+#[derive(Debug, Clone)]
+pub struct ChildStatus {
+    /// 子进程标识（LocalEnvelope.src；未发过消息 = 空串）。
+    pub src: String,
+    /// 连接中（快照仅含在途连接，恒 true）。
+    pub connected: bool,
+    /// 距最近一条上行消息的秒数（0 = 刚收到；u64::MAX = 未发过消息）。
+    pub last_msg_secs: u64,
+}
+
+/// 远端 server WS 连接状态。
+#[derive(Debug, Clone, Default)]
+pub struct RemoteStatus {
+    /// 已连接并入房。
+    pub connected: bool,
+    /// 本次远端会话建立至今秒数（未连接 = None）。
+    pub since_secs: Option<u64>,
+    /// 整车 peer_id（未连接 = 空串）。
+    pub peer_id: String,
+}
+
+/// 网关运行期句柄（E3）— 监控快照 + 远端上报通道。
+#[derive(Clone)]
+pub struct GatewayHandle {
+    state: Arc<Mutex<State>>,
+    remote_tx: mpsc::UnboundedSender<SignalingMessage>,
+}
+
+impl GatewayHandle {
+    /// 信令平面快照（E3 监控数据源）。
+    pub fn snapshot(&self) -> GatewayStatus {
+        let st = lock_state(&self.state);
+        let now = Instant::now();
+        let mut children: Vec<ChildStatus> = st
+            .conns
+            .values()
+            .map(|c| ChildStatus {
+                src: c.src.clone(),
+                connected: true,
+                last_msg_secs: c.last_msg.map_or(u64::MAX, |t| now.saturating_duration_since(t).as_secs()),
+            })
+            .collect();
+        children.sort_by(|a, b| a.src.cmp(&b.src));
+        GatewayStatus {
+            children,
+            remote: RemoteStatus {
+                connected: st.joined,
+                since_secs: st.remote_since.map(|t| now.saturating_duration_since(t).as_secs()),
+                peer_id: st.vehicle_peer_id.clone(),
+            },
+        }
+    }
+
+    /// 经网关远端 WS 发送（joined 检查 + 失败返回 Err —— 调用方必须打日志, C15）。
+    /// 未 joined 时拒绝入通道：断线窗口的消息会被 remote_loop 的 drain 静默丢弃，
+    /// 故在源头拦截。
+    pub fn send_remote(&self, msg: SignalingMessage) -> Result<(), String> {
+        let st = lock_state(&self.state);
+        if !st.joined {
+            return Err("gateway not connected to server".into());
+        }
+        self.remote_tx
+            .send(msg)
+            .map_err(|_| "remote session closed".into())
+    }
+
+    /// 整车房间（上报 room_id 数据源）。
+    pub fn vehicle_room(&self) -> String {
+        lock_state(&self.state).vehicle_room.clone()
     }
 }
 
@@ -329,7 +419,9 @@ fn gateway_disconnected_error() -> SignalingMessage {
 ///
 /// 返回实际绑定端口（`local_port = 0` 时为临时端口）。调用方持有运行期
 /// （bin 等待信号；测试直接随 runtime 结束）。
-pub async fn run_gateway(config: GatewayConfig) -> Result<u16, String> {
+/// 返回 (实际绑定端口, 运行期句柄)。调用方持有运行期
+/// （bin 等待信号；测试直接随 runtime 结束）。
+pub async fn run_gateway(config: GatewayConfig) -> Result<(u16, GatewayHandle), String> {
     let listener = TcpListener::bind(("127.0.0.1", config.local_port))
         .await
         .map_err(|e| format!("bind local gateway :{}: {e}", config.local_port))?;
@@ -346,9 +438,11 @@ pub async fn run_gateway(config: GatewayConfig) -> Result<u16, String> {
         echo_cache: VecDeque::new(),
         vehicle_peer_id: String::new(),
         joined: false,
+        remote_since: None,
         vehicle_room: config.room.clone(),
     }));
     let (remote_tx, remote_rx) = mpsc::unbounded_channel::<SignalingMessage>();
+    let handle = GatewayHandle { state: Arc::clone(&state), remote_tx: remote_tx.clone() };
 
     // 本地 accept 循环
     let accept_state = Arc::clone(&state);
@@ -375,7 +469,13 @@ pub async fn run_gateway(config: GatewayConfig) -> Result<u16, String> {
                 let (tx, rx) = mpsc::unbounded_channel();
                 let id = st.next_id;
                 st.next_id += 1;
-                st.conns.insert(id, Conn { id, room: String::new(), tx });
+                st.conns.insert(id, Conn {
+                    id,
+                    room: String::new(),
+                    src: String::new(),
+                    last_msg: None,
+                    tx,
+                });
                 (id, rx)
             };
             tracing::info!(conn_id, peer = %peer, "本地子进程接入");
@@ -388,7 +488,7 @@ pub async fn run_gateway(config: GatewayConfig) -> Result<u16, String> {
     // 远端连接 + 重连循环
     tokio::spawn(remote_loop(config, state, remote_rx));
 
-    Ok(port)
+    Ok((port, handle))
 }
 
 /// 单本地连接任务：读信封 → 路由 → 转发/应答；写下发信封。
@@ -419,6 +519,11 @@ async fn conn_task(
                         let mut reply: Option<SignalingMessage> = None;
                         {
                             let mut st = lock_state(&state);
+                            // E3: 快照数据源 — src 声明 + 最近消息时刻（同一临界区）
+                            if let Some(c) = st.conns.get_mut(&conn_id) {
+                                c.src = env.src.clone();
+                                c.last_msg = Some(Instant::now());
+                            }
                             match st.upstream(conn_id, env.msg) {
                                 UpstreamAction::Forward(msg) => {
                                     if remote_tx.send(msg).is_err() {
@@ -486,6 +591,7 @@ async fn remote_loop(
         {
             let mut st = lock_state(&state);
             st.joined = true;
+            st.remote_since = Some(Instant::now());
             st.vehicle_peer_id = session.peer_id().to_string();
         }
         run_session(session, &state, &mut remote_rx).await;
@@ -541,3 +647,88 @@ async fn run_session(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_state() -> Arc<Mutex<State>> {
+        Arc::new(Mutex::new(State {
+            conns: HashMap::new(),
+            next_id: 1,
+            pending: VecDeque::new(),
+            p2p_owner: None,
+            echo_cache: VecDeque::new(),
+            vehicle_peer_id: String::new(),
+            joined: false,
+            remote_since: None,
+            vehicle_room: "vehicle-1".into(),
+        }))
+    }
+
+    fn handle_for(state: Arc<Mutex<State>>) -> (GatewayHandle, mpsc::UnboundedReceiver<SignalingMessage>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (GatewayHandle { state, remote_tx: tx }, rx)
+    }
+
+    #[test]
+    fn snapshot_reports_children_and_remote() {
+        let state = test_state();
+        {
+            let mut st = lock_state(&state);
+            st.joined = true;
+            st.vehicle_peer_id = "veh-peer".into();
+            st.remote_since = Some(Instant::now());
+            st.conns.insert(1, Conn {
+                id: 1,
+                room: "room-a".into(),
+                src: "host-streamer".into(),
+                last_msg: Some(Instant::now()),
+                tx: mpsc::unbounded_channel().0,
+            });
+            st.conns.insert(2, Conn {
+                id: 2,
+                room: "room-b".into(),
+                src: "host-capturer".into(),
+                last_msg: None,
+                tx: mpsc::unbounded_channel().0,
+            });
+        }
+        let (handle, _rx) = handle_for(state);
+        let snap = handle.snapshot();
+        // children 按 src 排序（确定性）
+        assert_eq!(snap.children.len(), 2);
+        assert_eq!(snap.children[0].src, "host-capturer");
+        assert!(snap.children[0].connected);
+        assert_eq!(snap.children[0].last_msg_secs, u64::MAX, "未发消息 = u64::MAX");
+        assert_eq!(snap.children[1].src, "host-streamer");
+        assert_eq!(snap.children[1].last_msg_secs, 0, "刚收到消息 = 0");
+        assert!(snap.remote.connected);
+        assert_eq!(snap.remote.since_secs, Some(0));
+        assert_eq!(snap.remote.peer_id, "veh-peer");
+        assert_eq!(handle.vehicle_room(), "vehicle-1");
+    }
+
+    #[test]
+    fn send_remote_rejects_when_not_joined() {
+        let state = test_state();
+        let (handle, mut rx) = handle_for(state);
+        let err = handle
+            .send_remote(SignalingMessage::Sdp { room_id: "r".into(), target: None, sdp: "v=0".into() })
+            .unwrap_err();
+        assert!(err.contains("not connected"), "未 joined 必须拒绝: {err}");
+        assert!(rx.try_recv().is_err(), "拒绝的消息不得进入远端通道");
+    }
+
+    #[test]
+    fn send_remote_forwards_when_joined() {
+        let state = test_state();
+        lock_state(&state).joined = true;
+        let (handle, mut rx) = handle_for(state);
+        let msg = SignalingMessage::Sdp { room_id: "r".into(), target: None, sdp: "v=0".into() };
+        handle.send_remote(msg.clone()).expect("joined 时应发送成功");
+        assert!(matches!(rx.try_recv(), Ok(m) if matches!(m, SignalingMessage::Sdp { .. })));
+    }
+}
+
+

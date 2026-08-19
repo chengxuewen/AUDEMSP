@@ -142,6 +142,27 @@ pub enum SignalingMessage {
         avg_encode_ms: Option<f64>,
     },
 
+
+    /// v4 (E3 host-multiprocess): host-agent 整车状态上报 — 拓扑 + 数据流 + 信令
+    /// 三快照聚合，经网关远端 WS 周期上报（默认 5s）。Server 直接消费存储
+    /// （非 relay 消息，不广播房间；旧 Server 解析失败静默丢弃 = 可容忍，
+    /// 周期性上报下一周期自愈）。
+    StatusReport {
+        room_id: String,
+        /// 数据面: 各 camera topic 数据流统计（E2 快照）。
+        topics: Vec<TopicFlowJson>,
+        /// 数据面: 各 streamer 推流状态（E2 快照）。
+        streams: Vec<StreamFlowJson>,
+        /// 拓扑面: 期望 + 实际进程并集（E1 快照）。
+        processes: Vec<ProcessStateJson>,
+        /// 信令面: 网关视角连接状态（E3 快照）。
+        signal: SignalStatusJson,
+        /// 上报时刻（unix 秒）。
+        ts: u64,
+        /// host.toml 配置版本（E4 ConfigPush 关联；当前恒 0）。
+        config_version: u64,
+    },
+
     /// Peer asks to consume a producer on its recv transport.
     /// rtp_capabilities is opaque JSON — server passes it through to mediasoup.
     Consume {
@@ -161,6 +182,73 @@ pub enum SignalingMessage {
         rtp_parameters: serde_json::Value,
     },
     // ponytail: add frame ack/retransmit when reliability matters
+}
+
+
+/// E3 状态上报: 单 topic 数据流统计（wire 版，镜像 host monitor::flow::TopicFlow）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TopicFlowJson {
+    pub topic: String,
+    /// 窗口内帧率（<2 帧或窗口为零 → 0）。
+    pub fps: f64,
+    /// 窗口内字节率。
+    pub bps: u64,
+    /// 最近一帧发布端单调时间戳（ns；从未收到 → 0）。
+    pub last_ts_mono_ns: u64,
+    /// 窗口内收到帧数。
+    pub frames: u64,
+    /// 停滞（距最近到达超阈值；从未收到帧也视为停滞）。
+    pub stalled: bool,
+}
+
+/// E3 状态上报: 单流推流状态（wire 版，镜像 host monitor::flow::StreamFlow）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StreamFlowJson {
+    pub id: String,
+    /// 最近一次 stats 的 bytes_sent（webrtc OutboundRtp，累计）。
+    pub bytes_sent: u64,
+    /// 最近一次 stats 的 frames_encoded（libwebrtc u32，累计）。
+    pub frames_encoded: u32,
+    pub frame_width: u32,
+    pub frame_height: u32,
+    /// 最近 stats 是否在新鲜窗口内。
+    pub connected: bool,
+}
+
+/// E3 状态上报: 单进程拓扑状态（期望 + 实际并集；running = oxmgr running）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProcessStateJson {
+    pub name: String,
+    pub running: bool,
+    /// host.toml 期望进程（实际发现的非期望进程 = false）。
+    pub expected: bool,
+}
+
+/// E3 状态上报: 信令平面（网关视角）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SignalStatusJson {
+    /// 远端 server WS 是否已连接并入房。
+    pub remote_connected: bool,
+    /// 本次远端会话建立至今秒数（未连接 = None）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_since_secs: Option<u64>,
+    /// 整车 peer_id（未连接 = 空串）。
+    pub remote_peer_id: String,
+    /// 本地子进程 WS 连接列表。
+    pub children: Vec<ChildSignalJson>,
+    /// host-agent 启动至今秒数。
+    pub agent_uptime_secs: u64,
+}
+
+/// E3 状态上报: 单子进程 WS 连接。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ChildSignalJson {
+    /// 子进程标识（LocalEnvelope.src）。
+    pub src: String,
+    /// 连接中（快照仅含在途连接，恒 true；字段保留供 H 阶段渲染）。
+    pub connected: bool,
+    /// 距最近一条上行消息的秒数（0 = 刚收到；u64::MAX = 未发过消息）。
+    pub last_msg_secs: u64,
 }
 
 /// Direction of a WebRTC transport (send-only or recv-only).
@@ -557,4 +645,71 @@ mod tests {
         let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
         assert!(matches!(parsed, SignalingMessage::Consumed { .. }));
     }
+
+    #[test]
+    fn roundtrip_status_report() {
+        let msg = SignalingMessage::StatusReport {
+            room_id: "vehicle-1".into(),
+            topics: vec![TopicFlowJson {
+                topic: "camera/cam0".into(),
+                fps: 29.7,
+                bps: 800_000,
+                last_ts_mono_ns: 1_234_567_890,
+                frames: 148,
+                stalled: false,
+            }],
+            streams: vec![StreamFlowJson {
+                id: "cam0".into(),
+                bytes_sent: 42_000_000,
+                frames_encoded: 21_000,
+                frame_width: 1280,
+                frame_height: 720,
+                connected: true,
+            }],
+            processes: vec![
+                ProcessStateJson { name: "host-agent".into(), running: true, expected: true },
+                ProcessStateJson { name: "host-capturer-cam0".into(), running: false, expected: true },
+            ],
+            signal: SignalStatusJson {
+                remote_connected: true,
+                remote_since_secs: Some(120),
+                remote_peer_id: "veh-peer".into(),
+                children: vec![ChildSignalJson {
+                    src: "host-streamer".into(),
+                    connected: true,
+                    last_msg_secs: 1,
+                }],
+                agent_uptime_secs: 3600,
+            },
+            ts: 1_700_000_000,
+            config_version: 0,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""type":"status_report""#));
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            SignalingMessage::StatusReport {
+                room_id,
+                topics,
+                streams,
+                processes,
+                signal,
+                ts,
+                config_version,
+            } => {
+                assert_eq!(room_id, "vehicle-1");
+                assert_eq!(topics[0].topic, "camera/cam0");
+                assert_eq!(topics[0].frames, 148);
+                assert_eq!(streams[0].frames_encoded, 21_000);
+                assert_eq!(processes[1].running, false);
+                assert_eq!(processes[1].expected, true);
+                assert_eq!(signal.remote_peer_id, "veh-peer");
+                assert_eq!(signal.children[0].src, "host-streamer");
+                assert_eq!(ts, 1_700_000_000);
+                assert_eq!(config_version, 0);
+            }
+            _ => panic!("expected StatusReport"),
+        }
+    }
+
 }
