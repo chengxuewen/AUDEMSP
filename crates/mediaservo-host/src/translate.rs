@@ -168,6 +168,11 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
 pub fn expected_process_names(cfg: &str) -> Result<Vec<String>, String> {
     let (cameras, streams) = camera_and_stream_ids(cfg)?;
     let mut out: Vec<String> = FIXED_APPS.iter().map(|s| s.to_string()).collect();
+    // [record] enabled=false（缺省）→ host-recorder 按设计 exit 0（host-recorder.rs）
+    // 且 oxmgr on_failure 不重启 → 不列入期望，否则默认配置永久 ProcessMissing 误报。
+    if !record_config(cfg)?.enabled {
+        out.retain(|n| n != "host-recorder");
+    }
     for cam in &cameras {
         out.push(instance_name("host-capturer", cam, cameras.len() > 1));
     }

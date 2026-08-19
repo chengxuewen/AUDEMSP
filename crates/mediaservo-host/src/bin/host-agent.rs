@@ -66,18 +66,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             String::new()
         }
     };
+    // E1 审查: grace 起点 = 进程启动（main 入口，含网关慢连窗口），非 monitor 任务启动后
+    let monitor_started = std::time::Instant::now();
     let port = run_gateway(cfg).await.map_err(|e| std::io::Error::other(e))?;
     tracing::info!(port, "host-agent 网关就绪");
-    spawn_topology_monitor(host_toml);
+    spawn_topology_monitor(host_toml, monitor_started);
     wait_shutdown().await;
     Ok(())
 }
 
 /// E1: 拓扑监控周期任务（5s 采集一次；grace 窗口内抑制 mismatch 上报）。
 /// 数据喂给 E2/E3（snapshot 结构 + 日志），上报 Server 在 E3 接入。
-fn spawn_topology_monitor(host_toml: String) {
+fn spawn_topology_monitor(host_toml: String, started: std::time::Instant) {
     tokio::spawn(async move {
-        let monitor = mediaservo_host::monitor::topology::TopologyMonitor::new(host_toml);
+        use mediaservo_host::monitor::topology::{DEFAULT_GRACE, TopologyMonitor};
+        let monitor = TopologyMonitor::new_at(host_toml, DEFAULT_GRACE, started);
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
         tick.tick().await; // 首个间隔立即 tick 一次，这里消费掉
         loop {

@@ -15,15 +15,30 @@ fn sample_cfg() -> &'static str {
 #[test]
 fn expected_process_names_covers_fixed_and_instances() {
     let names = mediaservo_host::translate::expected_process_names(sample_cfg()).unwrap();
-    // 5 固定进程 + 3 capturer 实例（多实例 → 带 id 后缀）+ 1 streamer（单实例 → 无后缀）
+    // 5 固定进程 − recorder（[record] 缺省 disabled → 按设计 exit 0 不重启, E1 审查）
+    // + 3 capturer 实例（多实例 → 带 id 后缀）+ 1 streamer（单实例 → 无后缀）
     for want in [
-        "host-agent", "host-recorder", "host-controller", "host-emergency", "host-audio",
+        "host-agent", "host-controller", "host-emergency", "host-audio",
         "host-capturer-cam0", "host-capturer-cam1", "host-capturer-cam2",
         "host-streamer",
     ] {
         assert!(names.contains(&want.to_string()), "缺少期望进程 {want}: {names:?}");
     }
-    assert_eq!(names.len(), 9);
+    assert!(!names.contains(&"host-recorder".to_string()), "record 未启用不应期望 recorder: {names:?}");
+    assert_eq!(names.len(), 8);
+}
+
+#[test]
+fn expected_processes_include_recorder_only_when_record_enabled() {
+    // E1 审查: [record] enabled=false（缺省）→ host-recorder 按设计 exit 0 且 oxmgr
+    // on_failure 不重启 → 不列入期望，否则默认配置永久 ProcessMissing 误报。
+    let disabled = "[[cameras]]\nid = \"cam0\"\n[record]\nenabled = false\n";
+    let names = mediaservo_host::translate::expected_process_names(disabled).unwrap();
+    assert!(!names.contains(&"host-recorder".to_string()), "enabled=false 不应期望 recorder: {names:?}");
+
+    let enabled = "[[cameras]]\nid = \"cam0\"\n[record]\nenabled = true\nout_dir = \"/tmp/x\"\n";
+    let names = mediaservo_host::translate::expected_process_names(enabled).unwrap();
+    assert!(names.contains(&"host-recorder".to_string()), "enabled=true 应期望 recorder: {names:?}");
 }
 
 #[test]

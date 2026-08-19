@@ -124,18 +124,26 @@ pub struct TopologySnapshot {
     pub grace_active: bool,
 }
 
+/// 默认启动窗口（D-H14: 进程启动后 N 秒内抑制缺失上报）。
+pub const DEFAULT_GRACE: Duration = Duration::from_secs(15);
+
 impl TopologyMonitor {
-    /// grace=0 起即退出启动窗口；默认 15s。
+    /// 默认 grace 15s，起点 = 当前时刻。
     pub fn new(host_toml: String) -> Self {
-        Self::new_with_grace(host_toml, Duration::from_secs(15))
+        Self::new_at(host_toml, DEFAULT_GRACE, Instant::now())
     }
 
-    /// 显式 grace（测试注入短窗口）。
+    /// 显式 grace（测试注入短窗口），起点 = 当前时刻。
     pub fn new_with_grace(host_toml: String, grace: Duration) -> Self {
+        Self::new_at(host_toml, grace, Instant::now())
+    }
+
+    /// 显式 grace + 起点（E1 审查: host-agent 起点 = main 入口，覆盖网关慢连窗口）。
+    pub fn new_at(host_toml: String, grace: Duration, started: Instant) -> Self {
         Self {
             host_toml,
             grace,
-            started: Instant::now(),
+            started,
             oxmgr: OxmgrClient::new(),
         }
     }
