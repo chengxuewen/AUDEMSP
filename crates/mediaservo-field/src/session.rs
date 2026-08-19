@@ -272,6 +272,13 @@ impl PushSession {
         self.pc.as_ref()
     }
 
+    /// 获取已发布视频轨的 TrackSender（供外部帧源直接注入帧，如 FrameBus 订阅；
+    /// publish_video 前为 None）。C2 host-streamer 消费：写帧走
+    /// `write_raw_i420_with_ts`（时间戳来自帧元数据，C17）。
+    pub fn video_sender(&self) -> Option<TrackSender> {
+        self.video_sender.clone()
+    }
+
     /// 启动视频帧生成（Squares 彩条 + 时间戳水印）→ WebRtcTrackSink → TrackSender。
     /// 对齐 host B5 链路（C17: 锚定单调时间戳 + 绝对时间轴帧循环由 generator 内建）。
     /// 需先 `publish_video`；重复调用返回 InvalidState。

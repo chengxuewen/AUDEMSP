@@ -4307,6 +4307,7 @@ dependencies = [
  "hmac",
  "libc",
  "mediaservo-common",
+ "mediaservo-field",
  "mediaservo-link",
  "mediaservo-media",
  "mediaservo-webrtc",

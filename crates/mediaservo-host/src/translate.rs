@@ -33,6 +33,12 @@ struct Camera {
 #[derive(Debug, Deserialize)]
 struct Stream {
     id: String,
+    /// 引用的相机 id（缺省 = 流 id 自身，topic camera/<id> 直连）。
+    #[serde(default)]
+    camera: Option<String>,
+    /// 编码格式（缺省 vp8；对齐 field PublishOptions 默认）。
+    #[serde(default)]
+    codec: Option<String>,
 }
 
 /// 固定 5 类进程（无参数实例）。
@@ -86,7 +92,16 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
     }
     for stream in &streams {
         let name = instance_name("host-streamer", stream, streams.len() > 1);
-        push_app(&mut out, &name, &format!("{} --stream {}", exe_cmd("host-streamer"), stream));
+        let mut cmd = format!("{} --stream {}", exe_cmd("host-streamer"), stream);
+        if !config_path.as_os_str().is_empty() {
+            cmd.push_str(&format!(
+                " --config {} --token {}/{}.token",
+                config_path.display(),
+                token_dir.display(),
+                stream
+            ));
+        }
+        push_app(&mut out, &name, &cmd);
     }
     Ok(out)
 }
@@ -130,6 +145,38 @@ pub fn camera_configs(cfg: &str) -> Result<Vec<CameraConfig>, String> {
 /// 按 id 查单个相机配置（不存在 → Ok(None)）。
 pub fn camera_config(cfg: &str, id: &str) -> Result<Option<CameraConfig>, String> {
     Ok(camera_configs(cfg)?.into_iter().find(|c| c.id == id))
+}
+
+/// 流配置（streamer 消费；camera/codec 缺省 id/vp8）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamConfig {
+    pub id: String,
+    /// 引用的相机 id（决定 FrameBus topic camera/<id>）。
+    pub camera: String,
+    /// 编码格式（对齐 field PublishOptions: vp8/h264/vp9/av1）。
+    pub codec: String,
+}
+
+/// 解析全部流配置（C2 streamer 用）。
+pub fn stream_configs(cfg: &str) -> Result<Vec<StreamConfig>, String> {
+    let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
+    Ok(cfg
+        .streams
+        .into_iter()
+        .map(|s| {
+            let id = s.id.clone();
+            StreamConfig {
+                id,
+                camera: s.camera.unwrap_or_else(|| s.id),
+                codec: s.codec.unwrap_or_else(|| "vp8".into()),
+            }
+        })
+        .collect())
+}
+
+/// 按 id 查单个流配置（不存在 → Ok(None)）。
+pub fn stream_config(cfg: &str, id: &str) -> Result<Option<StreamConfig>, String> {
+    Ok(stream_configs(cfg)?.into_iter().find(|s| s.id == id))
 }
 
 /// 单实例用类型名，多实例追加实例 id 保证名字唯一。

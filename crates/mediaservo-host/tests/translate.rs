@@ -49,8 +49,9 @@ fn to_oxfile_in_dir_appends_config_and_token_paths() {
     let abs = std::path::absolute(dir.path()).unwrap();
     assert!(ox.contains(&format!("--config {}/etc/host.toml", abs.display())));
     assert!(ox.contains(&format!("--token {}/etc/link/cam0.token", abs.display())));
-    // streamer 行不受影响（C2 再扩展）
-    assert!(ox.contains("host-streamer --stream s0"));
+    // streamer 行追加 --config/--token（C2: 与 capturer 同形，令牌文件按相机名）
+    assert!(ox.contains("host-streamer --stream s0 --config"));
+    assert!(ox.contains(&format!("--token {}/etc/link/s0.token", abs.display())));
     // 无路径变体保持 A2 形态
     let ox = mediaservo_host::translate::to_oxfile(cfg).unwrap();
     assert!(ox.contains("host-capturer --camera cam0"));
@@ -65,6 +66,26 @@ fn camera_config_rejects_zero_fps() {
     let err = mediaservo_host::translate::camera_configs(cfg).unwrap_err();
     assert!(err.contains("fps"), "错误信息应指明 fps, got: {err}");
     assert!(err.contains("cam0"), "错误信息应含相机 id, got: {err}");
-    // 单查同样拒绝
     assert!(mediaservo_host::translate::camera_config(cfg, "cam0").is_err());
+}
+
+#[test]
+fn stream_config_defaults_and_explicit() {
+    // 缺省 camera/codec → id/vp8
+    let cfg = "[[streams]]\nid = \"s0\"\n";
+    let streams = mediaservo_host::translate::stream_configs(cfg).unwrap();
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].id, "s0");
+    assert_eq!(streams[0].camera, "s0");
+    assert_eq!(streams[0].codec, "vp8");
+    // 显式值
+    let cfg = "[[streams]]\nid = \"s1\"\ncamera = \"cam0\"\ncodec = \"h264\"\n";
+    let streams = mediaservo_host::translate::stream_configs(cfg).unwrap();
+    assert_eq!(streams[0].camera, "cam0");
+    assert_eq!(streams[0].codec, "h264");
+    // 单个查找
+    assert!(mediaservo_host::translate::stream_config(cfg, "s1").unwrap().is_some());
+    assert!(mediaservo_host::translate::stream_config(cfg, "nope").unwrap().is_none());
+    // 坏配置 → Err
+    assert!(mediaservo_host::translate::stream_configs("not toml [[[").is_err());
 }
