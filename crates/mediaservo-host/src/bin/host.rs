@@ -11,6 +11,8 @@
 //! - `host status --dir <dir>`— `oxmgr list --json` 过滤 `namespace == "host"` 输出状态表
 //! - `host doctor --dir <dir>`— 环境诊断（oxmgr 可用 / host.toml 解析 / oxfile 生成），
 //!   退出码 = 失败检查数
+//! - `host token issue ...`  — 用 etc/link/signing.pem 签发能力令牌（C4 最小签发，
+//!   G1 全量签发前的 e2e 需用）
 //! - `host version`           — 打印版本号
 //!
 //! OxMgr 动词核对（C11/C18，来源 .refinfo/OxMgr/docs/CLI.md + SKILL.md）：
@@ -20,6 +22,12 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use mediaservo_link::{
+    CapabilityToken, Ed25519SigningKey, Ed25519VerifyingKey, NodeAcl, NodeId, Role, TokenFile,
+};
+use ed25519_dalek::pkcs8::{DecodePrivateKey, EncodePublicKey};
+use pkcs8::LineEnding;
 
 /// `host init` 生成的配置模板（host.toml 初版 schema，A1）。
 const HOST_TOML_TEMPLATE: &str = r#"# MediaServo host 配置（host init 生成）
@@ -43,7 +51,7 @@ enabled = false
 enabled = false
 "#;
 
-const USAGE: &str = "用法: host <init|start|stop|status|doctor|version> [--dir <dir>]";
+const USAGE: &str = "用法: host <init|start|stop|status|doctor|token|version> [--dir <dir>]";
 
 fn main() {
     let mut args = std::env::args();
@@ -58,6 +66,7 @@ fn main() {
         "stop" => cmd_stop(&mut args),
         "status" => cmd_status(&mut args),
         "doctor" => cmd_doctor(&mut args),
+        "token" => cmd_token(&mut args),
         "version" => {
             println!("mediaservo-host {}", env!("CARGO_PKG_VERSION"));
             0
@@ -277,6 +286,173 @@ fn cmd_status(args: &mut impl Iterator<Item = String>) -> i32 {
     }
     0
 }
+
+/// `host token issue`: 用 `etc/link/signing.pem`（host init 生成，PKCS#8 Ed25519）签发
+/// 能力令牌（C4 最小签发；G1 全量签发前 e2e 需用）。
+///
+/// 令牌写为 TokenFile 单文件（内嵌公钥 + JWT，MSTK 格式）——与 translate.rs
+/// oxfile `--token` 引用的 `<cam>.token`/`<stream>.token`/`recorder.token` 同构。
+/// 缺省 TTL 10 年（D-H10 固定令牌策略）。
+const TOKEN_USAGE: &str = "用法: host token issue --role <capture|processor|pusher|puller|recorder|control|perception> --node <id> [--topic <T>]... --out <path> [--dir <dir>]";
+/// D-H10 固定令牌策略: 令牌长期有效，不随部署轮换。
+const DEFAULT_TOKEN_TTL_SECS: u64 = 10 * 365 * 24 * 3600;
+
+fn cmd_token(args: &mut impl Iterator<Item = String>) -> i32 {
+    let Some(sub) = args.next() else {
+        eprintln!("{TOKEN_USAGE}");
+        return 2;
+    };
+    if sub != "issue" {
+        eprintln!("未知 token 子命令: {sub}");
+        eprintln!("{TOKEN_USAGE}");
+        return 2;
+    }
+    cmd_token_issue(args)
+}
+
+fn cmd_token_issue(args: &mut impl Iterator<Item = String>) -> i32 {
+    let mut role: Option<Role> = None;
+    let mut node: Option<String> = None;
+    let mut topics: Vec<String> = Vec::new();
+    let mut out: Option<PathBuf> = None;
+    let mut dir = PathBuf::from(".");
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--role" => {
+                let Some(v) = args.next() else {
+                    eprintln!("--role 缺值");
+                    return 2;
+                };
+                match parse_role(&v) {
+                    Ok(r) => role = Some(r),
+                    Err(e) => {
+                        eprintln!("{e}");
+                        return 2;
+                    }
+                }
+            }
+            "--node" => {
+                let Some(v) = args.next() else {
+                    eprintln!("--node 缺值");
+                    return 2;
+                };
+                node = Some(v);
+            }
+            "--topic" => {
+                let Some(v) = args.next() else {
+                    eprintln!("--topic 缺值");
+                    return 2;
+                };
+                topics.push(v);
+            }
+            "--out" => {
+                let Some(v) = args.next() else {
+                    eprintln!("--out 缺值");
+                    return 2;
+                };
+                out = Some(PathBuf::from(v));
+            }
+            "--dir" => {
+                let Some(v) = args.next() else {
+                    eprintln!("--dir 缺值");
+                    return 2;
+                };
+                dir = PathBuf::from(v);
+            }
+            _ => {
+                eprintln!("未知参数: {arg}");
+                eprintln!("{TOKEN_USAGE}");
+                return 2;
+            }
+        }
+    }
+    let (Some(role), Some(node), Some(out)) = (role, node, out) else {
+        eprintln!("缺少必填参数: --role/--node/--out");
+        eprintln!("{TOKEN_USAGE}");
+        return 2;
+    };
+
+    let pem_path = dir.join("etc").join("link").join("signing.pem");
+    let pem = match std::fs::read(&pem_path) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("token: 读取 {} 失败: {e} — 先运行 host init <dir>", pem_path.display());
+            return 1;
+        }
+    };
+    let signing = match ed25519_dalek::SigningKey::from_pkcs8_pem(&String::from_utf8_lossy(&pem)) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("token: {} 不是有效 PKCS#8 Ed25519 私钥: {e}", pem_path.display());
+            return 1;
+        }
+    };
+    let acl = match build_acl(NodeId::new(node), role, topics) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("token: {e}");
+            return 2;
+        }
+    };
+    let sk = Ed25519SigningKey::from_pem(&pem);
+    let token = match CapabilityToken::sign(&acl, DEFAULT_TOKEN_TTL_SECS, &sk) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("token: 签名失败: {e}");
+            return 1;
+        }
+    };
+    // TokenFile 内嵌 verifying key PEM（派生自私钥，同一密钥对）
+    let vk_pem = match signing.verifying_key().to_public_key_pem(LineEnding::LF) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("token: 导出公钥失败: {e}");
+            return 1;
+        }
+    };
+    let vk = Ed25519VerifyingKey::from_pem(vk_pem.as_bytes());
+    let bytes = TokenFile::encode(&token, &vk);
+    if let Err(e) = std::fs::write(&out, bytes) {
+        eprintln!("token: 写入 {} 失败: {e}", out.display());
+        return 1;
+    }
+    println!("已签发 {:?} 令牌 → {}（node={} ttl={}s）", role, out.display(), acl.node_id.as_str(), DEFAULT_TOKEN_TTL_SECS);
+    0
+}
+
+/// 角色名 → Role（小写变体名; 未知 → 明确报错）。
+fn parse_role(s: &str) -> Result<Role, String> {
+    match s.to_ascii_lowercase().as_str() {
+        "capture" => Ok(Role::Capture),
+        "processor" => Ok(Role::Processor),
+        "pusher" => Ok(Role::Pusher),
+        "puller" => Ok(Role::Puller),
+        "recorder" => Ok(Role::Recorder),
+        "control" => Ok(Role::Control),
+        "perception" => Ok(Role::Perception),
+        _ => Err(format!("未知角色: {s}（可选: capture/processor/pusher/puller/recorder/control/perception）")),
+    }
+}
+
+/// --topic 缺省 = ACL 矩阵缺省（NodeAcl::for_role）；显式 --topic 覆盖角色
+/// **单方向** ACL 列表（发布型角色 → publish_allow，订阅型角色 → subscribe_allow）。
+/// 双方向/无方向角色（processor/perception/control/puller）显式 --topic 报错——
+/// C 阶段最小签发只服务单方向角色，双方向留 G1 全量签发。
+fn build_acl(node_id: NodeId, role: Role, topics: Vec<String>) -> Result<NodeAcl, String> {
+    if topics.is_empty() {
+        return Ok(NodeAcl::for_role(node_id, role));
+    }
+    let base = NodeAcl::for_role(node_id, role);
+    match (base.publish_allow.is_empty(), base.subscribe_allow.is_empty()) {
+        (false, true) => Ok(NodeAcl { publish_allow: topics, subscribe_allow: vec![], ..base }),
+        (true, false) => Ok(NodeAcl { publish_allow: vec![], subscribe_allow: topics, ..base }),
+        _ => Err(format!(
+            "角色 {:?} 为双方向/无方向 ACL — 显式 --topic 仅支持单方向角色（capture/pusher/recorder）; 省略 --topic 使用矩阵缺省",
+            role
+        )),
+    }
+}
+
 /// `host doctor --dir <dir>`: 环境诊断。三项检查：
 /// ① oxmgr 可执行（PATH 内）② etc/host.toml 可解析 ③ host.toml → oxfile 可生成。
 /// 退出码 = 失败检查数（0..=3）。

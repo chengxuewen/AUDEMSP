@@ -95,7 +95,10 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
                 token_dir.display()
             ));
         }
-        push_app(&mut out, name, &cmd);
+        // C4: recorder [record] enabled=false 时按设计 exit 0 — 在 oxmgr
+        // restart_policy=always 下会重启风暴; 改 on_failure（崩溃重启，干净退出不重启）。
+        let policy = if name == "host-recorder" { "on_failure" } else { "always" };
+        push_app(&mut out, name, &cmd, policy);
     }
     for cam in &cameras {
         let name = instance_name("host-capturer", cam, cameras.len() > 1);
@@ -108,7 +111,7 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
                 cam
             ));
         }
-        push_app(&mut out, &name, &cmd);
+        push_app(&mut out, &name, &cmd, "always");
     }
     for stream in &streams {
         let name = instance_name("host-streamer", stream, streams.len() > 1);
@@ -121,7 +124,7 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
                 stream
             ));
         }
-        push_app(&mut out, &name, &cmd);
+        push_app(&mut out, &name, &cmd, "always");
     }
     Ok(out)
 }
@@ -238,6 +241,8 @@ fn exe_cmd(name: &str) -> String {
         .unwrap_or_else(|| name.to_string())
 }
 
-fn push_app(out: &mut String, name: &str, command: &str) {
-    out.push_str(&format!("[[apps]]\nname = \"{name}\"\ncommand = \"{command}\"\n\n"));
+fn push_app(out: &mut String, name: &str, command: &str, restart_policy: &str) {
+    out.push_str(&format!(
+        "[[apps]]\nname = \"{name}\"\ncommand = \"{command}\"\nrestart_policy = \"{restart_policy}\"\n\n"
+    ));
 }
