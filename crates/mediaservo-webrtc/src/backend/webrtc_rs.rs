@@ -430,7 +430,8 @@ impl DcBackend for WebrtcRsDc {
 
     async fn spool(&self) -> RTCDataChannelRx {
         let dc = self.inner.clone();
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        // broadcast（F1 审查 #1）: 多订阅端共享事件流；Sender 克隆进各回调
+        let (tx, rx) = tokio::sync::broadcast::channel(64);
         let tx2 = tx.clone();
         dc.on_open(Box::new(move || {
             let _ = tx2.send(RTCDataChannelEvent::Open);

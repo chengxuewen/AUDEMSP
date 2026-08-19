@@ -110,7 +110,17 @@ async fn route_channel(dc: RTCDataChannel, actuator: Arc<dyn Actuator>) {
                 };
                 let ack = match actuator.on_command(&label, &env) {
                     Ok(result) => ControlAck::ok(env.seq, result),
-                    Err(e) => ControlAck::err(env.seq, e),
+                    Err(e) => {
+                        // C15: 错误响应必须打日志（回执已发，但本侧可观测性不能丢）
+                        tracing::warn!(
+                            channel = %label,
+                            cmd = %env.cmd,
+                            seq = env.seq,
+                            error = %e,
+                            "actuator 命令失败"
+                        );
+                        ControlAck::err(env.seq, e)
+                    }
                 };
                 if let Ok(json) = serde_json::to_string(&ack) {
                     if let Err(e) = dc.send_text(&json).await {

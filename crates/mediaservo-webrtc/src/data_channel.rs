@@ -82,6 +82,7 @@ impl std::fmt::Debug for RTCDataChannel {
 
 // ── Events ──
 
+#[derive(Clone)]
 pub enum RTCDataChannelEvent { Open, Closed, Message(RTCDataMessage), Error(String) }
 
 impl std::fmt::Debug for RTCDataChannelEvent {
@@ -99,12 +100,16 @@ pub struct RTCDataMessage { pub data: Vec<u8> }
 
 /// Receiver for RTCDataChannel events.
 /// Created by spool() — polls the backend's event stream.
+///
+/// 事件源 = broadcast 通道（Sender 可多克隆）：`RTCDataChannelRx` 本身不 Clone，
+/// 但同一 DC 多次 spool() 各得一个独立 receiver（F1 审查 #1: register-once 语义
+/// 要求 spool() 可重复调用，每次返回共享事件流的订阅端）。
 pub struct RTCDataChannelRx {
-    rx: Option<tokio::sync::mpsc::UnboundedReceiver<RTCDataChannelEvent>>,
+    rx: Option<tokio::sync::broadcast::Receiver<RTCDataChannelEvent>>,
 }
 
 impl RTCDataChannelRx {
-    pub(crate) fn new(rx: Option<tokio::sync::mpsc::UnboundedReceiver<RTCDataChannelEvent>>) -> Self {
+    pub(crate) fn new(rx: Option<tokio::sync::broadcast::Receiver<RTCDataChannelEvent>>) -> Self {
         Self { rx }
     }
 
@@ -114,7 +119,14 @@ impl RTCDataChannelRx {
 
     pub async fn recv(&mut self) -> Option<RTCDataChannelEvent> {
         match &mut self.rx {
-            Some(rx) => rx.recv().await,
+            Some(rx) => match rx.recv().await {
+                Ok(ev) => Some(ev),
+                // Lagged: 订阅端落后被丢弃 — 返回 Error 事件（消费端可见，非静默）
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    Some(RTCDataChannelEvent::Error(format!("lagged {n} events")))
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
+            },
             None => std::future::pending().await,
         }
     }

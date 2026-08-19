@@ -892,7 +892,7 @@ impl WebrtcSysPc {
         Ok(RTCDataChannel {
             label: label.to_string(),
             id: dc.id(),
-            backend: WebrtcSysDc { dc },
+            backend: WebrtcSysDc { dc, rx: std::sync::Arc::new(std::sync::OnceLock::new()) },
         })
     }
 }
@@ -902,6 +902,12 @@ impl WebrtcSysPc {
 #[derive(Clone)]
 pub(crate) struct WebrtcSysDc {
     dc: cxx::SharedPtr<webrtc_sys::data_channel::ffi::DataChannel>,
+    /// 接收观察者缓存（F1 审查 #1）: register-once — 首次 spool() 注册观察者并
+    /// 存入 broadcast Sender；后续 spool() 只 subscribe，绝不再注册。
+    /// Clone 共享同一 Arc（同一底层 DataChannel）。
+    rx: std::sync::Arc<
+        std::sync::OnceLock<tokio::sync::broadcast::Sender<crate::data_channel::RTCDataChannelEvent>>,
+    >,
 }
 
 impl std::fmt::Debug for WebrtcSysDc {
@@ -943,13 +949,25 @@ impl DcBackend for WebrtcSysDc {
     }
 
     async fn spool(&self) -> RTCDataChannelRx {
-        // Task F1: 经 register_observer 接收 DC 消息（DataChannelObserverWrapper
-        // 由 C++ 侧持有，unregister/destroy 前存活；转发到 mpsc 供 async 消费）
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let observer = std::sync::Arc::new(DcObserver { tx });
-        let wrapper = webrtc_sys::data_channel::DataChannelObserverWrapper::new(observer);
-        self.dc.register_observer(Box::new(wrapper));
-        RTCDataChannelRx::new(Some(rx))
+        // F1 审查 #1（FFI 线程约束）: libwebrtc 要求 RegisterObserver/
+        // UnregisterObserver 在其内部信令线程执行（DCHECK_RUN_ON，release 编译掉
+        // 后为静默数据竞争），且每次重注册会 reset 前一个观察者（unique_ptr）—
+        // 网络线程可能正 mid-OnMessage → rust::Box use-after-free。
+        // 故**每个通道只注册一次**（首次 spool()，OnceLock 保证；upstream livekit
+        // 在 configure() 一次性注册同模式）；后续 spool() 仅 subscribe 已缓存事件流。
+        // 注册线程仍可能是首次调用者（tokio worker）——DCHECK 约束的完全满足需要
+        // 把注册调度到信令线程（livekit configure 时点即信令线程），此处以
+        // register-once 消除重注册 UAF；跨线程注册治理留给后续专项。
+        let tx = self
+            .rx
+            .get_or_init(|| {
+                let (tx, _rx) = tokio::sync::broadcast::channel(256);
+                let observer = std::sync::Arc::new(DcObserver { tx: tx.clone() });
+                let wrapper = webrtc_sys::data_channel::DataChannelObserverWrapper::new(observer);
+                self.dc.register_observer(Box::new(wrapper));
+                tx
+            });
+        RTCDataChannelRx::new(Some(tx.subscribe()))
     }
 
     async fn close(&mut self) {
@@ -957,10 +975,12 @@ impl DcBackend for WebrtcSysDc {
     }
 }
 
-/// libwebrtc DataChannel observer：转发消息/状态到 mpsc（Task F1 接收路径）。
+/// libwebrtc DataChannel observer：转发消息/状态到 broadcast（Task F1 接收路径）。
 /// 回调在 libwebrtc 信令线程触发；仅做无锁 send，快速返回。
+/// 注意: 观察者 Box 移交给 C++ 侧持有（register_observer），本 struct 仅借出
+/// Sender 克隆 — 观察者生命周期 = C++ unique_ptr，不被 Rust 侧释放。
 struct DcObserver {
-    tx: tokio::sync::mpsc::UnboundedSender<crate::data_channel::RTCDataChannelEvent>
+    tx: tokio::sync::broadcast::Sender<crate::data_channel::RTCDataChannelEvent>,
 }
 
 impl webrtc_sys::data_channel::DataChannelObserver for DcObserver {
@@ -1169,7 +1189,7 @@ impl webrtc_sys::peer_connection_factory::PeerConnectionObserver for RealObserve
         let rtc_dc = crate::data_channel::RTCDataChannel {
             label: dc.label(),
             id: dc.id(),
-            backend: WebrtcSysDc { dc },
+            backend: WebrtcSysDc { dc, rx: std::sync::Arc::new(std::sync::OnceLock::new()) },
         };
         if let Some(ref cb) = *self.callbacks.on_data_channel.lock().unwrap() {
             cb(rtc_dc);

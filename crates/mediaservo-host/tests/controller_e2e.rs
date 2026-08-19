@@ -350,19 +350,39 @@ async fn controller_p2p_dc_control_through_gateway() {
         eprintln!("[controller_e2e] {label} 往返 OK: {ack}");
     }
 
-    // ④ chassis 可靠有序: 5 连发 → ACK 顺序一致
+    // ④ chassis 可靠有序（burst，F1 审查 #2）: 逐条 send-await 证明不了顺序 —
+    // 无序通道同样通过。改为 5 连发不等待，再按序收集 ACK；
+    // 乱序到达会被提前消费 → 后续目标超时失败（严格顺序断言）。
+    let dc = &dcs[0];
+    let mut rx = dc.spool().await; // register-once: 共享事件流的新订阅端
     for seq in 10..15u64 {
-        let dc = &dcs[0];
-        let ack = send_and_await_ack(
-            dc,
-            "chassis",
-            seq,
-            "steer",
-            serde_json::json!({ "value": seq as f64 / 100.0 }),
-        )
-        .await;
-        assert_eq!(ack["ack"], seq, "顺序 {seq} 的 ACK");
-        eprintln!("[controller_e2e] chassis 顺序 ACK #{seq}");
+        let env = serde_json::json!({
+            "seq": seq,
+            "cmd": "steer",
+            "payload": { "value": seq as f64 / 100.0 },
+        });
+        dc.send_text(&env.to_string()).await.expect("mock 发送信封");
+    }
+    for seq in 10..15u64 {
+        let ack = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                match rx.recv().await {
+                    Some(RTCDataChannelEvent::Message(m)) => {
+                        let v: serde_json::Value = serde_json::from_slice(&m.data)
+                            .unwrap_or(serde_json::Value::Null);
+                        if v["ack"] == serde_json::json!(seq) {
+                            return v;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("chassis burst seq {seq} ACK 超时（乱序?）");
+        assert_eq!(ack["ack"], seq, "burst 顺序 {seq} 的 ACK");
+        assert_eq!(ack["result"]["channel"], "chassis");
+        eprintln!("[controller_e2e] chassis burst 顺序 ACK #{seq}");
     }
 
     // ⑤ SIGTERM → controller + agent 优雅退出 0
