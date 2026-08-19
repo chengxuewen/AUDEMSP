@@ -125,6 +125,7 @@ async fn status_report_reaches_mock_server_with_expected_content() {
         None,
         handle,
         Duration::from_millis(300),
+        std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
     );
     server.await.unwrap();
 }

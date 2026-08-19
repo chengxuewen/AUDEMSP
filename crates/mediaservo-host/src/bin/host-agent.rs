@@ -9,11 +9,14 @@
 //! E1-E3 监控（拓扑/数据流/信令 + 状态上报）统一由 [`spawn_status_reporter`]
 //! 单循环驱动（E3 起替换 E1/E2 独立循环；行为与日志不变）。
 
-use mediaservo_host::gateway::{run_gateway, GatewayConfig};
+use mediaservo_host::gateway::{run_gateway, GatewayConfig, GatewayHandle};
 use mediaservo_host::init_logging;
 use mediaservo_host::monitor::signal::{spawn_status_reporter, STATUS_INTERVAL};
 use mediaservo_link::{CapabilityToken, Ed25519VerifyingKey};
-
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 const USAGE: &str = "用法: host-agent [--port <本地端口>] [--remote <ws url>] [--psk <psk>] [--room <房间>] [--config <host.toml>] [--token <令牌文件>]";
 fn parse_args() -> Result<(GatewayConfig, Option<String>, Option<String>), String> {
     let mut cfg = GatewayConfig::default();
@@ -97,9 +100,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     // E1-E3: 拓扑 + 数据流 + 信令监控 + StatusReport 上报（单循环, 5s）
-    spawn_status_reporter(host_toml, monitor_started, token, gateway, STATUS_INTERVAL);
+    // E4: 配置版本（成功应用后 = 最近 ConfigPush.version；StatusReport 关联）
+    let config_version = Arc::new(AtomicU64::new(0));
+    // E4: 云端配置应用循环（500ms 轮询网关待应用 ConfigPush；最新覆盖旧值）
+    let config_dir = config_path.as_deref().map(PathBuf::from).and_then(|p| {
+        // --config <dir>/etc/host.toml → <dir>（oxfile/备份路径基准）
+        p.parent().and_then(|etc| etc.parent().map(Path::to_path_buf))
+    });
+    match &config_dir {
+        Some(dir) => spawn_config_applier(gateway.clone(), dir.clone(), config_version.clone()),
+        None => tracing::warn!("未提供 --config（<dir>/etc/host.toml 不可推导）— 云端配置下发停用"),
+    }
+    spawn_status_reporter(host_toml, monitor_started, token, gateway, STATUS_INTERVAL, config_version);
     wait_shutdown().await;
     Ok(())
+}
+
+/// E4: 云端配置应用循环 — 轮询网关待应用 ConfigPush（500ms；最新覆盖旧值）。
+/// 应用成功 → 版本记入 StatusReport.config_version；拒绝 → handle_config_push 已打
+/// warn 审计（C15）；oxmgr apply 失败 → error 审计（应用已落盘，下轮进程重启自愈）。
+fn spawn_config_applier(handle: GatewayHandle, dir: PathBuf, config_version: Arc<AtomicU64>) {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_millis(500));
+        loop {
+            tick.tick().await;
+            let Some(push) = handle.take_config_push() else { continue };
+            match mediaservo_host::translate::handle_config_push(&dir, &push) {
+                Ok(v) => {
+                    config_version.store(v, Ordering::Relaxed);
+                    if let Err(e) = mediaservo_host::translate::oxmgr_apply(&dir) {
+                        tracing::error!(version = v, "ConfigPush oxmgr apply 失败: {e}");
+                    }
+                }
+                Err(_) => {} // 拒绝原因已由 handle_config_push 打 warn 审计
+            }
+        }
+    });
 }
 
 /// 等待 SIGINT/SIGTERM（unix 主路径；其他平台仅 ctrl_c）。

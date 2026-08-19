@@ -9,8 +9,9 @@
 //! 检查在源头，C15：失败打日志不静默）。上报为周期性幂等消息——断线窗口
 //! 丢弃/发送失败均可由下一周期自愈。
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-
 use mediaservo_common::protocol::{
     ChildSignalJson, ProcessStateJson, SignalStatusJson, SignalingMessage, StreamFlowJson,
     TopicFlowJson,
@@ -24,9 +25,6 @@ use crate::monitor::topology::{DEFAULT_GRACE, Mismatch, TopologyMonitor, Topolog
 /// 上报间隔（5s，与监控采集同 tick；报告 <2KB JSON，WS 流量可忽略。
 /// 10s 减半流量的选项被否——与采集解耦无收益，仅增加状态窗口漂移）。
 pub const STATUS_INTERVAL: Duration = Duration::from_secs(5);
-/// 配置版本（E4 ConfigPush 关联字段；E4 接入 host.toml 版本号前恒 0）。
-pub const CONFIG_VERSION: u64 = 0;
-
 /// 信令平面快照（E3；数据源 = 网关连接状态 + agent 运行时长）。
 #[derive(Debug, Clone)]
 pub struct SignalSnapshot {
@@ -67,6 +65,8 @@ pub fn spawn_status_reporter(
     token: Option<(CapabilityToken, Ed25519VerifyingKey)>,
     gateway: GatewayHandle,
     interval: Duration,
+    // E4: 配置版本（ConfigPush 应用后由 agent 更新；StatusReport.config_version 数据源）。
+    config_version: Arc<AtomicU64>,
 ) {
     tokio::spawn(async move {
         let topology = TopologyMonitor::new_at(host_toml.clone(), DEFAULT_GRACE, started);
@@ -140,7 +140,13 @@ pub fn spawn_status_reporter(
                 remote_connected = sig.gateway.remote.connected,
                 "信令快照"
             );
-            let report = build_status_report(&room, &topo, &flow_snap, &sig, CONFIG_VERSION);
+            let report = build_status_report(
+                &room,
+                &topo,
+                &flow_snap,
+                &sig,
+                config_version.load(Ordering::Relaxed),
+            );
             if let Err(e) = gateway.send_remote(report) {
                 tracing::warn!("StatusReport 发送失败: {e}"); // C15
             }
