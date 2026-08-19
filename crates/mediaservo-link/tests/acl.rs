@@ -27,6 +27,8 @@ fn pusher_sub_not_pub() {
     let a = acl(Role::Pusher);
     assert!(a.can_subscribe(&FrameTopic::new("camera/front/raw")));
     assert!(a.can_subscribe(&FrameTopic::new("video/stitched")));
+    // F3: 推流节点订阅视觉结果（vision/<camera-id>，D-H8 链路）
+    assert!(a.can_subscribe(&FrameTopic::new("vision/cam0")));
     assert!(!a.can_publish(&FrameTopic::new("camera/front/raw")));
     // 单方向契约（host.rs build_acl 显式 --topic 支持订阅型角色）
     assert!(!a.can_publish(&FrameTopic::new("stats/stream-s0")));
@@ -37,6 +39,8 @@ fn recorder_sub_not_pub() {
     let a = acl(Role::Recorder);
     assert!(a.can_subscribe(&FrameTopic::new("camera/front/raw")));
     assert!(a.can_subscribe(&FrameTopic::new("video/stitched")));
+    // F3: streamer 令牌缺省 Recorder（C2 遗留）→ 订阅视觉结果（D-H8）
+    assert!(a.can_subscribe(&FrameTopic::new("vision/cam0")));
     assert!(!a.can_publish(&FrameTopic::new("camera/front/raw")));
     // E2 推流状态上报（streamer 令牌缺省 Recorder，C2 遗留）
     assert!(a.can_publish(&FrameTopic::new("stats/stream-s0")));
@@ -56,6 +60,8 @@ fn control_pub_cmd_sub_telemetry_status() {
 fn perception_pub_perception_sub_camera() {
     let a = acl(Role::Perception);
     assert!(a.can_publish(&FrameTopic::new("perception/objects")));
+    // F3: ROS 视觉节点发布 vision/<camera-id>（D-H7/D-H8，桥接配置单一来源）
+    assert!(a.can_publish(&FrameTopic::new("vision/cam0")));
     assert!(a.can_subscribe(&FrameTopic::new("camera/front/raw")));
     assert!(!a.can_publish(&FrameTopic::new("video/x")));
 }

@@ -19,11 +19,17 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use mediaservo_common::protocol::{PeerRole, SignalingMessage};
 use mediaservo_field::{PublishOptions, PushConfig, PushSession, SessionEvent};
 use mediaservo_host::monitor::flow::StreamerStats;
-use mediaservo_link::{FrameBus, FrameMeta, FrameTopic, TokenFile};
+use mediaservo_link::{FrameBus, FrameMeta, FrameRef, FrameStream, FrameTopic, SignalClient, SignalEvent, SignalSession, TokenFile};
+use mediaservo_webrtc::data_channel::{RTCDataChannel, RTCDataChannelInit, RTCDataChannelState};
+use mediaservo_webrtc::peer_connection::{RTCConfiguration, RTCIceCandidate};
+use mediaservo_webrtc::sdp::{RTCSdpType, RTCSessionDescription};
 use mediaservo_webrtc::stats::RTCStats;
 use mediaservo_webrtc::traits::PeerConnectionApi;
+use mediaservo_webrtc::{RTCPeerConnection, RTCPeerConnectionFactory};
+use tokio::sync::{broadcast, mpsc};
 
 /// FrameMeta 像素格式: 1 = I420（D243 枚举，与 C1 capturer 一致）。
 const FORMAT_I420: u8 = 1;
@@ -32,6 +38,10 @@ const FORMAT_I420: u8 = 1;
 const NO_FRAME_TIMEOUT: Duration = Duration::from_secs(10);
 /// 出站统计日志间隔（e2e 证据 + 可观测性）。
 const STATS_INTERVAL: Duration = Duration::from_secs(2);
+/// 视觉 DC label（D-H8 契约：舱端 HMI overlay 按此 label 接收）。
+const VISION_DC_LABEL: &str = "vision";
+/// 视觉 DC 协商截止：无舱端 answer 则降级（视觉是可选 overlay，视频不受影响）。
+const VISION_NEGOTIATE_TIMEOUT: Duration = Duration::from_secs(10);
 
 const USAGE: &str = "用法: host-streamer --stream <id> --config <host.toml> --token <令牌文件>";
 
@@ -74,10 +84,222 @@ fn gateway_url(gateway_arg: Option<&str>) -> String {
         .map(str::to_string)
         .unwrap_or_else(|| "ws://127.0.0.1:17980/ws".to_string())
 }
+/// 视觉 topic（bridge.rs B3 约定: `vision/<camera-id>` 镜像相机 id）。
+fn vision_topic(camera_id: &str) -> String {
+    format!("vision/{camera_id}")
+}
+
+/// 视觉消息格式门禁：仅 JSON 载荷（FrameMeta::FORMAT_JSON，E2 stats 同款线格式）。
+/// vision topic 上出现像素载荷 = 发布端协议违反，拒绝转发。
+fn vision_meta_ok(meta: &FrameMeta) -> bool {
+    meta.format == FrameMeta::FORMAT_JSON
+}
+
+/// 透明转发（D-H8 消息格式决策）：payload 原样作为 DC 文本（streamer = pipe，
+/// HMI 解析，不重编码——帧关联 ts_mono/seq 由 ROS 视觉节点写入 payload JSON，
+/// 它与它消费的 camera 帧 meta 对齐）。非 UTF-8 payload = 协议违反，拒绝转发。
+fn vision_payload_text(payload: &[u8]) -> Option<&str> {
+    std::str::from_utf8(payload).ok()
+}
+
+/// 视觉 transport B 协商状态（D-H8：独立 PC 纯 DC 无 track，与视频 transport A 分离；
+/// F1/F2 offerer 模式——经本地网关 relay 到舱端）。
+struct VisionNegotiation {
+    signal: SignalSession,
+    events: broadcast::Receiver<SignalEvent>,
+    ice_rx: mpsc::UnboundedReceiver<RTCIceCandidate>,
+    pc: RTCPeerConnection,
+    dc: RTCDataChannel,
+    /// answer 落地前缓存的远端候选（libwebrtc 协商前 add_ice_candidate 不可靠）。
+    pending_ice: Vec<RTCIceCandidate>,
+    remote_set: bool,
+    /// 协商截止：answer 未到即降级禁用（视觉可选，视频不受影响）。
+    deadline: tokio::time::Instant,
+}
+
+/// 视觉异步事件（transport B 全部异步源聚合）。
+enum VisionEvent {
+    Signal(Result<SignalEvent, broadcast::error::RecvError>),
+    Ice(Option<RTCIceCandidate>),
+    Frame(Option<FrameRef>),
+    /// 协商截止到期（无舱端 answer）。
+    Deadline,
+}
+
+/// 建立 transport B（信令 + PC + DC "vision" + offer）。任何一步失败 → None
+/// （降级为纯视频；C15 每分支打日志）。
+async fn setup_vision_dc(gateway: &str, src: &str, room: &str) -> Option<VisionNegotiation> {
+    let signal = match SignalClient::new_gateway(gateway, src, room, PeerRole::Host)
+        .connect()
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("vision 信令连接失败（视觉转发禁用）: {e}");
+            return None;
+        }
+    };
+    let events = signal.events();
+    let factory = RTCPeerConnectionFactory::new();
+    let pc = match factory.create_peer_connection(RTCConfiguration::default()).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!("vision create_peer_connection 失败: {e}");
+            return None;
+        }
+    };
+    let (ice_tx, ice_rx) = mpsc::unbounded_channel::<RTCIceCandidate>();
+    pc.on_ice_candidate(move |candidate| {
+        let _ = ice_tx.send(candidate);
+    });
+    let dc = match pc
+        .create_data_channel(VISION_DC_LABEL, RTCDataChannelInit::default())
+        .await
+    {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!("vision create_data_channel 失败: {e}");
+            return None;
+        }
+    };
+    let offer = match pc.create_offer(&Default::default()).await {
+        Ok(o) => o,
+        Err(e) => {
+            tracing::warn!("vision create_offer 失败: {e}");
+            return None;
+        }
+    };
+    if let Err(e) = pc.set_local_description(&offer).await {
+        tracing::warn!("vision set_local_description 失败: {e}");
+        return None;
+    }
+    let offer_json = match serde_json::to_string(&offer) {
+        Ok(j) => j,
+        Err(e) => {
+            tracing::warn!("vision 序列化 offer 失败: {e}");
+            return None;
+        }
+    };
+    if let Err(e) = signal
+        .send(SignalingMessage::Sdp {
+            room_id: room.into(),
+            target: None,
+            sdp: offer_json,
+        })
+        .await
+    {
+        tracing::warn!("vision 发送 offer 失败: {e}");
+        return None;
+    }
+    tracing::info!("vision offer 已发送（transport B，等待舱端 answer）");
+    Some(VisionNegotiation {
+        signal,
+        events,
+        ice_rx,
+        pc,
+        dc,
+        pending_ice: Vec::new(),
+        remote_set: false,
+        deadline: tokio::time::Instant::now() + VISION_NEGOTIATE_TIMEOUT,
+    })
+}
+
+/// 聚合 transport B 异步源（vision=None/vision_frames=None → 永久挂起，即视觉禁用）。
+async fn next_vision_event(
+    vision: &mut Option<VisionNegotiation>,
+    vision_frames: &Option<FrameStream>,
+) -> VisionEvent {
+    match (vision.as_mut(), vision_frames.as_ref()) {
+        (Some(v), Some(frames)) => tokio::select! {
+            ev = v.events.recv() => VisionEvent::Signal(ev),
+            c = v.ice_rx.recv() => VisionEvent::Ice(c),
+            f = frames.recv() => VisionEvent::Frame(f),
+            _ = tokio::time::sleep_until(v.deadline) => VisionEvent::Deadline,
+        },
+        _ => std::future::pending::<VisionEvent>().await,
+    }
+}
+
+/// 处理 vision 信令事件（answer/ICE/断开）。返回 true = 继续，false = 降级禁用。
+async fn handle_vision_signal(
+    v: &mut VisionNegotiation,
+    ev: Result<SignalEvent, broadcast::error::RecvError>,
+) -> bool {
+    match ev {
+        Ok(SignalEvent::Message(SignalingMessage::Sdp { sdp, .. })) => {
+            let desc = match serde_json::from_str::<RTCSessionDescription>(&sdp) {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::warn!("vision answer 解析失败: {e}");
+                    return false;
+                }
+            };
+            if desc.sdp_type != RTCSdpType::Answer {
+                tracing::warn!(sdp_type = %desc.sdp_type, "vision 非 answer Sdp，降级");
+                return false;
+            }
+            match v.pc.set_remote_description(&desc).await {
+                Ok(()) => {
+                    tracing::info!("vision answer 已设置 — 协商完成");
+                    v.remote_set = true;
+                    // 协商完成：取消截止（慢 ICE/慢首帧不再触发降级）
+                    v.deadline = tokio::time::Instant::now() + Duration::from_secs(3600);
+                    for c in v.pending_ice.drain(..) {
+                        if let Err(e) = v.pc.add_ice_candidate(&c).await {
+                            tracing::warn!("vision add_ice_candidate: {e}");
+                        }
+                    }
+                    true
+                }
+                Err(e) => {
+                    tracing::warn!("vision set_remote_description 失败: {e}");
+                    false
+                }
+            }
+        }
+        Ok(SignalEvent::Message(SignalingMessage::RTCIceCandidate {
+            candidate, sdp_mid, sdp_mline_index, ..
+        })) => {
+            let c = RTCIceCandidate {
+                candidate,
+                sdp_mid,
+                sdp_mline_index,
+            };
+            if v.remote_set {
+                if let Err(e) = v.pc.add_ice_candidate(&c).await {
+                    tracing::warn!("vision add_ice_candidate: {e}");
+                }
+            } else {
+                v.pending_ice.push(c);
+            }
+            true
+        }
+        Ok(SignalEvent::Message(_)) => true, // RoomJoined/其他透传忽略
+        Ok(SignalEvent::Error(e)) => {
+            tracing::warn!("vision 信令错误: {e} — 降级禁用");
+            false
+        }
+        Ok(SignalEvent::Disconnected { reason }) => {
+            tracing::warn!("vision 信令断开: {reason} — 降级禁用");
+            false
+        }
+        Ok(SignalEvent::Connected { .. }) => true,
+        Ok(_) => true, // SignalEvent non_exhaustive
+        Err(broadcast::error::RecvError::Lagged(n)) => {
+            tracing::warn!("vision 信令事件滞后 {n} 条");
+            true
+        }
+        Err(broadcast::error::RecvError::Closed) => {
+            tracing::warn!("vision 信令事件流关闭 — 降级禁用");
+            false
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use super::gateway_url;
+    use super::{gateway_url, vision_meta_ok, vision_payload_text, vision_topic};
+    use mediaservo_link::FrameMeta;
 
     #[test]
     fn gateway_url_defaults_to_local_gateway() {
@@ -90,6 +312,32 @@ mod tests {
             gateway_url(Some("ws://127.0.0.1:18888/ws")),
             "ws://127.0.0.1:18888/ws"
         );
+    }
+
+    #[test]
+    fn vision_topic_mirrors_camera_id() {
+        // bridge.rs B3 约定: vision/<camera-id> 镜像相机 id（ROS 桥接配置单一来源）
+        assert_eq!(vision_topic("cam0"), "vision/cam0");
+        assert_eq!(vision_topic("front/raw"), "vision/front/raw");
+    }
+
+    #[test]
+    fn vision_meta_ok_accepts_only_json_format() {
+        let json = FrameMeta { format: FrameMeta::FORMAT_JSON, ..Default::default() };
+        assert!(vision_meta_ok(&json), "JSON 载荷必须放行");
+        let i420 = FrameMeta { format: super::FORMAT_I420, ..Default::default() };
+        assert!(!vision_meta_ok(&i420), "像素载荷不得当视觉 JSON 转发");
+    }
+
+    #[test]
+    fn vision_payload_text_is_transparent() {
+        // D-H8 决策: 透明转发（streamer = pipe，HMI 解析，不重编码）
+        let payload = br#"{"frame":{"seq":1,"ts_mono_ns":2},"objects":[]}"#;
+        assert_eq!(
+            vision_payload_text(payload),
+            Some(r#"{"frame":{"seq":1,"ts_mono_ns":2},"objects":[]}"#)
+        );
+        assert_eq!(vision_payload_text(&[0xff, 0xfe]), None, "非 UTF-8 载荷拒绝（协议违反）");
     }
 }
 
@@ -249,6 +497,20 @@ async fn main() -> ExitCode {
     };
     tracing::info!(topic = %topic.as_str(), "FrameBus subscribed");
 
+    // F3 (D-H7/D-H8): 订阅视觉结果 vision/<camera-id>（ROS 视觉节点发布；
+    // 外部节点 attach 走 Perception 角色 + 能力令牌，见 acl.rs）。失败降级（视觉可选）。
+    let vision_topic = FrameTopic::new(vision_topic(&cam.id));
+    let mut vision_frames: Option<FrameStream> = match bus.subscribe(&vision_topic) {
+        Ok(f) => {
+            tracing::info!(topic = %vision_topic.as_str(), "vision FrameBus subscribed");
+            Some(f)
+        }
+        Err(e) => {
+            tracing::warn!("订阅 {} 失败（视觉转发禁用）: {e}", vision_topic.as_str());
+            None
+        }
+    };
+
     // 推流会话（field PushSession 复用；D2: 经本地网关，无 PSK）
     let mut cfg = PushConfig::via_gateway(
         gateway_url(args.gateway.as_deref()),
@@ -265,6 +527,20 @@ async fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
+
+    // F3 (D-H8): transport B — 独立纯 DC PC（label "vision"），经同一本地网关
+    // relay 到舱端（F1/F2 offerer 模式；mediasoup send/recv 分离 + SCTP/RTP 同 PC
+    // 调度互拖 → 与视频 transport A 分离）。失败降级为纯视频（视觉可选 overlay）。
+    let mut vision: Option<VisionNegotiation> = setup_vision_dc(
+        &gateway_url(args.gateway.as_deref()),
+        &format!("host-streamer-{}-vision", stream.id),
+        &format!("stream-{}", stream.id),
+    )
+    .await;
+    if vision.is_none() {
+        tracing::warn!("transport B 不可用 — 降级为纯视频推流");
+    }
+
 
     // 首帧决定分辨率（capturer 固定 1280x720，按 meta 自适应更稳）→ publish
     let first = match tokio::time::timeout(NO_FRAME_TIMEOUT, frames.recv()).await {
@@ -306,8 +582,9 @@ async fn main() -> ExitCode {
         }
     };
     println!(
-        "streamer ready: stream={} topic={} {}x{}@{} codec={} room={}",
-        stream.id, topic.as_str(), cfg.width, cfg.height, cam.fps, stream.codec, cfg.room
+        "streamer ready: stream={} topic={} {}x{}@{} codec={} room={} vision={}",
+        stream.id, topic.as_str(), cfg.width, cfg.height, cam.fps, stream.codec, cfg.room,
+        if vision.is_some() && vision_frames.is_some() { "on (transport B)" } else { "off" }
     );
 
     // E2 additive: 推流状态 topic + 单调时钟起点（stats 发布用）
@@ -381,7 +658,77 @@ async fn main() -> ExitCode {
                     break 'run;
                 }
             },
+            // F3: transport B 事件（视觉 DC；禁用时挂起不干扰视频）
+            vis = next_vision_event(&mut vision, &vision_frames) => match vis {
+                VisionEvent::Signal(ev) => {
+                    let keep = match vision.as_mut() {
+                        Some(v) => handle_vision_signal(v, ev).await,
+                        None => true,
+                    };
+                    if !keep {
+                        tracing::warn!("视觉转发降级禁用（视频不受影响）");
+                        vision = None;
+                        vision_frames = None;
+                    }
+                }
+                VisionEvent::Ice(Some(c)) => {
+                    let Some(v) = vision.as_mut() else { continue };
+                    let msg = SignalingMessage::RTCIceCandidate {
+                        room_id: format!("stream-{}", stream.id),
+                        target: None,
+                        candidate: c.candidate,
+                        sdp_mid: c.sdp_mid,
+                        sdp_mline_index: c.sdp_mline_index,
+                    };
+                    if let Err(e) = v.signal.send(msg).await {
+                        tracing::warn!("vision ICE 候选上行失败: {e}");
+                    }
+                }
+                VisionEvent::Ice(None) => {
+                    tracing::warn!("vision ICE 通道关闭 — 降级禁用");
+                    vision = None;
+                    vision_frames = None;
+                }
+                VisionEvent::Frame(Some(f)) => {
+                    let meta = f.meta();
+                    if !vision_meta_ok(meta) {
+                        tracing::warn!(seq = meta.seq, "vision 载荷非 JSON 格式（发布端协议违反），丢弃");
+                        continue;
+                    }
+                    let Some(text) = vision_payload_text(f.payload()) else {
+                        tracing::warn!(seq = meta.seq, "vision 载荷非 UTF-8，丢弃");
+                        continue;
+                    };
+                    let Some(v) = vision.as_mut() else { continue };
+                    if v.dc.state() != RTCDataChannelState::Open {
+                        continue; // DC 未 Open（协商中）— 静默跳过，不刷屏
+                    }
+                    if let Err(e) = v.dc.send_text(text).await {
+                        tracing::warn!(seq = meta.seq, "vision DC 发送失败: {e}");
+                    }
+                }
+                VisionEvent::Frame(None) => {
+                    tracing::warn!("vision 帧流关闭 — 降级禁用");
+                    vision = None;
+                    vision_frames = None;
+                }
+                VisionEvent::Deadline => {
+                    tracing::warn!(
+                        "{VISION_NEGOTIATE_TIMEOUT:?} 无舱端 answer — 视觉转发禁用（视频不受影响）"
+                    );
+                    vision = None;
+                    vision_frames = None;
+                }
+            },
         }
+    }
+
+    // F3: 关闭 transport B（信号 + PC；独立于视频 transport A）
+    if let Some(v) = vision {
+        if let Err(e) = v.signal.close().await {
+            tracing::warn!("vision signal close: {e}");
+        }
+        v.pc.close().await;
     }
 
     if let Err(e) = session.close().await {

@@ -109,7 +109,7 @@ fn issue_recorder_defaults_to_matrix_subscribe() {
     assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
     let claims = decode_claims(&tok);
     assert_eq!(claims.role, Role::Recorder);
-    assert_eq!(claims.acl.subscribe_allow, vec!["camera/*", "video/*"]);
+    assert_eq!(claims.acl.subscribe_allow, vec!["camera/*", "video/*", "vision/*"]);
 }
 
 #[test]

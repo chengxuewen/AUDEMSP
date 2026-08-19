@@ -41,15 +41,17 @@ impl NodeAcl {
         let (publish_allow, subscribe_allow): (Vec<String>, Vec<String>) = match role {
             Role::Capture => (vec!["camera/*".into()], vec![]),
             Role::Processor => (vec!["video/*".into()], vec!["camera/*".into()]),
-            Role::Pusher => (vec![], vec!["camera/*".into(), "video/*".into()]),
+            Role::Pusher => (vec![], vec!["camera/*".into(), "video/*".into(), "vision/*".into()]),
             Role::Puller => (vec![], vec![]),
             // E2 推流状态上报: streamer 令牌缺省 Recorder（C2 遗留）→ stats/* 发布权
-            Role::Recorder => (vec!["stats/*".into()], vec!["camera/*".into(), "video/*".into()]),
+            // F3: 订阅视觉结果（vision/<camera-id>，D-H8 链路）
+            Role::Recorder => (vec!["stats/*".into()], vec!["camera/*".into(), "video/*".into(), "vision/*".into()]),
             Role::Control => (
                 vec!["control/cmd".into()],
                 vec!["control/telemetry".into(), "status/*".into()],
             ),
-            Role::Perception => (vec!["perception/*".into()], vec!["camera/*".into()]),
+            // F3: ROS 视觉节点发布 vision/<camera-id>（D-H7/D-H8，桥接配置单一来源）
+            Role::Perception => (vec!["perception/*".into(), "vision/*".into()], vec!["camera/*".into()]),
             Role::Monitor => (vec![], vec!["camera/*".into(), "stats/*".into()]),
         };
         Self { node_id, role, publish_allow, subscribe_allow }
