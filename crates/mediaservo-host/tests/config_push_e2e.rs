@@ -54,7 +54,7 @@ fn spawn_applier(
         loop {
             tick.tick().await;
             let Some(push) = handle.take_config_push() else { continue };
-            match mediaservo_host::translate::handle_config_push(&dir, &push) {
+            match mediaservo_host::translate::handle_config_push(&dir, version.load(Ordering::Relaxed), &push) {
                 Ok(v) => {
                     version.store(v, Ordering::Relaxed);
                     *outcome.lock().expect("outcome lock") = Some(format!("accepted v{v}"));
@@ -179,6 +179,16 @@ async fn config_push_via_mock_server_updates_host_toml_backs_up_and_regenerates_
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
+    assert_eq!(
+        std::fs::read_to_string(dir_path.join("etc").join("host.toml.bak-7")).unwrap(),
+        CFG_V0,
+        "备份应为旧配置"
+    );
+    // F1 关联契约: 模拟 agent 重启 — 新实例（新 Arc）从备份恢复版本，不归零
+    let restarted = Arc::new(AtomicU64::new(
+        mediaservo_host::translate::recover_config_version(&dir_path),
+    ));
+    assert_eq!(restarted.load(Ordering::Relaxed), 7, "重启后应从磁盘恢复版本 7（关联契约）");
     assert_eq!(
         std::fs::read_to_string(dir_path.join("etc").join("host.toml.bak-7")).unwrap(),
         CFG_V0,

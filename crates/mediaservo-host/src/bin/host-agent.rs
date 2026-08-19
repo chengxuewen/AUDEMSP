@@ -101,12 +101,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     // E1-E3: 拓扑 + 数据流 + 信令监控 + StatusReport 上报（单循环, 5s）
     // E4: 配置版本（成功应用后 = 最近 ConfigPush.version；StatusReport 关联）
-    let config_version = Arc::new(AtomicU64::new(0));
-    // E4: 云端配置应用循环（500ms 轮询网关待应用 ConfigPush；最新覆盖旧值）
+    // F1: 启动时从 etc/host.toml.bak-<version> 备份恢复——agent 被 oxfile watch
+    // 重启后版本不归零（磁盘上已应用版本与上报关联契约）。
     let config_dir = config_path.as_deref().map(PathBuf::from).and_then(|p| {
         // --config <dir>/etc/host.toml → <dir>（oxfile/备份路径基准）
         p.parent().and_then(|etc| etc.parent().map(Path::to_path_buf))
     });
+    let config_version = Arc::new(AtomicU64::new(
+        config_dir
+            .as_deref()
+            .map(mediaservo_host::translate::recover_config_version)
+            .unwrap_or(0),
+    ));
+    // E4: 云端配置应用循环（500ms 轮询网关待应用 ConfigPush；最新覆盖旧值）
     match &config_dir {
         Some(dir) => spawn_config_applier(gateway.clone(), dir.clone(), config_version.clone()),
         None => tracing::warn!("未提供 --config（<dir>/etc/host.toml 不可推导）— 云端配置下发停用"),
@@ -125,15 +132,16 @@ fn spawn_config_applier(handle: GatewayHandle, dir: PathBuf, config_version: Arc
         loop {
             tick.tick().await;
             let Some(push) = handle.take_config_push() else { continue };
-            match mediaservo_host::translate::handle_config_push(&dir, &push) {
-                Ok(v) => {
-                    config_version.store(v, Ordering::Relaxed);
-                    if let Err(e) = mediaservo_host::translate::oxmgr_apply(&dir) {
-                        tracing::error!(version = v, "ConfigPush oxmgr apply 失败: {e}");
-                    }
+            if let Ok(v) = mediaservo_host::translate::handle_config_push(
+                &dir,
+                config_version.load(Ordering::Relaxed),
+                &push,
+            ) {
+                config_version.store(v, Ordering::Relaxed);
+                if let Err(e) = mediaservo_host::translate::oxmgr_apply(&dir) {
+                    tracing::error!(version = v, "ConfigPush oxmgr apply 失败: {e}");
                 }
-                Err(_) => {} // 拒绝原因已由 handle_config_push 打 warn 审计
-            }
+            } // 拒绝原因已由 handle_config_push 打 warn 审计
         }
     });
 }

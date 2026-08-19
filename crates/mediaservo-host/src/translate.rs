@@ -107,6 +107,8 @@ pub fn to_oxfile_in_dir(cfg: &str, dir: &Path) -> Result<String, String> {
 
 /// 校验 host.toml（与各消费进程同一解析路径：camera/stream/record/signaling；
 /// 另含重复 id 守卫——重复 → oxfile app 名重复 → oxmgr apply 硬错误）。
+/// F2: id 字符集守卫 [A-Za-z0-9_-]+ —— 非法字符（引号/换行/路径穿越）会产出
+/// 畸形 oxfile（push_app 未转义）或投毒令牌路径，必须拒绝。
 pub fn validate(cfg: &str) -> Result<(), String> {
     let cameras = camera_configs(cfg)?;
     let streams = stream_configs(cfg)?;
@@ -114,15 +116,28 @@ pub fn validate(cfg: &str) -> Result<(), String> {
     signaling_local_port(cfg)?;
     let mut seen = std::collections::HashSet::new();
     for c in &cameras {
+        check_id("相机", &c.id)?;
         if !seen.insert(c.id.clone()) {
             return Err(format!("host.toml 解析失败: 相机 id 重复: {}", c.id));
         }
     }
     let mut seen = std::collections::HashSet::new();
     for s in &streams {
+        check_id("流", &s.id)?;
         if !seen.insert(s.id.clone()) {
             return Err(format!("host.toml 解析失败: 流 id 重复: {}", s.id));
         }
+    }
+    Ok(())
+}
+
+/// F2: id 字符集守卫——仅允许 [A-Za-z0-9_-]+（oxfile app 名/令牌文件名/
+/// FrameBus topic 均直接拼入 id，非法字符导致畸形输出或路径穿越）。
+fn check_id(kind: &str, id: &str) -> Result<(), String> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err(format!(
+            "host.toml 解析失败: {kind} id 非法: {id:?}（仅允许 [A-Za-z0-9_-]+）"
+        ));
     }
     Ok(())
 }
@@ -145,6 +160,23 @@ pub fn write_oxfile(cfg: &str, dir: &Path) -> Result<PathBuf, String> {
     Ok(oxfile)
 }
 
+/// F1: 从 etc/host.toml.bak-<version> 备份恢复最近应用版本（取最大版本）。
+/// agent 被 oxfile [defaults].watch 重启后 config_version 不归零——磁盘上已应用
+/// 的版本与 StatusReport.config_version 的关联契约。无备份 → 0。
+pub fn recover_config_version(dir: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir.join("etc")) else { return 0 };
+    entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            name.strip_prefix("host.toml.bak-")
+                .and_then(|v| v.parse::<u64>().ok())
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// 备份当前 host.toml → etc/host.toml.bak-<version>（ConfigPush 应用前置）。
 /// 备份当前 host.toml → etc/host.toml.bak-<version>（ConfigPush 应用前置）。
 pub fn backup_host_config(dir: &Path, version: u64) -> Result<PathBuf, String> {
     let cfg_path = dir.join("etc").join("host.toml");
@@ -257,10 +289,20 @@ pub fn apply_config(dir: &Path) -> Result<(), String> {
 
 /// E4 agent 应用体（应用 + 审计日志；oxmgr apply 由调用方执行——测试/CLI 可分离）。
 /// 返回成功应用的版本号；失败 Err(拒绝原因)（审计日志已打 warn，C15）。
-pub fn handle_config_push(dir: &Path, push: &SignalingMessage) -> Result<u64, String> {
+/// F1 stale guard: version <= current_version 拒绝（旧/重复下发；审计 warn 载荷）。
+pub fn handle_config_push(
+    dir: &Path,
+    current_version: u64,
+    push: &SignalingMessage,
+) -> Result<u64, String> {
     let SignalingMessage::ConfigPush { config, version, .. } = push else {
         return Err("网关待应用消息非 ConfigPush".into());
     };
+    if *version <= current_version {
+        return Err(format!(
+            "ConfigPush 版本 {version} 已过期（当前 {current_version}）— 拒绝旧/重复下发"
+        ));
+    }
     match apply_config_push(dir, config, *version) {
         Ok(()) => {
             tracing::info!(
@@ -606,5 +648,65 @@ camera = "cam0"
         let ox2 = to_oxfile(&v2).unwrap();
         assert!(ox2.contains("name = \"host-capturer-cam0\""), "双相机 cam0 名不变: {ox2}");
         assert!(ox2.contains("name = \"host-capturer-cam1\""), "双相机 cam1 入 oxfile: {ox2}");
+    }
+
+    #[test]
+    fn validate_rejects_non_alnum_camera_and_stream_ids() {
+        // F2: TOML 合法但含引号/换行/路径穿越的 id → oxfile 畸形（push_app 未转义）
+        // 或令牌路径投毒 → 必须拒绝（仅允许 [A-Za-z0-9_-]+）
+        let quote_cam = "[[cameras]]\nid = \"cam\\\"0\"\n";
+        let err = validate(quote_cam).unwrap_err();
+        assert!(err.contains("非法"), "引号相机 id 必须拒绝: {err}");
+        let path_cam = "[[cameras]]\nid = \"../evil\"\n";
+        assert!(validate(path_cam).unwrap_err().contains("非法"), "路径穿越相机 id 必须拒绝");
+        let newline_cam = "[[cameras]]\nid = \"cam0\\n1\"\n";
+        assert!(validate(newline_cam).unwrap_err().contains("非法"), "换行相机 id 必须拒绝");
+        let quote_stream = "[[streams]]\nid = \"s\\\"0\"\n";
+        assert!(validate(quote_stream).unwrap_err().contains("非法"), "引号流 id 必须拒绝");
+        // 正常 id（字母数字 + 连字符/下划线）通过
+        validate("[[cameras]]\nid = \"cam-A_1\"\n[[streams]]\nid = \"s-2_0\"\n")
+            .expect("合法字符 id 应通过");
+    }
+
+    #[test]
+    fn recover_config_version_returns_max_backup_version_after_restart() {
+        // F1 关联契约: agent 被 [defaults].watch 重启后 config_version 必须从磁盘
+        // 恢复（备份文件取最大版本），不得归零
+        let dir = tempfile::tempdir().unwrap();
+        write_host_toml(dir.path(), CFG_V0);
+        let v7 = format!("{CFG_V0}[[cameras]]\nid = \"cam1\"\nfps = 15\n");
+        let v10 = format!("{CFG_V0}[[cameras]]\nid = \"cam1\"\nfps = 15\n[[cameras]]\nid = \"cam2\"\nfps = 30\n");
+        apply_config_push(dir.path(), &v7, 7).unwrap();
+        apply_config_push(dir.path(), &v10, 10).unwrap();
+        assert_eq!(recover_config_version(dir.path()), 10, "重启后应从备份恢复最大版本");
+        // 无备份 → 0
+        let fresh = tempfile::tempdir().unwrap();
+        write_host_toml(fresh.path(), CFG_V0);
+        assert_eq!(recover_config_version(fresh.path()), 0, "无备份时版本为 0");
+    }
+
+    #[test]
+    fn handle_config_push_rejects_stale_or_duplicate_versions() {
+        // F1 stale guard: version <= current 拒绝（审计 warn 载荷；文件不改写）
+        let dir = tempfile::tempdir().unwrap();
+        write_host_toml(dir.path(), CFG_V0);
+        let push = |version: u64| SignalingMessage::ConfigPush {
+            room_id: "r".into(),
+            target: "p".into(),
+            config: CFG_V0.into(),
+            version,
+        };
+        assert_eq!(handle_config_push(dir.path(), 0, &push(7)).unwrap(), 7);
+        let dup = handle_config_push(dir.path(), 7, &push(7)).unwrap_err();
+        assert!(dup.contains("已过期"), "同版本重复必须拒绝: {dup}");
+        let stale = handle_config_push(dir.path(), 7, &push(6)).unwrap_err();
+        assert!(stale.contains("已过期"), "旧版本必须拒绝: {stale}");
+        assert_eq!(handle_config_push(dir.path(), 7, &push(8)).unwrap(), 8, "新版本应接受");
+        // 拒绝不得改写文件（重复推 v7 后 host.toml 仍为初始配置）
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("etc").join("host.toml")).unwrap(),
+            CFG_V0,
+            "拒绝不得改写 host.toml"
+        );
     }
 }
