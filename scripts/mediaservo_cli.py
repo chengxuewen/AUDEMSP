@@ -318,18 +318,23 @@ def _compose_env() -> dict[str, str]:
     return env
 
 
-def _cmd_start(target: str, foreground: bool = False) -> None:
-    """start <target> [--foreground] — server: compose 幂等启动; host: 启动推流进程。
-    --foreground/-f: 阻塞前台运行，输出实时透传（开发调试）。"""
+def _cmd_start(target: str, foreground: bool = False, legacy: bool = False) -> None:
+    """start <target> [--foreground] [--legacy] — server: compose 幂等启动; host: 多进程推流。
+    --foreground/-f: 阻塞前台运行，输出实时透传（开发调试）。
+    --legacy: host 回退旧单进程 host-legacy（C4 前默认路径）。"""
     if target == "server":
         _check("docker", "安装 docker 并启动 daemon")
         cmd = COMPOSE_BASE + (["up"] if foreground else ["up", "-d", "server"])
         _run_or_exit(cmd, env=_compose_env())
     elif target == "host":
         if foreground:
-            _run_host_foreground(_find_host_binary())
+            if legacy:
+                _run_host_foreground(_find_host_binary())
+            else:
+                print("多进程 host 由 oxmgr 守护（无前台模式）— 去掉 --foreground 或用 --legacy", file=sys.stderr)
+                sys.exit(1)
         else:
-            _cmd_run_host()
+            _cmd_run_host(legacy=legacy)
     else:  # client
         print("start client: 待实现（client 骨架阶段）", file=sys.stderr)
         sys.exit(1)
@@ -351,7 +356,7 @@ def _cmd_restart(target: str) -> None:
 
 
 def _find_host_binary() -> Path:
-    """找 host 二进制（优先 CARGO_TARGET_DIR，回退项目 target）。"""
+    """找 host 二进制（优先 CARGO_TARGET_DIR，回退项目 target）— host-legacy 单进程（--legacy 路径）。"""
     cargo_target = os.environ.get("CARGO_TARGET_DIR")
     candidates = []
     if cargo_target:
@@ -363,6 +368,23 @@ def _find_host_binary() -> Path:
     bin_path = next((p for p in candidates if p.exists()), None)
     if bin_path is None:
         print("错误: 未找到 host-legacy 二进制 — 先运行: mediaservo build host", file=sys.stderr)
+        sys.exit(1)
+    return bin_path
+
+
+def _find_host_cli() -> Path:
+    """找多进程 host CLI 二进制（host init/start/stop/token issue 入口）。"""
+    cargo_target = os.environ.get("CARGO_TARGET_DIR")
+    candidates = []
+    if cargo_target:
+        candidates.append(Path(cargo_target) / "debug/host")
+    candidates += [
+        ROOT / "target/debug/host",
+        ROOT / "target/release/host",
+    ]
+    bin_path = next((p for p in candidates if p.exists()), None)
+    if bin_path is None:
+        print("错误: 未找到 host CLI 二进制 — 先运行: mediaservo build host", file=sys.stderr)
         sys.exit(1)
     return bin_path
 
@@ -386,11 +408,61 @@ def _run_host_foreground(bin_path: Path) -> None:
     sys.exit(proc.returncode)
 
 
-def _cmd_run_host() -> None:
-    """启动 host 推流 — 先杀旧进程再启动（单实例端口 9801 独占，清旧是必要前置）。"""
+def _cmd_run_host(legacy: bool = False) -> None:
+    """启动多进程 host — init（缺省）→ token issue ×N → host start（oxmgr 拉起全部进程）。
+    --legacy: 回退旧单进程 host-legacy（pkill + 后台 Popen，日志 /tmp/mediaservo-host.log）。"""
     if sys.platform == "win32":
         print("run-host: Windows 暂不支持", file=sys.stderr)
         sys.exit(1)
+    if legacy:
+        _run_host_legacy()
+        return
+    _check("oxmgr", "多进程 host 需 oxmgr — npm install -g oxmgr")
+    host = _find_host_cli()
+    # C25: 清 iceoryx2 固定 topic 残留（上次运行崩溃/被 SIGKILL 的发布端会留下 service 状态
+    # → 跨 run 二次 subscribe/open 持久 SystemInFlux）。仅清 MediaServo 自有运行时目录。
+    subprocess.run(["rm", "-rf", "/tmp/iceoryx2"], check=False)
+    for entry in Path("/dev/shm").glob("iox2_*"):
+        entry.unlink(missing_ok=True)
+    # 1) init（幂等）— host.toml / signing.pem 已存在则跳过
+    if not (ROOT / "etc" / "host.toml").exists():
+        _run_or_exit([str(host), "init", str(ROOT)])
+    # 2) token issue ×N（幂等 — 已存在不覆盖，D-H10 固定令牌）
+    #    文件名对齐 translate.rs to_oxfile_in_dir: <cam>.token / <stream>.token / recorder.token
+    text = (ROOT / "etc" / "host.toml").read_text()
+    link_dir = ROOT / "etc" / "link"
+    link_dir.mkdir(parents=True, exist_ok=True)
+    issued = 0
+    for cam_id, _ in _toml_id_pairs(text, "cameras"):
+        tok = link_dir / f"{cam_id}.token"
+        if tok.exists():
+            continue
+        _run_or_exit([str(host), "token", "issue", "--role", "capture",
+                      "--node", f"host-capturer-{cam_id}", "--topic", f"camera/{cam_id}",
+                      "--out", str(tok), "--dir", str(ROOT)])
+        issued += 1
+    for stream_id, cam_id in _toml_id_pairs(text, "streams"):
+        tok = link_dir / f"{stream_id}.token"
+        if tok.exists():
+            continue
+        _run_or_exit([str(host), "token", "issue", "--role", "pusher",
+                      "--node", f"host-streamer-{stream_id}", "--topic", f"camera/{cam_id}",
+                      "--out", str(tok), "--dir", str(ROOT)])
+        issued += 1
+    rec_tok = link_dir / "recorder.token"
+    if not rec_tok.exists():
+        _run_or_exit([str(host), "token", "issue", "--role", "recorder",
+                      "--node", "host-recorder", "--out", str(rec_tok), "--dir", str(ROOT)])
+        issued += 1
+    if issued:
+        print(f"✓ 已签发 {issued} 个链路令牌（etc/link/）")
+    # 3) host start（oxmgr apply）
+    _run_or_exit([str(host), "start", "--dir", str(ROOT)])
+    print("✓ host 多进程已启动（oxmgr 管理; 日志: ~/.local/share/oxmgr/logs 或 `oxmgr logs all`）")
+
+
+def _run_host_legacy() -> None:
+    """旧单进程 host-legacy 后台启动（--legacy 回退路径）。"""
     bin_path = _find_host_binary()
     if bin_path is None:
         print("错误: 未找到 host-legacy 二进制 — 先运行: mediaservo build-host", file=sys.stderr)
@@ -417,13 +489,35 @@ def _cmd_run_host() -> None:
         print(f"✗ host 启动失败 (exit {proc.returncode}) — 日志: {log_path}", file=sys.stderr)
         sys.exit(1)
 
+
+def _toml_id_pairs(text: str, section: str) -> list[tuple[str, str]]:
+    """提取 `[[section]]` 块内 (id, camera) 对（流 camera 缺省 = 自身 id）。
+
+    Python 3.10 无 tomllib；host.toml 由 host init 生成（机器可写），按节正则提取
+    （Phase D 升级 tomllib 或 host CLI 清单命令时移除）。"""
+    import re
+    out: list[tuple[str, str]] = []
+    for block in re.split(r"(?m)(?=\[\[)", text):
+        if f"[[{section}]]" not in block:
+            continue
+        m = re.search(r'^id\s*=\s*"([^"]+)"', block, re.M)
+        if not m:
+            continue
+        cam = re.search(r'^camera\s*=\s*"([^"]+)"', block, re.M)
+        out.append((m.group(1), cam.group(1) if cam else m.group(1)))
+    return out
+
 def _cmd_stop(target: str) -> None:
     """stop <target> — server: compose stop（保留容器，秒级再启）; host/client: 杀进程。"""
     if target == "server":
         _check("docker", "安装 docker 并启动 daemon")
         _run_or_exit(COMPOSE_BASE + ["stop", "server"])
     elif target == "host":
+        # 双路径幂等停止: legacy 单进程（pkill）+ 多进程（host stop, oxmgr）
         subprocess.run(["pkill", "-x", "host-legacy"], check=False)
+        host_cli = next((p for p in (ROOT / "target/debug/host", ROOT / "target/release/host") if p.exists()), None)
+        if host_cli is not None:
+            _run_or_exit([str(host_cli), "stop", "--dir", str(ROOT)])
         print("✓ host 已停止")
     else:  # client
         subprocess.run(["pkill", "-x", "mediaservo-client"], check=False)
@@ -437,10 +531,13 @@ def _cmd_logs(target: str) -> None:
         _run_or_exit(COMPOSE_BASE + ["logs", "-f", "server"])
     elif target == "host":
         log_path = Path("/tmp/mediaservo-host.log")
-        if not log_path.exists():
-            print(f"错误: 无 host 日志 {log_path} — 先运行: mediaservo up host", file=sys.stderr)
-            sys.exit(1)
-        _run_or_exit(["tail", "-f", str(log_path)])
+        if log_path.exists():  # legacy 单进程日志
+            _run_or_exit(["tail", "-f", str(log_path)])
+        ox_logs = Path.home() / ".local/share/oxmgr/logs"
+        if ox_logs.is_dir():  # 多进程日志（oxmgr 管理）
+            _run_or_exit(["tail", "-f", *sorted(ox_logs.glob("host-*.out.log"))])
+        print(f"错误: 无 host 日志（{log_path} 与 {ox_logs} 均不存在）— 先运行: mediaservo up host", file=sys.stderr)
+        sys.exit(1)
     else:  # client
         print("logs client: 待实现（client 骨架阶段）", file=sys.stderr)
         sys.exit(1)
@@ -603,9 +700,10 @@ def main() -> None:
     ):
         vp = sub.add_parser(verb, help=help_txt)
         vp.add_argument("target", choices=["server", "host", "client"])
-    start_p = sub.add_parser("start", help="启动 <target> [--foreground]: server(compose) | host(推流进程) | client")
+    start_p = sub.add_parser("start", help="启动 <target> [--foreground] [--legacy]: server(compose) | host(推流进程) | client")
     start_p.add_argument("target", choices=["server", "host", "client"])
     start_p.add_argument("--foreground", "-f", action="store_true", help="阻塞前台运行，输出实时透传（开发调试）")
+    start_p.add_argument("--legacy", action="store_true", help="host: 回退单进程 host-legacy（C4 多进程默认）")
     sub.add_parser(
         "e2e", help="e2e_sfu 回归（前置: server 容器 + host + vite(5173) 运行中）"
     )
@@ -642,7 +740,7 @@ def main() -> None:
         argv = ALIASES[argv[0]] + argv[1:]
     args = parser.parse_args(argv)
     if args.command == "start":
-        _cmd_start(args.target, args.foreground)
+        _cmd_start(args.target, args.foreground, args.legacy)
     elif args.command == "build":
         if args.target == "bindings":
             _cmd_build_bindings(args.release)
