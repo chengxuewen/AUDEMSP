@@ -102,6 +102,11 @@ pub struct JwtClaims {
     /// Role of the subject (e.g., "admin", "user").
     #[serde(default)]
     pub role: Option<String>,
+
+    /// G3 车×舱授权白名单: 该账号可访问的车端 device_id 列表（viewer/operator 用;
+    /// admin/dispatcher 忽略 = 任意车）。additive — 旧 token 缺省空。
+    #[serde(default)]
+    pub vehicles: Option<Vec<String>>,
 }
 
 /// JWT authenticator using HS256.
@@ -127,6 +132,7 @@ impl JwtAuth {
         let claims = JwtClaims {
             sub: sub.to_string(),
             role: None,
+            vehicles: None,
             iat: now,
             exp: now + ttl_secs as usize,
         };
@@ -254,6 +260,7 @@ mod tests {
             iat: now - 7200,
             exp: now - 3600, // expired 1 hour ago
             role: None,
+            vehicles: None,
         };
         let token = jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
@@ -276,12 +283,39 @@ mod tests {
     }
 
     #[test]
-    fn jwt_roundtrip_with_different_subjects() {
-        let auth = JwtAuth::new("shared-secret-must-be-32-bytes-or-more");
-        for sub in ["host-alpha", "remote-beta", "server-gamma"] {
-            let token = auth.sign(sub, 7200).unwrap();
-            let claims = auth.verify(&token).unwrap();
-            assert_eq!(claims.sub, sub);
-        }
+    fn jwt_claims_vehicles_roundtrip() {
+        // G3: 账号 token 携带车辆白名单（serde additive，缺省 None）
+        let auth = JwtAuth::new("my-jwt-secret-256-bit-minimum-key");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+        let claims = JwtClaims {
+            sub: "carol".into(),
+            iat: now,
+            exp: now + 3600,
+            role: Some("operator".into()),
+            vehicles: Some(vec!["ms-car1".into()]),
+        };
+        let token = jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &claims,
+            &jsonwebtoken::EncodingKey::from_secret(auth.secret.as_bytes()),
+        )
+        .unwrap();
+        let parsed = auth.verify(&token).unwrap();
+        assert_eq!(parsed.role.as_deref(), Some("operator"));
+        assert_eq!(parsed.vehicles.as_deref(), Some(&["ms-car1".to_string()][..]));
+        // 旧 token（无 vehicles 字段）缺省 None
+        let legacy = JwtClaims {
+            sub: "old".into(),
+            iat: now,
+            exp: now + 3600,
+            role: Some("admin".into()),
+            vehicles: None,
+        };
+        let json = serde_json::to_string(&legacy).unwrap();
+        let parsed_legacy: JwtClaims = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed_legacy.vehicles, None);
     }
 }

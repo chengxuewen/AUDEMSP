@@ -196,6 +196,14 @@ pub enum SignalingMessage {
         config: String,
         version: u64,
     },
+    /// G3 急停命令（舱端 → server → 车端房间）: 服务端强审计路径（D-H11 急停强审计）。
+    /// 底盘/云台常规控制在 P2P DC（协商期已按角色授权，服务端不可见）; 急停必须
+    /// 留痕（谁/何时/哪个车/什么命令）→ 经信令转发，host-agent 收下后转本地控制器。
+    /// command 语义: 车端约定（如 "e-stop"），server 只透传 + 审计。
+    EmergencyCommand {
+        room_id: String,
+        command: String,
+    },
 
     // ponytail: add frame ack/retransmit when reliability matters
 }
@@ -691,6 +699,25 @@ mod tests {
                 assert_eq!(version, 7);
             }
             other => panic!("expected ConfigPush, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn roundtrip_emergency_command() {
+        let msg = SignalingMessage::EmergencyCommand {
+            room_id: "vehicle-1".into(),
+            command: "e-stop".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""type":"emergency_command""#));
+        assert!(json.contains("e-stop"));
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            SignalingMessage::EmergencyCommand { room_id, command } => {
+                assert_eq!(room_id, "vehicle-1");
+                assert_eq!(command, "e-stop");
+            }
+            other => panic!("expected EmergencyCommand, got {other:?}"),
         }
     }
 

@@ -331,9 +331,8 @@ fn rewrite_room(msg: &mut SignalingMessage, room: &str) {
         | Consumed { room_id, .. } => *room_id = room.to_string(),
         Error { .. } => {}
         StatusReport { .. } => {}
-        Error { .. } => {}
-        StatusReport { .. } => {}
         ConfigPush { .. } => {} // E4: agent 专属，不入子进程路由，无需房间改写
+        EmergencyCommand { room_id, .. } => *room_id = room.to_string(), // G3: 急停房间级广播
     }
 }
 

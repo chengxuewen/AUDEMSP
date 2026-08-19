@@ -80,6 +80,11 @@ pub struct ServerConfig {
     /// 缺省 = `/opt/mediaservo/etc/devices.yaml`；文件缺失 = 空注册表（PSK 路径不受影响）。
     #[serde(default)]
     pub devices_file: Option<String>,
+
+    /// G3 舱端账号文件（YAML: `accounts: {<username>: {password_hash, role, vehicles}}`）。
+    /// 缺省 = `/opt/mediaservo/etc/accounts.yaml`；文件缺失 = 无账号（仅 PSK/设备路径）。
+    #[serde(default)]
+    pub accounts_file: Option<String>,
 }
 
 /// Config for mediaservo-client (pull + decode + control — cockpit/operator side).
