@@ -11,6 +11,14 @@
 use dashmap::DashMap;
 use mediaservo_common::protocol;
 
+/// H2: 音频房间判定 — room_id 前缀约定 `audio-<vehicle-id>`。
+/// 音频房间 = 全互连 opus 会议（车端 host-audio 进程 + 舱端 viewer+ + dispatcher）；
+/// 与视频/控制房间（RoomType 无关，SFU room 由 room_id 字符串隔离）同机共存。
+pub fn is_audio_room(room_id: &str) -> bool {
+    room_id.starts_with("audio-")
+}
+
+
 #[cfg(feature = "sfu-mediasoup")]
 mod imp {
     use super::*;
@@ -744,11 +752,71 @@ mod imp {
         pub fn room_count(&self) -> usize {
             self.rooms.len()
         }
+
+        /// H2: 查询 producer 的入站 RTP 统计（get_stats）— 媒体面证据（音频房间 e2e）。
+        /// 返回 (kind, byte_count, packet_count, score)。
+        pub async fn producer_stats(&self, producer_id: &str) -> Result<(protocol::MediaKind, u64, u64, u8), String> {
+            let producer = self
+                .rooms
+                .iter()
+                .find_map(|room| {
+                    room.peers.iter().find_map(|peer| {
+                        peer.producers
+                            .iter()
+                            .find(|p| p.id().to_string() == producer_id)
+                            .cloned()
+                    })
+                })
+                .ok_or_else(|| format!("Producer {producer_id} not found"))?;
+            let kind = match producer.kind() {
+                MediaKind::Audio => protocol::MediaKind::Audio,
+                MediaKind::Video => protocol::MediaKind::Video,
+            };
+            let stats = producer.get_stats().await.map_err(|e| format!("Producer stats: {e}"))?;
+            // 无 RTP 到达时 mediasoup 不建 RtpStream → 空 vec（合法零值语义）。
+            let (bytes, packets, score) = match stats.first() {
+                Some(s) => (s.byte_count, s.packet_count, s.score),
+                None => (0, 0, 0),
+            };
+            Ok((kind, bytes, packets, score))
+        }
+
+        /// H2: 查询 consumer 的出站 RTP 统计（get_stats）— 路由转发证据（音频房间 e2e）。
+        /// 返回 (kind, byte_count, packet_count, score)。
+        pub async fn consumer_stats(&self, consumer_id: &str) -> Result<(protocol::MediaKind, u64, u64, u8), String> {
+            let consumer = self
+                .rooms
+                .iter()
+                .find_map(|room| {
+                    room.peers.iter().find_map(|peer| {
+                        peer.consumers
+                            .iter()
+                            .find(|c| c.id().to_string() == consumer_id)
+                            .cloned()
+                    })
+                })
+                .ok_or_else(|| format!("Consumer {consumer_id} not found"))?;
+            let kind = match consumer.kind() {
+                MediaKind::Audio => protocol::MediaKind::Audio,
+                MediaKind::Video => protocol::MediaKind::Video,
+            };
+            let stats = consumer.get_stats().await.map_err(|e| format!("Consumer stats: {e}"))?;
+            let s = stats.consumer_stats();
+            Ok((kind, s.byte_count, s.packet_count, s.score))
+        }
     }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_audio_room_recognizes_prefix() {
+        assert!(is_audio_room("audio-ms-car1"), "audio- 前缀 = 音频房间");
+        assert!(!is_audio_room("ms-car1"), "普通整车房间不是音频房间");
+        assert!(!is_audio_room("room-1"), "无前缀房间不是音频房间");
+    }
+
 
     /// PIT-58: announced_address 必须优先环境变量 (宿主可达 IP) —
     /// 容器内探测 (172.18.0.2) 仅本机可用, 其他主机 ICE 不可达 → Signal Lost。
@@ -1006,9 +1074,6 @@ mod tests {
         assert!(err.contains("sctp_stream_parameters"), "错误信息: {err}");
     }
 }}
-
-
-
 
 // ── Stub when sfu-mediasoup is not enabled ──────────────────────────────
 

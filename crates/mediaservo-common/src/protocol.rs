@@ -250,6 +250,24 @@ pub enum SignalingMessage {
         data_producer_id: String,
     },
 
+    /// H2 (audio conference): 查询 SFU producer/consumer RTP 统计（媒体面证据 + 运维观测）。
+    /// 携带 producer_id 或 consumer_id（任一）；server 回复 SfuStats。
+    SfuStatsRequest {
+        producer_id: Option<String>,
+        consumer_id: Option<String>,
+    },
+
+    /// H2: SfuStatsRequest 的响应 — RTP 接收字节/包计数（mediasoup get_stats）。
+    /// byte_count/packet_count: producer = 收到的入站 RTP; consumer = 路由转发的出站 RTP。
+    SfuStats {
+        producer_id: Option<String>,
+        consumer_id: Option<String>,
+        kind: Option<MediaKind>,
+        byte_count: u64,
+        packet_count: u64,
+        score: u8,
+    },
+
     // ponytail: add frame ack/retransmit when reliability matters
 }
 
@@ -959,4 +977,28 @@ mod tests {
         assert!(matches!(parsed, SignalingMessage::DataConsumed { .. }));
     }
 
+    #[test]
+    fn roundtrip_sfu_stats_request_and_response() {
+        let req = SignalingMessage::SfuStatsRequest {
+            producer_id: Some("p-1".into()),
+            consumer_id: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains(r#"type":"sfu_stats_request"#));
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, SignalingMessage::SfuStatsRequest { .. }));
+
+        let resp = SignalingMessage::SfuStats {
+            producer_id: Some("p-1".into()),
+            consumer_id: None,
+            kind: Some(MediaKind::Audio),
+            byte_count: 4096,
+            packet_count: 64,
+            score: 10,
+        };
+        let json2 = serde_json::to_string(&resp).unwrap();
+        assert!(json2.contains(r#"type":"sfu_stats"#));
+        let parsed2: SignalingMessage = serde_json::from_str(&json2).unwrap();
+        assert!(matches!(parsed2, SignalingMessage::SfuStats { .. }));
+    }
 }

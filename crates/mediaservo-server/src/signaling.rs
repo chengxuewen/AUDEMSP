@@ -565,6 +565,8 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     .device_bindings
                     .insert(peer_id.clone(), device.clone());
                 // G3: 车端 join 成功即登记房间主车（租户隔离/授权的裁决依据）。
+                // 注: 存的是设备 ID（= 车辆 ID）。音频房间 room_id=audio-<vehicle>，
+                // 设备 ID 即 vehicle — join_vehicle_room 按它比对 allowlist，天然正确。
                 server
                     .room_owners
                     .insert(room_id.clone(), device.clone());
@@ -1146,6 +1148,24 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     message: detail,
                 });
             }
+            // H2: 音频房间只允许 audio producer（全互连 opus 会议语义）— 4031 + 审计（C15）。
+            if crate::sfu::is_audio_room(room_id)
+                && *kind != mediaservo_common::protocol::MediaKind::Audio
+            {
+                let detail = format!(
+                    "audio rooms allow audio producers only (peer={peer_id}, room={room_id}, kind={kind:?})"
+                );
+                tracing::warn!("Produce denied: {detail}");
+                audit::log_event(AuditEvent::AuthorizationDenied {
+                    action: "produce".into(),
+                    peer_id: peer_id.to_string(),
+                    detail: detail.clone(),
+                });
+                return Some(SignalingMessage::Error {
+                    code: 4031,
+                    message: detail,
+                });
+            }
             match sfu
                 .create_producer(room_id, sfu_peer_id, kind, rtp_parameters.clone())
                 .await
@@ -1361,6 +1381,78 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                         message: format!("DataConsumer creation failed: {e}"),
                     })
                 }
+            }
+        }
+        SignalingMessage::SfuStatsRequest {
+            producer_id,
+            consumer_id,
+        } => {
+            // H2: G3 门 — 账号查询 producer 统计时按其所属设备做 can_consume 校验
+            // （与 consume 同矩阵纵深防御）; consumer 查询/无主 producer 放行（UUID 不可枚举）。
+            let query_id = producer_id.as_ref().or(consumer_id.as_ref());
+            let Some(qid) = query_id else {
+                return Some(SignalingMessage::Error {
+                    code: 4000,
+                    message: "SfuStatsRequest requires producer_id or consumer_id".into(),
+                });
+            };
+            let owner = server.producer_owners.get(qid).map(|v| v.clone());
+            if let Err(reason) = identity.can_consume(owner.as_deref()) {
+                let detail = format!("{reason} (peer={peer_id})");
+                tracing::warn!("SfuStatsRequest denied: {detail}");
+                audit::log_event(AuditEvent::AuthorizationDenied {
+                    action: "sfu_stats".into(),
+                    peer_id: peer_id.to_string(),
+                    detail: detail.clone(),
+                });
+                return Some(SignalingMessage::Error {
+                    code: 4031,
+                    message: detail,
+                });
+            }
+            #[cfg(feature = "sfu-mediasoup")]
+            {
+                if let Some(pid) = producer_id {
+                    match sfu.producer_stats(&pid).await {
+                        Ok((kind, bytes, packets, score)) => Some(SignalingMessage::SfuStats {
+                            producer_id: Some(pid.to_string()),
+                            consumer_id: None,
+                            kind: Some(kind),
+                            byte_count: bytes,
+                            packet_count: packets,
+                            score,
+                        }),
+                        Err(e) => Some(SignalingMessage::Error {
+                            code: 5000,
+                            message: e,
+                        }),
+                    }
+                } else if let Some(cid) = consumer_id {
+                    match sfu.consumer_stats(&cid).await {
+                        Ok((kind, bytes, packets, score)) => Some(SignalingMessage::SfuStats {
+                            producer_id: None,
+                            consumer_id: Some(cid.to_string()),
+                            kind: Some(kind),
+                            byte_count: bytes,
+                            packet_count: packets,
+                            score,
+                        }),
+                        Err(e) => Some(SignalingMessage::Error {
+                            code: 5000,
+                            message: e,
+                        }),
+                    }
+                } else {
+                    None
+                }
+            }
+            #[cfg(not(feature = "sfu-mediasoup"))]
+            {
+                let _ = sfu;
+                Some(SignalingMessage::Error {
+                    code: 5000,
+                    message: "sfu-mediasoup not enabled".into(),
+                })
             }
         }
         _ => None,
