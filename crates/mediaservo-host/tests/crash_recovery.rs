@@ -129,8 +129,13 @@ impl Drop for OxmgrGuard {
 
 /// 等待 host.toml 出现（host init 生成后立即改写）。
 fn write_host_toml(dir: &Path) {
-    // 实验隔离: [record] 缺省 disabled → recorder 进程 exit 0 不驻留（排除双订阅者影响）
-    let cfg = "[[cameras]]\nid = \"cam0\"\nsource = \"stub\"\nfps = 30\n";
+    // recorder 驻留（[record] enabled + out_dir 于实例内）→ 真实长生命周期订阅端
+    // （host-recorder 设计上跨发布端崩溃续录）；capturer 崩溃重启期间 recorder
+    // 必须全程存活（pid 不变）且同句柄恢复收帧。
+    let cfg = format!(
+        "[[cameras]]\nid = \"cam0\"\nsource = \"stub\"\nfps = 30\n\n[record]\nenabled = true\nout_dir = \"{}\"\n",
+        dir.join("recordings").display()
+    );
     std::fs::write(dir.join("etc").join("host.toml"), cfg).expect("write host.toml");
 }
 
@@ -157,11 +162,12 @@ async fn wait_frames(stream: &mediaservo_link::FrameStream, n: u32, timeout: Dur
 
 /// E2E 核心: 杀 capturer（SIGKILL）→ oxmgr 重启 → 同 topic 重发布 → 订阅恢复。
 ///
-/// ⚠️ 半成品（勿当完成）: 探针实证重启后发布正常（新订阅端收帧），但杀前挂载的
-/// 旧订阅端句柄变陈旧不再收帧——iceoryx2 订阅端跨发布端重启恢复机制待攻关，
-/// 属 C5 未完成项；完成前 #[ignore] 保持套件绿。
+/// 实证结论（2026-08-19）: iceoryx2 0.9.3 发布端崩溃重启后，旧订阅端连接自动
+/// 重建（seq 在重启点归零且后续连续）；所谓"旧订阅端 stale"是测试断言工件——
+/// latest-slot 语义 + 重启探测轮询（500ms）会错过重启后头几帧（seq 0/1），
+/// 之后取到的全是 seq≥基线 的帧。判别改为: 杀前等 ≥30 帧（基线 seq ≥29），
+/// 后台 drainer 全程记录 seq，重启后断言出现 seq < 基线（归零必可捕获）。
 #[tokio::test]
-#[ignore] // C5 半成品: 旧订阅端句柄 stale 问题未解（见上）
 async fn capturer_kill9_restart_resumes_frames_to_subscribers() {
     cleanup_iceoryx();
     cleanup_oxmgr_host();
@@ -227,11 +233,28 @@ async fn capturer_kill9_restart_resumes_frames_to_subscribers() {
     let recorder_running = recorder_pid != 0;
     assert!(capturer_pid != 0, "pid 应非 0: {procs:?}");
 
-    // ④ 杀进程前先确认收帧（capturer 已运行；基线证据）
-    let last_seq_before = wait_frames(&stream, 3, Duration::from_secs(20)).await;
+    // ④ 杀前基线: 等 ≥30 帧（≥1s @30fps）→ 基线 seq ≥29。杀后重启实例 seq 从 0
+    //    重新开始；基线越高，重启后"归零帧"可判别窗口越长（latest-slot 会跳过
+    //    部分低 seq 帧，判别靠 drainer 全量记录，见 ⑦）。
+    let last_seq_before = wait_frames(&stream, 30, Duration::from_secs(20)).await;
     eprintln!("[crash_recovery] kill 前最后 seq={last_seq_before}");
 
-
+    // ④b 后台 drainer: 从此刻起全量记录流上 seq（latest-slot 下消费者轮询会漏帧，
+    //     drainer 连续取保证捕获重启点归零帧）
+    let drained: std::sync::Arc<std::sync::Mutex<Vec<u64>>> = std::sync::Arc::default();
+    {
+        let drain_stream = stream.clone();
+        let drained2 = std::sync::Arc::clone(&drained);
+        tokio::spawn(async move {
+            loop {
+                match tokio::time::timeout(Duration::from_millis(500), drain_stream.recv()).await {
+                    Ok(Some(f)) => drained2.lock().expect("drain lock").push(f.meta().seq),
+                    Ok(None) => break,
+                    Err(_) => continue,
+                }
+            }
+        });
+    }
 
     // ⑤ SIGKILL（崩溃路径，非 SIGTERM 优雅退出）
     unsafe { libc::kill(capturer_pid as i32, libc::SIGKILL) };
@@ -255,27 +278,26 @@ async fn capturer_kill9_restart_resumes_frames_to_subscribers() {
     }
     assert!(new_pid != 0, "20s 内 oxmgr 未重启 capturer (pid 仍 {capturer_pid})");
 
-    // ⑦ 核心断言: 同 topic 重发布成功 — 订阅端恢复收帧（seq 归零 = 新实例，非残留帧）
-    let mut resumed = false;
-    let mut stale_seen = false;
+    // ⑦ 核心断言: 同 topic 重发布成功 — 同一订阅端句柄恢复收帧。
+    //    判据: drainer 记录中出现 seq < last_seq_before（重启实例 seq 归零）。
+    //    （"20s 内看旧句柄是否还出帧"不可靠：latest-slot 下消费者可能永远取到
+    //     seq≥基线 的帧而误判 stale——2026-08-19 实证。）
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     while std::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(500), stream.recv()).await {
-            Ok(Some(frame)) => {
-                if frame.meta().seq >= last_seq_before {
-                    stale_seen = true; // 旧连接残留帧（非新实例发布）
-                    continue;
-                }
-                resumed = true;
-                break;
-            }
-            Ok(None) => panic!("订阅流关停"),
-            Err(_) => {}
+        let drained_guard = drained.lock().expect("drain lock");
+        if drained_guard.iter().any(|&s| s < last_seq_before) {
+            break;
         }
+        drop(drained_guard);
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    eprintln!("[crash_recovery] resumed={resumed} stale_seen={stale_seen}");
-    if !resumed {
-        // 探针: 失败时新建第二个订阅端 — 判别“旧端口卡死” vs “服务/发布端整体坏”
+    let reset_seen = drained.lock().expect("drain lock").iter().any(|&s| s < last_seq_before);
+    eprintln!(
+        "[crash_recovery] resumed={reset_seen} drained_total={} (基线 seq ≥{last_seq_before})",
+        drained.lock().expect("drain lock").len()
+    );
+    if !reset_seen {
+        // 探针: 新建第二个订阅端 — 判别"连接未恢复" vs "发布端整体没在发布"
         let probe = bus.subscribe(&FrameTopic::new("camera/cam0")).expect("probe subscribe");
         match tokio::time::timeout(Duration::from_secs(5), probe.recv()).await {
             Ok(Some(f)) => eprintln!("[crash_recovery] PROBE: 新订阅端收到帧 seq={}", f.meta().seq),
@@ -284,9 +306,9 @@ async fn capturer_kill9_restart_resumes_frames_to_subscribers() {
         }
     }
     assert!(
-        resumed,
-        "20s 内订阅端未见重启后新帧（seq 应 < {last_seq_before}）— \
-         max_publishers(1) + iceoryx2 残留 service 阻塞重发布? log: 见 oxmgr logs/host-capturer.out.log"
+        reset_seen,
+        "20s 内同一订阅端句柄未见重启后归零帧（seq 应 < {last_seq_before}）— \
+         发布端未重启/未重发布? log: 见 oxmgr logs/host-capturer.out.log"
     );
 
     // ⑦ 崩溃隔离: recorder 全程存活（pid 不变 + running）— 无 crash-loop（仅 recorder 驻留时）
