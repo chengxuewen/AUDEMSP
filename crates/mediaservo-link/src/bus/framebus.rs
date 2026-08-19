@@ -18,6 +18,15 @@ const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 
 type TopicPublisher = Publisher<ipc_threadsafe::Service, [u8], ()>;
 
+/// 跨进程 topic 发现结果（E1 拓扑监控数据源，Momus MEDIUM-2 选项 ①）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveredTopic {
+    pub topic: FrameTopic,
+    /// 服务上活跃节点数（0 = 无活进程连接该 topic）。
+    pub alive_nodes: usize,
+}
+
+
 /// 帧总线（每节点一个实例；attach 即注册，D235）。
 pub struct FrameBus {
     node: Node<ipc_threadsafe::Service>,
@@ -30,6 +39,44 @@ pub struct FrameBus {
 }
 
 impl FrameBus {
+    /// 跨进程发布者枚举（静态，无需 attach — host-agent 拓扑监控用）。
+    ///
+    /// 数据源: iceoryx2 0.9.3 服务注册表枚举 `Service::list(Config::global_config(), ...)`
+    /// （官方示例见 iceoryx2 源码 `src/service/mod.rs` `Service::list` doc example），
+    /// 过滤 PublishSubscribe 模式（FrameBus topic 语义）。
+    ///
+    /// 限制: 0.9.3 公共 API 不区分发布者/订阅者节点（`ServiceDynamicDetails::nodes`
+    /// 是服务上全部连接节点）→ `alive_nodes > 0` = 有活跃进程连接该 topic；
+    /// 发布端进程级 liveness 由调用方（host monitor）结合 oxmgr 判定。
+    pub fn list_topics() -> Result<Vec<DiscoveredTopic>, LinkError> {
+        let mut out = Vec::new();
+        ipc_threadsafe::Service::list(Config::global_config(), |service| {
+            let static_cfg = &service.static_details;
+            if matches!(
+                static_cfg.messaging_pattern(),
+                iceoryx2::service::static_config::messaging_pattern::MessagingPattern::PublishSubscribe(_)
+            ) {
+                let alive = service
+                    .dynamic_details
+                    .as_ref()
+                    .map(|d| {
+                        d.nodes
+                            .iter()
+                            .filter(|n| matches!(n, NodeState::Alive(_)))
+                            .count()
+                    })
+                    .unwrap_or(0);
+                out.push(DiscoveredTopic {
+                    topic: FrameTopic::new(static_cfg.name().as_str()),
+                    alive_nodes: alive,
+                });
+            }
+            CallbackProgression::Continue
+        })
+        .map_err(|e| LinkError::Bus(format!("service list: {e:?}")))?;
+        Ok(out)
+    }
+
     /// attach 即注册（D235）：验签（fail-closed）→ 载 ACL → iceoryx2 节点 → `Registry::register`。
     pub fn attach(
         endpoint: &str,
