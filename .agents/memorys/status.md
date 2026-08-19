@@ -435,3 +435,17 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **P2P 边界**: 底盘/云台控制走 P2P DC（协商期按角色授权 = 控制权的强制点）; 急停走信令
   转发（强审计要求 — P2P 流量服务端不可见）; DeviceStream 房间 SDP 帧过滤天然阻断
   P2P 协商绕过（租户隔离竞态关闭）
+
+## H1 SFU data 域完成 (2026-08-19, 4 commits)
+
+- **wire (common)**: CreateDataProducer/DataProducerCreated/NewDataProducer/ConsumeData/DataConsumed + SctpStreamParameters (camelCase, mediasoup 官方 sctp-parameters 对齐) — 9 roundtrip 测试
+- **sfu.rs**: WebRtcTransport enable_sctp=true（additive, 纯媒体流不受影响）+ create_data_producer/consumer/list_data_producers + SfuPeer data vecs
+  · 实证: produce_data 未连 DTLS 也成功（worker 允许）；transport dump sctp_parameters 非空
+  · data_message_roundtrip_direct #[ignore] — PIT-104: mediasoup-rs 0.24.1 worker→app 通知通道
+    部署级失效（on_message/on_data_producer_close/worker_close 全静默, 官方测试复刻同样失败;
+    请求响应正常; worker 侧路由实证 messages_sent=1）
+- **signaling**: CreateDataProducer/ConsumeData 处理（方向校验→G3 门→producer_owners 登记→
+  NewDataProducer 广播→响应; 拒绝 4031+audit）+ late-joiner list_data_producers 重放
+- **e2e**: e2e_sfu_data_domain 4 段（车端 produce_data 放行 + 广播到达 + 授权 consume_data 放行 +
+  账号 produce_data 4031）; Docker 全量 134 绿; 原生 75 绿; clippy 0
+- **遗留**: 消息内容端到端接收证明阻塞于 PIT-104（upstream）；host 侧 SFU-DC 接线归 H2+
