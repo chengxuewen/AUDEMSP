@@ -38,19 +38,14 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use mediaservo_common::protocol::{PeerRole, SignalingMessage};
 use mediaservo_link::{RetryConfig, SignalClient, SignalEvent, SignalSession};
-use serde::{Deserialize, Serialize};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
 /// 本地协议信封：`{src, msg}` — 仅本地 wire；远端为纯 SignalingMessage（零改动）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LocalEnvelope {
-    /// 子进程标识（如 "host-streamer-cam0"）；下发方向固定为 "server"。
-    pub src: String,
-    pub msg: SignalingMessage,
-}
+/// 类型定义在 mediaservo-link（D2 I1: 单一来源，防 wire 漂移——子进程经 field 复用同型）。
+pub use mediaservo_link::signal::LocalEnvelope;
 
 /// 网关配置。
 #[derive(Debug, Clone)]
