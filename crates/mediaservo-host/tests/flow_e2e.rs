@@ -124,8 +124,8 @@ async fn streamer_stats_ingestion() {
     let (mon_tok, mon_vk) = token(Role::Monitor, &format!("monitor-{pid}"));
     let monitor = FlowMonitor::attach(host_toml, &mon_tok, &mon_vk).expect("monitor attach");
 
-    // 假 stats 发布者（Pusher 角色 → stats/* 发布）
-    let (st_tok, st_vk) = token(Role::Pusher, &format!("streamer-{pid}"));
+    // 假 stats 发布者（Recorder 角色 → stats/* 发布；streamer 令牌缺省 Recorder，C2 遗留）
+    let (st_tok, st_vk) = token(Role::Recorder, &format!("streamer-{pid}"));
     let bus = FrameBus::attach("", &st_tok, &st_vk).expect("stats publisher attach");
     let topic = FrameTopic::new(format!("stats/stream-{stream_id}"));
     let stats = StreamerStats {

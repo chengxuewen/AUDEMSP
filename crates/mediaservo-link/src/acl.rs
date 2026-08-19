@@ -41,8 +41,9 @@ impl NodeAcl {
         let (publish_allow, subscribe_allow): (Vec<String>, Vec<String>) = match role {
             Role::Capture => (vec!["camera/*".into()], vec![]),
             Role::Processor => (vec!["video/*".into()], vec!["camera/*".into()]),
-            Role::Pusher => (vec!["stats/*".into()], vec!["camera/*".into(), "video/*".into()]),
+            Role::Pusher => (vec![], vec!["camera/*".into(), "video/*".into()]),
             Role::Puller => (vec![], vec![]),
+            // E2 推流状态上报: streamer 令牌缺省 Recorder（C2 遗留）→ stats/* 发布权
             Role::Recorder => (vec!["stats/*".into()], vec!["camera/*".into(), "video/*".into()]),
             Role::Control => (
                 vec!["control/cmd".into()],

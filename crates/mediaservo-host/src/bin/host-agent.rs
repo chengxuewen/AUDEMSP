@@ -9,11 +9,11 @@
 use mediaservo_host::gateway::{run_gateway, GatewayConfig};
 use mediaservo_host::init_logging;
 
-const USAGE: &str = "用法: host-agent [--port <本地端口>] [--remote <ws url>] [--psk <psk>] [--room <房间>] [--config <host.toml>]";
-
-fn parse_args() -> Result<(GatewayConfig, Option<String>), String> {
+const USAGE: &str = "用法: host-agent [--port <本地端口>] [--remote <ws url>] [--psk <psk>] [--room <房间>] [--config <host.toml>] [--token <令牌文件>]";
+fn parse_args() -> Result<(GatewayConfig, Option<String>, Option<String>), String> {
     let mut cfg = GatewayConfig::default();
     let mut config_path: Option<String> = None;
+    let mut token_path: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -28,6 +28,7 @@ fn parse_args() -> Result<(GatewayConfig, Option<String>), String> {
             "--psk" => cfg.psk = args.next().ok_or("--psk 缺值")?,
             "--room" => cfg.room = args.next().ok_or("--room 缺值")?,
             "--config" => config_path = Some(args.next().ok_or("--config 缺值")?),
+            "--token" => token_path = Some(args.next().ok_or("--token 缺值")?),
             _ => return Err(format!("未知参数: {arg}\n{USAGE}")),
         }
     }
@@ -39,13 +40,13 @@ fn parse_args() -> Result<(GatewayConfig, Option<String>), String> {
     if cfg.psk == "mediaservo-dev" {
         cfg.psk = std::env::var("SFU_E2E_PSK").unwrap_or_else(|_| cfg.psk.clone());
     }
-    Ok((cfg, config_path))
+    Ok((cfg, config_path, token_path))
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging("agent");
-    let (cfg, config_path) = match parse_args() {
+    let (cfg, config_path, token_path) = match parse_args() {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e}");
@@ -70,7 +71,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let monitor_started = std::time::Instant::now();
     let port = run_gateway(cfg).await.map_err(|e| std::io::Error::other(e))?;
     tracing::info!(port, "host-agent 网关就绪");
-    spawn_topology_monitor(host_toml, monitor_started);
+    spawn_topology_monitor(host_toml.clone(), monitor_started);
+    // E2: 数据流监控（token 缺省 → 跳过；部署侧 oxfile 签发 Monitor 角色令牌后启用）
+    match &token_path {
+        Some(p) => match std::fs::read(p) {
+            Ok(b) => match mediaservo_link::TokenFile::decode(&b) {
+                Ok((vk, tok)) => spawn_flow_monitor(host_toml, tok, vk),
+                Err(e) => tracing::warn!(path = %p, "令牌无效: {e} — 数据流监控跳过"),
+            },
+            Err(e) => tracing::warn!(path = %p, "令牌读取失败: {e} — 数据流监控跳过"),
+        },
+        None => tracing::warn!("未提供 --token，数据流监控跳过（拓扑监控不受影响）"),
+    }
     wait_shutdown().await;
     Ok(())
 }
@@ -106,6 +118,50 @@ fn spawn_topology_monitor(host_toml: String, started: std::time::Instant) {
                         tracing::warn!(topic = %topic, "拓扑差异: 期望相机无活跃发布者");
                     }
                 }
+            }
+        }
+    });
+}
+
+/// E2: 数据流监控周期任务（5s 采集一次；停滞/连接是数据面事实，无 grace）。
+/// 数据喂给 E3（FlowSnapshot 结构 + 日志），上报 Server 在 E3 接入。
+fn spawn_flow_monitor(
+    host_toml: String,
+    token: mediaservo_link::CapabilityToken,
+    vk: mediaservo_link::Ed25519VerifyingKey,
+) {
+    tokio::spawn(async move {
+        use mediaservo_host::monitor::flow::FlowMonitor;
+        let monitor = match FlowMonitor::attach(host_toml, &token, &vk) {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::error!("数据流监控 attach 失败: {e} — 跳过（拓扑监控不受影响）");
+                return;
+            }
+        };
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+        tick.tick().await; // 消费首个立即 tick
+        loop {
+            tick.tick().await;
+            let snap = monitor.collect();
+            for tf in &snap.topics {
+                tracing::info!(
+                    topic = %tf.topic,
+                    fps = tf.fps,
+                    bps = tf.bps,
+                    frames = tf.frames,
+                    stalled = tf.stalled,
+                    "数据流 topic 统计"
+                );
+            }
+            for sf in &snap.streams {
+                tracing::info!(
+                    stream = %sf.id,
+                    bytes_sent = sf.bytes_sent,
+                    frames_encoded = sf.frames_encoded,
+                    connected = sf.connected,
+                    "推流状态"
+                );
             }
         }
     });

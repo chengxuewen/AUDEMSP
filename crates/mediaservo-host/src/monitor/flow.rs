@@ -53,8 +53,8 @@ pub struct StreamFlow {
     pub id: String,
     /// 最近一次 stats 的 bytes_sent（webrtc OutboundRtp，累计）。
     pub bytes_sent: u64,
-    /// 最近一次 stats 的 frames_encoded（累计）。
-    pub frames_encoded: u64,
+    /// 最近一次 stats 的 frames_encoded（libwebrtc u32，累计）。
+    pub frames_encoded: u32,
     pub frame_width: u32,
     pub frame_height: u32,
     /// 最近 stats 是否在新鲜窗口内。
@@ -72,7 +72,8 @@ pub struct FlowSnapshot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StreamerStats {
     pub bytes_sent: u64,
-    pub frames_encoded: u64,
+    /// 与 libwebrtc RTCOutboundRtpStreamStats 对齐（u32）。
+    pub frames_encoded: u32,
     pub frame_width: u32,
     pub frame_height: u32,
 }

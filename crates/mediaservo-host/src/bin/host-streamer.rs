@@ -20,6 +20,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use mediaservo_field::{PublishOptions, PushConfig, PushSession, SessionEvent};
+use mediaservo_host::monitor::flow::StreamerStats;
 use mediaservo_link::{FrameBus, FrameMeta, FrameTopic, TokenFile};
 use mediaservo_webrtc::stats::RTCStats;
 use mediaservo_webrtc::traits::PeerConnectionApi;
@@ -34,6 +35,8 @@ const STATS_INTERVAL: Duration = Duration::from_secs(2);
 
 const USAGE: &str = "用法: host-streamer --stream <id> --config <host.toml> --token <令牌文件>";
 
+/// 出站统计消息序号（stats topic FrameMeta.seq，单调）。
+static STATS_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 struct Args {
     stream: String,
     config: PathBuf,
@@ -113,8 +116,10 @@ async fn shutdown_signal() -> std::io::Result<()> {
     Ok(())
 }
 
-/// 出站统计日志（e2e 证据: bytes_sent/frames_encoded > 0，对齐 field D4 模式）。
-fn log_stats(session: &PushSession) {
+/// 出站统计：日志（e2e 证据: bytes_sent/frames_encoded > 0，对齐 field D4 模式）
+/// + FrameBus 发布 [`StreamerStats`] JSON 到 `stats/stream-<id>`（E2 数据面监控，
+/// additive；监控订阅者才消费，无消费者时发布零开销级）。
+fn log_stats(session: &PushSession, bus: &FrameBus, topic: &FrameTopic, started: Instant) {
     let Some(pc) = session.peer_connection() else {
         return;
     };
@@ -132,6 +137,29 @@ fn log_stats(session: &PushSession) {
         o.frame_width,
         o.frame_height
     );
+    // E2 additive: 发布推流状态（FrameMeta::FORMAT_JSON 标记；ts_mono = 进程启动
+    // 单调时钟（C17 锚定语义；监控侧不消费 stats ts_mono，仅作为单调标记））
+    let meta = FrameMeta {
+        seq: STATS_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        format: FrameMeta::FORMAT_JSON,
+        ts_mono_ns: started.elapsed().as_nanos() as u64,
+        ..Default::default()
+    };
+    let payload = match serde_json::to_vec(&StreamerStats {
+        bytes_sent: o.bytes_sent,
+        frames_encoded: o.frames_encoded,
+        frame_width: o.frame_width,
+        frame_height: o.frame_height,
+    }) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!("stats 序列化失败: {e}");
+            return;
+        }
+    };
+    if let Err(e) = bus.publish(topic, &payload, &meta) {
+        tracing::warn!(topic = %topic.as_str(), "stats 发布失败: {e}");
+    }
 }
 
 #[tokio::main]
@@ -282,8 +310,9 @@ async fn main() -> ExitCode {
         stream.id, topic.as_str(), cfg.width, cfg.height, cam.fps, stream.codec, cfg.room
     );
 
-    // 帧循环: FrameBus → TrackSender（C17 时间戳透传）+ 出站统计 + 事件排空
-    // （events 不消费会积压 — bridge 任务持续投递 SessionEvent::Message）
+    // E2 additive: 推流状态 topic + 单调时钟起点（stats 发布用）
+    let stats_topic = FrameTopic::new(format!("stats/stream-{}", stream.id));
+    let started = Instant::now();
     let mut exit_code: u8 = 0;
     let mut last_stats = Instant::now();
     'run: loop {
@@ -337,7 +366,7 @@ async fn main() -> ExitCode {
                         tracing::warn!(seq = meta.seq, "write frame: {e}");
                     }
                     if last_stats.elapsed() >= STATS_INTERVAL {
-                        log_stats(&session);
+                        log_stats(&session, &bus, &stats_topic, started);
                         last_stats = Instant::now();
                     }
                 }
