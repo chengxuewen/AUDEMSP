@@ -9,10 +9,11 @@
 use mediaservo_host::gateway::{run_gateway, GatewayConfig};
 use mediaservo_host::init_logging;
 
-const USAGE: &str = "用法: host-agent [--port <本地端口>] [--remote <ws url>] [--psk <psk>] [--room <房间>]";
+const USAGE: &str = "用法: host-agent [--port <本地端口>] [--remote <ws url>] [--psk <psk>] [--room <房间>] [--config <host.toml>]";
 
-fn parse_args() -> Result<GatewayConfig, String> {
+fn parse_args() -> Result<(GatewayConfig, Option<String>), String> {
     let mut cfg = GatewayConfig::default();
+    let mut config_path: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -26,6 +27,7 @@ fn parse_args() -> Result<GatewayConfig, String> {
             "--remote" => cfg.remote_url = args.next().ok_or("--remote 缺值")?,
             "--psk" => cfg.psk = args.next().ok_or("--psk 缺值")?,
             "--room" => cfg.room = args.next().ok_or("--room 缺值")?,
+            "--config" => config_path = Some(args.next().ok_or("--config 缺值")?),
             _ => return Err(format!("未知参数: {arg}\n{USAGE}")),
         }
     }
@@ -37,23 +39,73 @@ fn parse_args() -> Result<GatewayConfig, String> {
     if cfg.psk == "mediaservo-dev" {
         cfg.psk = std::env::var("SFU_E2E_PSK").unwrap_or_else(|_| cfg.psk.clone());
     }
-    Ok(cfg)
+    Ok((cfg, config_path))
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging("agent");
-    let cfg = match parse_args() {
+    let (cfg, config_path) = match parse_args() {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e}");
             std::process::exit(2);
         }
     };
+    // E1 拓扑监控: host.toml 期望态（缺省空 → 仅固定进程期望 + 告警）
+    let host_toml = match &config_path {
+        Some(p) => match std::fs::read_to_string(p) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(path = %p, "host.toml 读取失败: {e} — 拓扑期望仅固定进程");
+                String::new()
+            }
+        },
+        None => {
+            tracing::warn!("未提供 --config，拓扑期望仅固定进程（capturer/streamer 期望需 host.toml）");
+            String::new()
+        }
+    };
     let port = run_gateway(cfg).await.map_err(|e| std::io::Error::other(e))?;
     tracing::info!(port, "host-agent 网关就绪");
+    spawn_topology_monitor(host_toml);
     wait_shutdown().await;
     Ok(())
+}
+
+/// E1: 拓扑监控周期任务（5s 采集一次；grace 窗口内抑制 mismatch 上报）。
+/// 数据喂给 E2/E3（snapshot 结构 + 日志），上报 Server 在 E3 接入。
+fn spawn_topology_monitor(host_toml: String) {
+    tokio::spawn(async move {
+        let monitor = mediaservo_host::monitor::topology::TopologyMonitor::new(host_toml);
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+        tick.tick().await; // 首个间隔立即 tick 一次，这里消费掉
+        loop {
+            tick.tick().await;
+            let snap = monitor.collect();
+            tracing::info!(
+                expected = snap.expected_processes.len(),
+                actual_procs = snap.actual_processes.len(),
+                actual_topics = snap.actual_topics.len(),
+                mismatches = snap.mismatches.len(),
+                grace = snap.grace_active,
+                "拓扑快照"
+            );
+            if snap.grace_active {
+                continue; // 启动窗口: 抑制 mismatch 上报（D-H14）
+            }
+            for m in &snap.mismatches {
+                match m {
+                    mediaservo_host::monitor::topology::Mismatch::ProcessMissing { name } => {
+                        tracing::warn!(process = %name, "拓扑差异: 期望进程缺失/未运行");
+                    }
+                    mediaservo_host::monitor::topology::Mismatch::PublisherMissing { topic } => {
+                        tracing::warn!(topic = %topic, "拓扑差异: 期望相机无活跃发布者");
+                    }
+                }
+            }
+        }
+    });
 }
 
 /// 等待 SIGINT/SIGTERM（unix 主路径；其他平台仅 ctrl_c）。

@@ -164,3 +164,17 @@ fn signaling_gateway_url_resolution_and_streamer_arg() {
         "无路径变体也应带 --gateway, got:\n{ox}"
     );
 }
+#[test]
+fn to_oxfile_in_dir_passes_config_to_host_agent() {
+    // E1: agent 拓扑监控期望态数据源 — 与 recorder 同形追加 --config
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = "[[cameras]]\nid = \"cam0\"\n";
+    let ox = mediaservo_host::translate::to_oxfile_in_dir(cfg, dir.path()).unwrap();
+    let abs = std::path::absolute(dir.path()).unwrap();
+    assert!(ox.contains("host-agent --config"), "agent 命令应带 --config, got:\n{ox}");
+    assert!(ox.contains(&format!("--config {}/etc/host.toml", abs.display())));
+    // 无路径变体保持 A2 形态（无参数）
+    let ox = mediaservo_host::translate::to_oxfile(cfg).unwrap();
+    assert!(!ox.contains("host-agent --config"));
+}
+

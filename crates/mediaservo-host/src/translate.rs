@@ -118,9 +118,13 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
             ));
         }
         // D1: agent 网关本地端口（[signaling] local_port 配置；缺省 agent 内置 17980）
+        // E1: agent 追加 --config（拓扑监控期望态数据源，与 recorder 同形）。
         if name == "host-agent" {
             if let Some(port) = signaling_local_port(cfg)? {
                 cmd.push_str(&format!(" --port {port}"));
+            }
+            if !config_path.as_os_str().is_empty() {
+                cmd.push_str(&format!(" --config {}", config_path.display()));
             }
         }
         // C4: recorder [record] enabled=false 时按设计 exit 0 — 在 oxmgr
@@ -155,6 +159,20 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
         ));
         }
         push_app(&mut out, &name, &cmd, "always");
+    }
+    Ok(out)
+}
+
+
+/// 期望进程名列表（E1 拓扑监控期望态；与 oxfile 生成同一实例命名来源，DRY）。
+pub fn expected_process_names(cfg: &str) -> Result<Vec<String>, String> {
+    let (cameras, streams) = camera_and_stream_ids(cfg)?;
+    let mut out: Vec<String> = FIXED_APPS.iter().map(|s| s.to_string()).collect();
+    for cam in &cameras {
+        out.push(instance_name("host-capturer", cam, cameras.len() > 1));
+    }
+    for stream in &streams {
+        out.push(instance_name("host-streamer", stream, streams.len() > 1));
     }
     Ok(out)
 }
