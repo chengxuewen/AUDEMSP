@@ -1071,3 +1071,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: 运行加 `LD_PRELOAD=$PWD/.pixi/envs/default/lib/libstdc++.so.6`；分发按目标系统编译 napi 平台二进制（livekit 同——每平台预编译）
 - **验证**: LD_PRELOAD 后 .node 加载成功（exports 正常）
 - **教训**: 混合工具链（conda 编译 + 系统运行时）的 C++ ABI 匹配检查；napi 平台二进制分发矩阵的必要性
+
+## PIT-102: "订阅端跨发布端崩溃 stale" 是测试断言工件 — latest-slot 吞掉重启归零帧 (2026-08-19)
+- **症状**: C5 crash_recovery e2e（杀 capturer → oxmgr 重启）断言"旧订阅端不再收帧"持续失败；探针"新订阅端正常收帧" → 误判为 iceoryx2 订阅端跨发布端重启不恢复（探针结论"stale"）
+- **根因**: ① iceoryx2 0.9.3 实际自动恢复（seq 调试实证：重启点 seq 2→0 归零且后续 0..644 连续无缺口）——旧订阅端连接照常工作；② 失败原因是测试自身：FrameBus 是 latest-slot（一帧槽），重启后头几帧（seq 0/1）在重启探测轮询（500ms）完成前已被后续帧覆盖，断言循环此后取到的全是 seq≥杀前基线 的帧 → 永久误判 stale
+- **解法**: 判别式改为确定性可捕获：杀前等 ≥30 帧抬高基线（seq≥29）+ 后台 drainer 全程记录 seq，断言"出现 seq < 基线"（重启实例归零必被 drainer 捕获）；测试内 [record] enabled 使 host-recorder 成为真实长生命周期订阅端（pid 不变 + running 断言）
+- **验证**: crash_recovery 3/3 稳定（~3s/run）；host 全量绿；link framebus_crash_recovery 2/2（64B@10fps + 1080p@30fps 双参数）
+- **教训**: 故障注入测试的断言必须能捕获"瞬态信号"（latest-slot 下别等取到归零帧——窗口已被轮询延迟吃掉）；先验证"被断言方是否真的故障"再下结论（seq 全量记录是金标准）；iceoryx2 0.9.3 发布端 SIGKILL 重启后订阅端连接自动重建（容器 change counter 驱动），无需应用层干预

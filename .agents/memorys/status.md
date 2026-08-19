@@ -391,3 +391,10 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **复用**: field PushSession 推流链路 + video_sender() 访问器（additive 6 行）+ link FrameBus::subscribe（latest-slot 背压）+ field D4 证据模式
 - **测试**: streamer_e2e 2（坏参 exit 2 + capturer/streamer 双进程→外部 Docker server 收流 bytes_sent=8144 frames_encoded=55, SIGTERM 双 0）; translate +1; host 全量 51 绿; field 18 绿; pixi run check 0 error
 - **遗留**: ① oxfile streamer 令牌文件角色须为 Recorder（签发属 B 阶段）② SFU_E2E_* 环境变量是测试约定名，Phase D 正规化
+
+## C5 crash_recovery e2e 完成 (2026-08-19, 1874d6a + 2dd8c9f)
+
+- **实证反转**: "订阅端跨发布端崩溃 stale"是测试断言工件，非 iceoryx2 缺陷 — latest-slot 吞掉重启归零帧（PIT-102）。seq 全量记录证实旧订阅端连接自动重建（重启点 2→0 归零后连续）
+- **link 兜底** (1874d6a): 发布端列表每重启只变一次，若那次连接创建被 degradation handler 吞掉则永不重试 → 订阅线程 5s 无帧重建 subscriber（FrameStream 句柄不变，D241；失败保留旧句柄 30s 冷却重试）+ framebus_crash_recovery 测试 2/2（64B@10fps + 1080p@30fps）
+- **e2e 完成** (2dd8c9f): 杀前基线 ≥30 帧 + 后台 drainer 确定性断言归零帧；[record] enabled → host-recorder 真实长生命周期订阅端全程存活验证
+- 验证: crash_recovery 3/3 稳定（~3s/run）、host 全量 51 绿、link 全绿、pixi run check 0 error
