@@ -686,6 +686,32 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
         }
     }
 
+    // H1: Send existing data producers to new peer (late-joiner sync, mirror above)
+    #[cfg(feature = "sfu-mediasoup")]
+    {
+        if let Some(created) = server.sfu_manager.list_data_producers(&relay_room) {
+            tracing::info!(
+                "SFU: found {} data producers in room {}",
+                created.len(),
+                relay_room
+            );
+            for (data_producer_id, label, peer_id) in &created {
+                let msg = SignalingMessage::NewDataProducer {
+                    room_id: relay_room.clone(),
+                    data_producer_id: data_producer_id.clone(),
+                    peer_id: peer_id.clone(),
+                    label: label.clone(),
+                    protocol: String::new(),
+                };
+                let _ = direct_sender
+                    .lock()
+                    .await
+                    .send(Message::Text(send_msg(&msg).unwrap()))
+                    .await;
+            }
+        }
+    }
+
     while let Some(Ok(msg)) = receiver.next().await {
         // Check shutdown signal before processing each message
         if *shutdown_rx.borrow() {
@@ -1197,6 +1223,144 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     code: 5000,
                     message: format!("Consumer creation failed: {e}"),
                 }),
+            }
+        }
+        SignalingMessage::CreateDataProducer {
+            room_id,
+            peer_id: msg_peer_id,
+            transport_direction,
+            label,
+            protocol,
+            sctp_stream_parameters,
+        } => {
+            // PIT-65: 用消息 peer_id (每网页唯一 sfuPeerId), 与 produce/consume 一致
+            let sfu_peer_id = msg_peer_id.as_str();
+            tracing::info!(
+                "SFU: CreateDataProducer room={} label={} dir={:?}",
+                room_id, label, transport_direction
+            );
+            if !matches!(
+                transport_direction,
+                mediaservo_common::protocol::TransportDirection::Send
+            ) {
+                return Some(SignalingMessage::Error {
+                    code: 4000,
+                    message: "CreateDataProducer requires send transport".into(),
+                });
+            }
+            // G3 门: 与 produce 同矩阵 — 车端自动允许（自己的 DC）; 账号禁止; legacy 放行。
+            if let Err(reason) = identity.can_produce() {
+                let detail = format!("{reason} (peer={peer_id}, room={room_id})");
+                tracing::warn!("CreateDataProducer denied: {detail}");
+                audit::log_event(AuditEvent::AuthorizationDenied {
+                    action: "produce_data".into(),
+                    peer_id: peer_id.to_string(),
+                    detail: detail.clone(),
+                });
+                return Some(SignalingMessage::Error {
+                    code: 4031,
+                    message: detail,
+                });
+            }
+            match sfu
+                .create_data_producer(
+                    room_id,
+                    sfu_peer_id,
+                    label,
+                    protocol,
+                    sctp_stream_parameters.clone(),
+                )
+                .await
+            {
+                Ok(result) => {
+                    // G3: 车端 data producer 登记所属设备（consume_data 授权纵深防御,
+                    // 与媒体 producer 同一 id 空间 — UUID 唯一不冲突）。
+                    if let Some(device) = server.device_id_of(peer_id) {
+                        server
+                            .producer_owners
+                            .insert(result.data_producer_id.clone(), device);
+                    }
+                    // Broadcast NewDataProducer to all peers in room (late-joiner sync)
+                    let broadcast = SignalingMessage::NewDataProducer {
+                        room_id: room_id.clone(),
+                        data_producer_id: result.data_producer_id.clone(),
+                        peer_id: peer_id.to_string(),
+                        label: label.clone(),
+                        protocol: protocol.clone(),
+                    };
+                    let _ = broadcast_tx.send(serde_json::to_string(&broadcast).unwrap());
+                    tracing::info!(
+                        "SFU: broadcast NewDataProducer (label={}) for peer {} in room {}",
+                        label, peer_id, room_id
+                    );
+                    Some(SignalingMessage::DataProducerCreated {
+                        room_id: room_id.clone(),
+                        data_producer_id: result.data_producer_id,
+                    })
+                }
+                Err(e) => {
+                    tracing::error!("SFU: DataProducer creation failed: {e}");
+                    Some(SignalingMessage::Error {
+                        code: 5000,
+                        message: format!("DataProducer creation failed: {e}"),
+                    })
+                }
+            }
+        }
+        SignalingMessage::ConsumeData {
+            room_id,
+            peer_id: msg_peer_id,
+            transport_direction,
+            data_producer_id,
+        } => {
+            let sfu_peer_id = msg_peer_id.as_str();
+            tracing::info!(
+                "SFU: ConsumeData room={} data_producer={} dir={:?}",
+                room_id, data_producer_id, transport_direction
+            );
+            if !matches!(
+                transport_direction,
+                mediaservo_common::protocol::TransportDirection::Recv
+            ) {
+                return Some(SignalingMessage::Error {
+                    code: 4000,
+                    message: "ConsumeData requires recv transport".into(),
+                });
+            }
+            // G3 门: 与 consume 同矩阵 — 账号只能 consume 有权车设备的 data producer。
+            let producer_owner = server
+                .producer_owners
+                .get(data_producer_id)
+                .map(|v| v.clone());
+            if let Err(reason) = identity.can_consume(producer_owner.as_deref()) {
+                let detail = format!("{reason} (peer={peer_id}, room={room_id})");
+                tracing::warn!("ConsumeData denied: {detail}");
+                audit::log_event(AuditEvent::AuthorizationDenied {
+                    action: "consume_data".into(),
+                    peer_id: peer_id.to_string(),
+                    detail: detail.clone(),
+                });
+                return Some(SignalingMessage::Error {
+                    code: 4031,
+                    message: detail,
+                });
+            }
+            match sfu
+                .create_data_consumer(room_id, sfu_peer_id, data_producer_id)
+                .await
+            {
+                Ok(result) => Some(SignalingMessage::DataConsumed {
+                    room_id: room_id.clone(),
+                    data_consumer_id: result.data_consumer_id,
+                    data_producer_id: result.data_producer_id,
+                }),
+                Err(e) => {
+                    tracing::error!("SFU: DataConsumer creation failed: {e}");
+                    Some(SignalingMessage::Error {
+                        code: 5000,
+                        message: format!("DataConsumer creation failed: {e}"),
+                    })
+                }
             }
         }
         _ => None,
