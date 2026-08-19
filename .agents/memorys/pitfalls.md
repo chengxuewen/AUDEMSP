@@ -1078,3 +1078,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: 判别式改为确定性可捕获：杀前等 ≥30 帧抬高基线（seq≥29）+ 后台 drainer 全程记录 seq，断言"出现 seq < 基线"（重启实例归零必被 drainer 捕获）；测试内 [record] enabled 使 host-recorder 成为真实长生命周期订阅端（pid 不变 + running 断言）
 - **验证**: crash_recovery 3/3 稳定（~3s/run）；host 全量绿；link framebus_crash_recovery 2/2（64B@10fps + 1080p@30fps 双参数）
 - **教训**: 故障注入测试的断言必须能捕获"瞬态信号"（latest-slot 下别等取到归零帧——窗口已被轮询延迟吃掉）；先验证"被断言方是否真的故障"再下结论（seq 全量记录是金标准）；iceoryx2 0.9.3 发布端 SIGKILL 重启后订阅端连接自动重建（容器 change counter 驱动），无需应用层干预
+
+## PIT-104: mediasoup-rs 0.24.1 worker→app 通知通道整体失效 (2026-08-19, H1)
+- **症状**: DataConsumer.on_message / on_data_producer_close / Worker.on_close 回调全部静默不触发（回调闭包被 drop，同步通道报 Disconnected/Closed）；请求-响应全部正常（dump/get_stats/produce/consume 均通）。官方 mediasoup-rs data_consumer::tests::data_producer_close_event 同构复刻（plain transport + future::block_on + async_oneshot）在本部署同样失败。
+- **根因**: mediasoup-rs 0.24.1 channel 通知分发（worker→app 通道）在本部署失效。已排除：worker 侧路由（consumer stats messages_sent=1 实证 Router::OnTransportDataProducerMessageReceived 投递成功，官方源码逐级核对 DirectTransport::SendMessage→ChannelNotifier::Emit→ChannelSocket::Send→channelWriteFn）；fbs 事件映射（DATACONSUMER_MESSAGE 解析路径完整）；tokio 交互（future::block_on 复刻同样失败）。丢失点为 Rust 侧通知分发（channel.rs 缓冲/订阅生命周期，疑 buffer_messages_for guard 竞态）——所有通知类型一致静默丢失，无 error 日志。
+- **解法**: H1 范围内不可修（upstream 域）——data_message_roundtrip_direct 标 #[ignore] 文档化；e2e 以实体创建 + worker 侧 stats 指标证明路由；host 侧 SFU-DC 消息接线（H2）依赖上游修复或走 DirectTransport 绕行方案（需用户决策）。
+- **验证**: `cargo test -p mediaservo-server --features sfu-mediasoup --lib sfu::` — 5 过 1 ignore；e2e_sfu 5/5。
+- **教训**: mediasoup-rs 的"通知型"事件（on_message/on_trace/on_close/on_data_producer_close）此前从未在仓库 e2e 中被实际触发（现有测试全走请求-响应）；接入任何依赖通知的事件前，先用官方测试同构复刻验证通知通道可用（本次复刻即暴露部署级失效）。归属: 修复时先对照 mediasoup-rs upstream（github.com/versatica/mediasoup rust-0.24.1 分支 channel.rs 通知分发）。
