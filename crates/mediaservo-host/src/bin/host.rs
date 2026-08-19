@@ -463,7 +463,8 @@ fn parse_role(s: &str) -> Result<Role, String> {
         "recorder" => Ok(Role::Recorder),
         "control" => Ok(Role::Control),
         "perception" => Ok(Role::Perception),
-        _ => Err(format!("未知角色: {s}（可选: capture/processor/pusher/puller/recorder/control/perception）")),
+        "monitor" => Ok(Role::Monitor),
+        _ => Err(format!("未知角色: {s}（可选: capture/processor/pusher/puller/recorder/control/perception/monitor）")),
     }
 }
 
