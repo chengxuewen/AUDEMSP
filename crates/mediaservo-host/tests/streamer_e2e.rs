@@ -1,9 +1,11 @@
-//! Task C2: host-streamer 进程测试 — FrameBus 订阅 → WebRTC 推流（外部 mediasoup server）。
+//! Task C2+D2: host-streamer 进程测试 — FrameBus 订阅 → 经本地网关推流（外部 mediasoup server）。
 //!
 //! - `bad_args_exit_2_with_usage`: 缺参/坏参 → exit 2 + stderr 用法提示
-//! - `streamer_pushes_framebus_frames_to_sfu`: capturer（真进程）+ streamer（真进程）
-//!   → 外部 Docker server 收流（streamer 日志 `streamer stats: bytes_sent>0 且
-//!   frames_encoded>0`，对齐 field push_e2e D4 证据模式）→ SIGTERM 双双优雅退出 0
+//! - `streamer_pushes_through_gateway_to_server`: host-agent（真进程，本地网关）
+//!   + capturer + streamer → 外部 Docker server 收流（streamer 日志
+//!   `bytes_sent>0 且 frames_encoded>0`，D4 证据模式），并且 server
+//!   见到仅一个车位会话（admin API 房间列表 = 唯一 vehicle
+//!   房间且含 host，无 stream-房间）→ SIGTERM 三进程优雅退出 0
 //!
 //! 前置: `SFU_E2E_WS_URL` 指向外部 mediasoup server（C21 纯外部模式，不 import
 //! server 类型）; C25: 跑前清 `/tmp/iceoryx2` + `/dev/shm/iox2_*`。
@@ -149,10 +151,38 @@ fn wait_for_flow(log: &tempfile::NamedTempFile) -> String {
     panic!("30s 内未见流证据, log:\n{}", read_log(log));
 }
 
-/// E2E: capturer（真进程发布 camera/cam0）→ streamer（真进程订阅 + 推流）
-/// → 外部 mediasoup server 收流（bytes_sent>0 且 frames_encoded>0）。
+/// 网关主机口（host.toml [signaling] local_port 与测试分离）。
+fn free_local_port() -> u16 {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind probe");
+    l.local_addr().expect("probe addr").port()
+}
+
+/// admin API 房间列表（真 server 无 JWT 配置时允许无认证访问，已实证）。
+fn admin_rooms() -> serde_json::Value {
+    let port = ws_url()
+        .trim_start_matches("ws://")
+        .trim_end_matches("/ws")
+        .split(':')
+        .nth(1)
+        .unwrap_or("9800")
+        .parse::<u16>()
+        .unwrap_or(9800);
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("admin connect");
+    use std::io::{Read, Write};
+    let req = format!(
+        "GET /api/admin/rooms HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(req.as_bytes()).expect("admin req");
+    let mut buf = String::new();
+    stream.read_to_string(&mut buf).expect("admin read");
+    let body = buf.split("\r\n\r\n").nth(1).expect("admin body");
+    serde_json::from_str(body).expect("admin json")
+}
+
+/// E2E (D2): host-agent（本地网关）+ capturer + streamer(--gateway)
+/// → 外部 mediasoup server 收流，且仅一个车位会话。
 #[tokio::test]
-async fn streamer_pushes_framebus_frames_to_sfu() {
+async fn streamer_pushes_through_gateway_to_server() {
     cleanup_iceoryx();
     let _url = ws_url();
     let dir = tempfile::tempdir().expect("tempdir");
@@ -178,6 +208,25 @@ async fn streamer_pushes_framebus_frames_to_sfu() {
     let str_path = dir.path().join("streamer.token");
     std::fs::write(&str_path, TokenFile::encode(&str_tok, &str_vk)).expect("write str token");
 
+    // host-agent（本地网关）: 随机端口 + 远端指真 server
+    let gw_port = free_local_port();
+    let agent_log = tempfile::NamedTempFile::new().expect("agent log");
+    let mut agent = Command::new(env!("CARGO_BIN_EXE_host-agent"))
+        .args([
+            "--port",
+            &gw_port.to_string(),
+            "--remote",
+            &ws_url(),
+            "--room",
+            "vehicle",
+        ])
+        .stdout(Stdio::from(agent_log.reopen().expect("reopen agent log")))
+        .stderr(Stdio::from(agent_log.reopen().expect("reopen agent log")))
+        .spawn()
+        .expect("spawn host-agent");
+    // 等 agent 加入整车房间（否则 streamer RoomJoin 被拦截回 5001）
+    wait_for(&agent_log, "agent 已加入整车房间");
+
     // capturer 进程（先起：streamer 首帧 gate 依赖发布端）
     let cap_log = tempfile::NamedTempFile::new().expect("cap log");
     let mut capturer = Command::new(env!("CARGO_BIN_EXE_host-capturer"))
@@ -195,7 +244,7 @@ async fn streamer_pushes_framebus_frames_to_sfu() {
         .expect("spawn host-capturer");
     wait_for(&cap_log, "capturer ready");
 
-    // streamer 进程
+    // streamer 进程 → 本地网关
     let str_log = tempfile::NamedTempFile::new().expect("str log");
     let mut streamer = Command::new(env!("CARGO_BIN_EXE_host-streamer"))
         .args([
@@ -205,6 +254,8 @@ async fn streamer_pushes_framebus_frames_to_sfu() {
             cfg_path.to_str().expect("cfg utf8"),
             "--token",
             str_path.to_str().expect("str token utf8"),
+            "--gateway",
+            &format!("ws://127.0.0.1:{gw_port}/ws"),
         ])
         .stdout(Stdio::from(str_log.reopen().expect("reopen str log")))
         .stderr(Stdio::from(str_log.reopen().expect("reopen str log")))
@@ -216,11 +267,31 @@ async fn streamer_pushes_framebus_frames_to_sfu() {
     let evidence = wait_for_flow(&str_log);
     eprintln!("[streamer_e2e] 流证据: {evidence}");
 
-    // SIGTERM → 双双优雅退出 0
+    // 一车一会话: server 房间列表应只有 vehicle（含 host），无 stream-房间
+    let rooms = admin_rooms();
+    let rooms_arr = rooms["rooms"].as_array().expect("rooms array");
+    eprintln!("[streamer_e2e] admin rooms: {rooms}");
+    assert!(
+        rooms_arr
+            .iter()
+            .any(|r| r["id"] == "vehicle" && r["host"].is_string()),
+        "server 应见到 vehicle 房间 + host, got {rooms}"
+    );
+    assert!(
+        !rooms_arr
+            .iter()
+            .any(|r| r["id"].as_str().is_some_and(|id| id.starts_with("stream-"))),
+        "streamer RoomJoin 应被网关拦截（无 stream-* 房间）, got {rooms}"
+    );
+
+    // SIGTERM → 三进程优雅退出 0
     unsafe { libc::kill(streamer.id() as i32, libc::SIGTERM) };
     let st = streamer.wait().expect("wait streamer");
     assert_eq!(st.code(), Some(0), "streamer 应优雅退出 0, got {st:?}");
     unsafe { libc::kill(capturer.id() as i32, libc::SIGTERM) };
     let ct = capturer.wait().expect("wait capturer");
     assert_eq!(ct.code(), Some(0), "capturer 应优雅退出 0, got {ct:?}");
+    unsafe { libc::kill(agent.id() as i32, libc::SIGTERM) };
+    let at = agent.wait().expect("wait agent");
+    assert_eq!(at.code(), Some(0), "agent 应优雅退出 0, got {at:?}");
 }

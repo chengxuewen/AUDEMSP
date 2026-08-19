@@ -10,9 +10,12 @@
 //! Phase B (B1)：`connect_with_retry` 指数退避重连（重试走完整 connect →
 //! PSK 认证按连接重做）；`SignalSession::on_disconnect` 断线通知（供上层
 //! 触发重连；主动 `close()` 不触发）。
-
+//!
+//! D2 网关模式（`SignalClient::new_gateway`）：本地 wire 包 `LocalEnvelope`
+//! （无 PSK 挑战——网关本地侧不认证，整车 PSK 在 agent 的远端连接）。
 use futures_util::{SinkExt, StreamExt};
 use mediaservo_common::protocol::{PeerRole, SignalingMessage};
+use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc};
 use tokio_tungstenite::tungstenite::Message;
@@ -21,6 +24,17 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 use crate::error::LinkError;
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+/// 本地网关信封（D2: 子进程 ↔ host-agent 本地 wire；下发方向 src 固定 "server"）。
+/// 语义见 mediaservo-host::gateway（D1）：RoomJoin 拦截/响应路由/房间重写。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalEnvelope {
+    /// 子进程标识（如 "host-streamer-cam0"）；下发方向固定为 "server"。
+    pub src: String,
+    pub msg: SignalingMessage,
+}
+
+
 
 /// 断线回调槽（会话与后台任务共享；注册后至多触发一次）。
 type DisconnectSlot = std::sync::Arc<std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>>>;
@@ -67,6 +81,9 @@ pub struct SignalClient {
     psk: String,
     room_id: String,
     role: PeerRole,
+    /// D2 本地网关模式：Some(src) = 信封 wire（无 PSK 挑战，信任边界 127.0.0.1）；
+    /// None = 直连 server（PSK 认证）。
+    gateway_src: Option<String>,
 }
 
 impl SignalClient {
@@ -76,6 +93,19 @@ impl SignalClient {
             psk: psk.to_string(),
             room_id: room_id.to_string(),
             role,
+            gateway_src: None,
+        }
+    }
+
+    /// 本地网关模式（D2）：WS 连 host-agent，无 PSK 挑战（网关本地侧不认证，
+    /// 整车 PSK 在 agent 的远端连接）；全部消息包 LocalEnvelope {src, msg}。
+    pub fn new_gateway(url: &str, src: &str, room_id: &str, role: PeerRole) -> Self {
+        Self {
+            url: url.trim_end_matches('/').to_string(),
+            psk: String::new(),
+            room_id: room_id.to_string(),
+            role,
+            gateway_src: Some(src.to_string()),
         }
     }
 
@@ -86,38 +116,51 @@ impl SignalClient {
             .map_err(|e| LinkError::Signal(format!("connect {}: {e}", self.url)))?;
         let (mut sender, mut receiver) = ws_stream.split();
 
-        // Phase 1: PSK 认证
-        sender
-            .send(Message::Text(self.psk.clone().into()))
-            .await
-            .map_err(|e| LinkError::Signal(format!("send auth: {e}")))?;
-        let auth_msg = receiver
-            .next()
-            .await
-            .ok_or_else(|| LinkError::Signal("connection closed during auth".into()))?
-            .map_err(|e| LinkError::Signal(format!("auth read: {e}")))?;
-        let auth_msg = match auth_msg {
-            Message::Text(t) => serde_json::from_str::<SignalingMessage>(&t)
-                .map_err(|e| LinkError::Signal(format!("parse auth response: {e}")))?,
-            Message::Close(_) => return Err(LinkError::Signal("closed during auth".into())),
-            _ => return Err(LinkError::Signal("unexpected auth response".into())),
-        };
-        match auth_msg {
-            SignalingMessage::Error { code, .. } if code == 0 => {}
-            SignalingMessage::Error { code, message } => {
-                return Err(LinkError::Signal(format!("auth denied [{code}]: {message}")));
+        // Phase 1: PSK 认证 — 仅直连 server 模式；网关本地侧不认证（D2，
+        // 信任边界 127.0.0.1，整车 PSK 在 agent 的远端连接）
+        if self.gateway_src.is_none() {
+            sender
+                .send(Message::Text(self.psk.clone().into()))
+                .await
+                .map_err(|e| LinkError::Signal(format!("send auth: {e}")))?;
+            let auth_msg = receiver
+                .next()
+                .await
+                .ok_or_else(|| LinkError::Signal("connection closed during auth".into()))?
+                .map_err(|e| LinkError::Signal(format!("auth read: {e}")))?;
+            let auth_msg = match auth_msg {
+                Message::Text(t) => serde_json::from_str::<SignalingMessage>(&t)
+                    .map_err(|e| LinkError::Signal(format!("parse auth response: {e}")))?,
+                Message::Close(_) => return Err(LinkError::Signal("closed during auth".into())),
+                _ => return Err(LinkError::Signal("unexpected auth response".into())),
+            };
+            match auth_msg {
+                SignalingMessage::Error { code, .. } if code == 0 => {}
+                SignalingMessage::Error { code, message } => {
+                    return Err(LinkError::Signal(format!("auth denied [{code}]: {message}")));
+                }
+                _ => return Err(LinkError::Signal("unexpected auth message".into())),
             }
-            _ => return Err(LinkError::Signal("unexpected auth message".into())),
         }
 
-        // Phase 2: 加入房间
+        // Phase 2: 加入房间（网关模式包 LocalEnvelope）
         let join = SignalingMessage::RoomJoin {
             room_id: self.room_id.clone(),
             peer_role: self.role.clone(),
             stream_id: None,
         };
-        let join_json = serde_json::to_string(&join)
-            .map_err(|e| LinkError::Signal(format!("serialize RoomJoin: {e}")))?;
+        let (join_json, unwrap) = match &self.gateway_src {
+            Some(src) => (
+                serde_json::to_string(&LocalEnvelope { src: src.clone(), msg: join })
+                    .map_err(|e| LinkError::Signal(format!("serialize RoomJoin envelope: {e}")))?,
+                true,
+            ),
+            None => (
+                serde_json::to_string(&join)
+                    .map_err(|e| LinkError::Signal(format!("serialize RoomJoin: {e}")))?,
+                false,
+            ),
+        };
         sender
             .send(Message::Text(join_json.into()))
             .await
@@ -128,8 +171,16 @@ impl SignalClient {
             .ok_or_else(|| LinkError::Signal("connection closed during room join".into()))?
             .map_err(|e| LinkError::Signal(format!("RoomJoin read: {e}")))?;
         let joined = match joined {
-            Message::Text(t) => serde_json::from_str::<SignalingMessage>(&t)
-                .map_err(|e| LinkError::Signal(format!("parse RoomJoined: {e}")))?,
+            Message::Text(t) => {
+                if unwrap {
+                    let env: LocalEnvelope = serde_json::from_str(&t)
+                        .map_err(|e| LinkError::Signal(format!("parse envelope response: {e}")))?;
+                    env.msg
+                } else {
+                    serde_json::from_str::<SignalingMessage>(&t)
+                        .map_err(|e| LinkError::Signal(format!("parse RoomJoined: {e}")))? 
+                }
+            }
             Message::Close(_) => return Err(LinkError::Signal("closed during room join".into())),
             _ => return Err(LinkError::Signal("unexpected RoomJoined response".into())),
         };
@@ -144,6 +195,7 @@ impl SignalClient {
                     send_rx,
                     events_tx.clone(),
                     on_disconnect.clone(),
+                    self.gateway_src.clone(),
                 ));
                 let _ = events_tx.send(SignalEvent::Connected { room_id: room_id.clone() });
                 Ok(SignalSession {
@@ -257,6 +309,7 @@ impl SignalSession {
 }
 
 /// 后台任务：WS 读 → events；send 通道 → WS 写。
+/// D2 网关模式：gateway_src = Some(src) 时收发均包 LocalEnvelope 信封。
 #[allow(clippy::too_many_arguments)]
 async fn session_task(
     mut ws_rx: futures_util::stream::SplitStream<WsStream>,
@@ -264,15 +317,23 @@ async fn session_task(
     mut send_rx: mpsc::UnboundedReceiver<SignalingMessage>,
     events_tx: broadcast::Sender<SignalEvent>,
     on_disconnect: DisconnectSlot,
+    gateway_src: Option<String>,
 ) {
     loop {
         tokio::select! {
             msg = ws_rx.next() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
-                        match serde_json::from_str::<SignalingMessage>(&text) {
+                        let parsed = match &gateway_src {
+                            Some(_) => serde_json::from_str::<LocalEnvelope>(&text)
+                                .map(|env| env.msg)
+                                .map_err(|e| format!("parse envelope: {e}")),
+                            None => serde_json::from_str::<SignalingMessage>(&text)
+                                .map_err(|e| format!("parse message: {e}")),
+                        };
+                        match parsed {
                             Ok(m) => { let _ = events_tx.send(SignalEvent::Message(m)); }
-                            Err(e) => { let _ = events_tx.send(SignalEvent::Error(format!("parse message: {e}"))); }
+                            Err(e) => { let _ = events_tx.send(SignalEvent::Error(e)); }
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => {
@@ -291,10 +352,15 @@ async fn session_task(
             msg = send_rx.recv() => {
                 match msg {
                     Some(m) => {
-                        let json = match serde_json::to_string(&m) {
+                        let json = match &gateway_src {
+                            Some(src) => serde_json::to_string(&LocalEnvelope { src: src.clone(), msg: m })
+                                .map_err(|e| format!("serialize envelope: {e}")),
+                            None => serde_json::to_string(&m).map_err(|e| format!("serialize: {e}")),
+                        };
+                        let json = match json {
                             Ok(j) => j,
                             Err(e) => {
-                                let _ = events_tx.send(SignalEvent::Error(format!("serialize: {e}")));
+                                let _ = events_tx.send(SignalEvent::Error(e));
                                 continue;
                             }
                         };

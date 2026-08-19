@@ -85,6 +85,109 @@ async fn connect_auth_join_and_roundtrip() {
     server.await.unwrap();
 }
 
+// ── D2: 本地网关模式（LocalEnvelope 信封 wire，无 PSK 挑战）──────────────
+
+#[tokio::test]
+async fn gateway_mode_connects_with_envelope_wire() {
+    // mock 网关：首条消息必须是 LocalEnvelope 包 RoomJoin（无 PSK 挑战！），
+    // 回复 LocalEnvelope{RoomJoined}，随后信封回显。
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+
+        // 1) 首条必须是信封（网关本地 wire 无 PSK 挑战）
+        let first = ws.next().await.unwrap().unwrap();
+        let env: mediaservo_link::LocalEnvelope =
+            serde_json::from_str(first.to_text().unwrap()).expect("首条应为 LocalEnvelope");
+        assert_eq!(env.src, "child-1");
+        let room_id = match env.msg {
+            SignalingMessage::RoomJoin { room_id, .. } => room_id,
+            other => panic!("expected RoomJoin in envelope, got {other:?}"),
+        };
+
+        // 2) 信封回 RoomJoined
+        let joined = mediaservo_link::LocalEnvelope {
+            src: "server".into(),
+            msg: SignalingMessage::RoomJoined { room_id, peer_id: "veh-peer".into() },
+        };
+        ws.send(Message::Text(serde_json::to_string(&joined).unwrap().into()))
+            .await
+            .unwrap();
+
+        // 3) echo loop（信封）
+        while let Some(Ok(msg)) = ws.next().await {
+            if ws.send(msg).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let client = SignalClient::new_gateway(
+        &format!("ws://{addr}/ws"),
+        "child-1",
+        "stream-s0",
+        PeerRole::Host,
+    );
+    let session = client.connect().await.expect("gateway connect");
+    assert_eq!(session.room_id(), "stream-s0");
+    assert_eq!(session.peer_id(), "veh-peer", "合成 RoomJoined 的整车 peer_id");
+    let mut events = session.events();
+
+    session
+        .send(SignalingMessage::Sdp {
+            room_id: "stream-s0".to_string(),
+            target: None,
+            sdp: "v=0".to_string(),
+        })
+        .await
+        .expect("send");
+    let echoed = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            match events.recv().await.unwrap() {
+                SignalEvent::Message(SignalingMessage::Sdp { sdp, .. }) => return sdp,
+                _ => continue,
+            }
+        }
+    })
+    .await
+    .expect("echo timeout");
+    assert_eq!(echoed, "v=0");
+
+    session.close().await.expect("close");
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn gateway_mode_room_join_denied_returns_error() {
+    // 网关未连上远端 server → RoomJoin 拦截回 Error 5001（信封内）
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let _env = ws.next().await.unwrap().unwrap();
+        let deny = mediaservo_link::LocalEnvelope {
+            src: "server".into(),
+            msg: SignalingMessage::Error { code: 5001, message: "gateway not connected to server".into() },
+        };
+        ws.send(Message::Text(serde_json::to_string(&deny).unwrap().into()))
+            .await
+            .unwrap();
+    });
+
+    let client = SignalClient::new_gateway(
+        &format!("ws://{addr}/ws"),
+        "child-1",
+        "r",
+        PeerRole::Host,
+    );
+    let err = client.connect().await.unwrap_err();
+    assert!(err.to_string().contains("5001"), "应报 5001，got: {err}");
+    server.await.unwrap();
+}
+
 #[tokio::test]
 async fn auth_denied_returns_error() {
     // mock server：认证拒绝

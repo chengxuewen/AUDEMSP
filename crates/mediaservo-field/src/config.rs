@@ -26,10 +26,14 @@ pub struct PushConfig {
     pub bitrate_kbps: u32,
     /// 关键帧间隔秒（GOP 上限，默认 2）。
     pub keyframe_interval: u64,
+    /// D2 本地网关模式：Some(src) = 通过 host-agent 网关连接
+    /// （LocalEnvelope 信封 wire，无 PSK；整车 PSK 在 agent 远端）；
+    /// None = 直连 server（PSK 认证）。
+    pub gateway_src: Option<String>,
 }
 
 impl PushConfig {
-    /// 便捷构造（默认 1280x720@30fps / 2000kbps / 2s GOP）。
+    /// 便捷构造（默认 1280x720@30fps / 2000kbps / 2s GOP；直连 server 模式）。
     pub fn new(url: impl Into<String>, psk: impl Into<String>, room: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -41,7 +45,20 @@ impl PushConfig {
             framerate: 30,
             bitrate_kbps: 2000,
             keyframe_interval: 2,
+            gateway_src: None,
         }
+    }
+
+    /// 本地网关模式构造（D2）：url 为 host-agent 本地地址，无 PSK 挑战
+    /// （信任边界 127.0.0.1；整车 PSK 在 agent 的远端连接）。
+    pub fn via_gateway(url: impl Into<String>, src: impl Into<String>, room: impl Into<String>) -> Self {
+        Self::new(url, "", room).with_gateway(src)
+    }
+
+    /// 启用本地网关模式（链式；供配置复用）。
+    pub fn with_gateway(mut self, src: impl Into<String>) -> Self {
+        self.gateway_src = Some(src.into());
+        self
     }
 }
 
@@ -137,5 +154,17 @@ mod tests {
         // SignalClient 内部 trim_end_matches('/') — 配置保持原样, 连接时处理
         let cfg = PushConfig::new("ws://host:9800/ws/", "psk", "room");
         assert_eq!(cfg.url, "ws://host:9800/ws/");
+    }
+
+    #[test]
+    fn push_config_gateway_mode_defaults_off_and_switchable() {
+        // D2: 默认直连 server（gateway_src=None）；via_gateway/with_gateway 切换
+        let direct = PushConfig::new("ws://x", "psk", "room");
+        assert_eq!(direct.gateway_src, None, "默认应直连 server");
+        let gw = PushConfig::via_gateway("ws://127.0.0.1:17980/ws", "child-1", "room");
+        assert_eq!(gw.gateway_src.as_deref(), Some("child-1"));
+        assert_eq!(gw.psk, "", "网关模式无 PSK");
+        let chained = direct.clone().with_gateway("child-2");
+        assert_eq!(chained.gateway_src.as_deref(), Some("child-2"));
     }
 }

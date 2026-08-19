@@ -66,6 +66,13 @@ pub fn signaling_local_port(cfg: &str) -> Result<Option<u16>, String> {
     Ok(cfg.signaling.and_then(|s| s.local_port))
 }
 
+/// 子进程网关 URL（D2）：`ws://127.0.0.1:{port}/ws`，port = [signaling] local_port
+/// 或缺省 17980（与 host-agent 内置默认一致）。
+pub fn signaling_gateway_url(cfg: &str) -> Result<String, String> {
+    let port = signaling_local_port(cfg)?.unwrap_or(crate::gateway::DEFAULT_LOCAL_PORT);
+    Ok(format!("ws://127.0.0.1:{port}/ws"))
+}
+
 /// 固定 5 类进程（无参数实例）。
 const FIXED_APPS: [&str; 5] = [
     "host-agent",
@@ -137,13 +144,15 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
     for stream in &streams {
         let name = instance_name("host-streamer", stream, streams.len() > 1);
         let mut cmd = format!("{} --stream {}", exe_cmd("host-streamer"), stream);
+        // D2: 子进程 WS 目标 = 本地网关（[signaling] local_port 或缺省 17980）
+        cmd.push_str(&format!(" --gateway {}", signaling_gateway_url(cfg)?));
         if !config_path.as_os_str().is_empty() {
             cmd.push_str(&format!(
-                " --config {} --token {}/{}.token",
-                config_path.display(),
-                token_dir.display(),
-                stream
-            ));
+            " --config {} --token {}/{}.token",
+            config_path.display(),
+            token_dir.display(),
+            stream
+        ));
         }
         push_app(&mut out, &name, &cmd, "always");
     }

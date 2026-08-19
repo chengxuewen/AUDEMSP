@@ -10,9 +10,10 @@
 //! 写帧（时间戳来自 FrameMeta.ts_mono_ns，C17 透传）。P2P 模式：信令直连 Server
 //! （Phase D 网关前，MUST NOT 引入总线信令）。
 //!
-//! 信令地址/PSK 走环境变量（对齐 field/e2e_sfu 外部 server 约定）:
-//! `SFU_E2E_WS_URL`（缺省 `ws://127.0.0.1:9800/ws`）、`SFU_E2E_PSK`（缺省
-//! `mediaservo-dev`）。房间 = `stream-<id>`（每流独立房间，多流不冲突）。
+//! 信令目标 = 本地网关 host-agent（D2）：`--gateway <url>`（缺省
+//! `ws://127.0.0.1:17980/ws`）。网关本地侧无 PSK 挑战（信任边界
+//! 127.0.0.1）；整车 PSK 在 host-agent 的远端连接。房间 = `stream-<id>`
+//! （网关拦袪 RoomJoin 并重写为整车房间，多流集合一车会话）。
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -37,6 +38,8 @@ struct Args {
     stream: String,
     config: PathBuf,
     token: PathBuf,
+    /// 本地网关 WS 地址（D2）；缺省 `ws://127.0.0.1:17980/ws`。
+    gateway: Option<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -44,11 +47,13 @@ fn parse_args() -> Result<Args, String> {
     let mut stream: Option<String> = None;
     let mut config: Option<PathBuf> = None;
     let mut token: Option<PathBuf> = None;
+    let mut gateway: Option<String> = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--stream" => stream = Some(args.next().ok_or("--stream 缺值")?),
             "--config" => config = Some(PathBuf::from(args.next().ok_or("--config 缺值")?)),
             "--token" => token = Some(PathBuf::from(args.next().ok_or("--token 缺值")?)),
+            "--gateway" => gateway = Some(args.next().ok_or("--gateway 缺值")?),
             _ => return Err(format!("未知参数: {arg}")),
         }
     }
@@ -56,17 +61,33 @@ fn parse_args() -> Result<Args, String> {
         stream: stream.ok_or("缺少 --stream")?,
         config: config.ok_or("缺少 --config")?,
         token: token.ok_or("缺少 --token")?,
+        gateway,
     })
 }
 
-/// 信令 WS 地址（对齐 field/e2e_sfu 外部 server 约定；Phase D 网关前）。
-fn signal_url() -> String {
-    std::env::var("SFU_E2E_WS_URL").unwrap_or_else(|_| "ws://127.0.0.1:9800/ws".to_string())
+/// 网关 WS 地址（D2）：`--gateway` 参数 > 缺省本地网关。
+fn gateway_url(gateway_arg: Option<&str>) -> String {
+    gateway_arg
+        .map(str::to_string)
+        .unwrap_or_else(|| "ws://127.0.0.1:17980/ws".to_string())
 }
 
-/// PSK（缺省 dev 值，与 server `MEDIASERVO_PSK=mediaservo-dev` 对齐）。
-fn psk() -> String {
-    std::env::var("SFU_E2E_PSK").unwrap_or_else(|_| "mediaservo-dev".to_string())
+#[cfg(test)]
+mod tests {
+    use super::gateway_url;
+
+    #[test]
+    fn gateway_url_defaults_to_local_gateway() {
+        assert_eq!(gateway_url(None), "ws://127.0.0.1:17980/ws");
+    }
+
+    #[test]
+    fn gateway_url_override_wins() {
+        assert_eq!(
+            gateway_url(Some("ws://127.0.0.1:18888/ws")),
+            "ws://127.0.0.1:18888/ws"
+        );
+    }
 }
 
 /// 紧凑 I420 payload 校验（线格式假设: tight strides Y + U + V）。
@@ -200,8 +221,12 @@ async fn main() -> ExitCode {
     };
     tracing::info!(topic = %topic.as_str(), "FrameBus subscribed");
 
-    // 推流会话（field PushSession 复用；P2P 信令直连 Server）
-    let mut cfg = PushConfig::new(signal_url(), psk(), format!("stream-{}", stream.id));
+    // 推流会话（field PushSession 复用；D2: 经本地网关，无 PSK）
+    let mut cfg = PushConfig::via_gateway(
+        gateway_url(args.gateway.as_deref()),
+        format!("host-streamer-{}", stream.id),
+        format!("stream-{}", stream.id),
+    );
     // framerate 仅语义传递（供未来编码器配置消费）— field publish_video 与
     // libwebrtc 编码器均不读此字段（编码帧率 = 内置 30fps）；对齐由上方 fps 守卫保证（I1）
     cfg.framerate = cam.fps;

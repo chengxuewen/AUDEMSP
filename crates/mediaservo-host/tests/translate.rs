@@ -49,8 +49,8 @@ fn to_oxfile_in_dir_appends_config_and_token_paths() {
     let abs = std::path::absolute(dir.path()).unwrap();
     assert!(ox.contains(&format!("--config {}/etc/host.toml", abs.display())));
     assert!(ox.contains(&format!("--token {}/etc/link/cam0.token", abs.display())));
-    // streamer 行追加 --config/--token（C2: 与 capturer 同形，令牌文件按相机名）
-    assert!(ox.contains("host-streamer --stream s0 --config"));
+    // streamer 行追加 --gateway/—config/--token（D2 网关 + C2 同形）
+    assert!(ox.contains("host-streamer --stream s0 --gateway ws://127.0.0.1:17980/ws --config"));
     assert!(ox.contains(&format!("--token {}/etc/link/s0.token", abs.display())));
     // 无路径变体保持 A2 形态
     let ox = mediaservo_host::translate::to_oxfile(cfg).unwrap();
@@ -137,4 +137,30 @@ fn signaling_local_port_passed_to_host_agent() {
     assert!(ox.contains("host-agent\"") && !ox.contains("host-agent --port"), "缺省不追加 --port");
     assert_eq!(mediaservo_host::translate::signaling_local_port(cfg).unwrap(), Some(17980));
     assert_eq!(mediaservo_host::translate::signaling_local_port("").unwrap(), None);
+}
+
+#[test]
+fn signaling_gateway_url_resolution_and_streamer_arg() {
+    // D2: [signaling] local_port → 子进程网关 URL；缺省 17980
+    let cfg = "[[cameras]]\nid = \"cam0\"\n[[streams]]\nid = \"s0\"\ncamera = \"cam0\"\n[signaling]\nlocal_port = 18000\n";
+    assert_eq!(
+        mediaservo_host::translate::signaling_gateway_url(cfg).unwrap(),
+        "ws://127.0.0.1:18000/ws"
+    );
+    // 缺省（无 [signaling] 段）→ 17980
+    assert_eq!(
+        mediaservo_host::translate::signaling_gateway_url("[[cameras]]\nid = \"cam0\"\n").unwrap(),
+        "ws://127.0.0.1:17980/ws"
+    );
+    // streamer 命令追加 --gateway（with paths 与无 paths 变体一致）
+    let ox = mediaservo_host::translate::to_oxfile_in_dir(cfg, std::path::Path::new("/tmp/x")).unwrap();
+    assert!(
+        ox.contains("host-streamer --stream s0 --gateway ws://127.0.0.1:18000/ws --config"),
+        "streamer 行应带 --gateway, got:\n{ox}"
+    );
+    let ox = mediaservo_host::translate::to_oxfile(cfg).unwrap();
+    assert!(
+        ox.contains("host-streamer --stream s0 --gateway ws://127.0.0.1:18000/ws"),
+        "无路径变体也应带 --gateway, got:\n{ox}"
+    );
 }

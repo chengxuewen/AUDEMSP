@@ -72,7 +72,11 @@ pub struct PushSession {
 impl PushSession {
     /// 连接信令、加入房间；媒体（transport/produce）在首次 `publish_video` 时建立。
     pub async fn connect(cfg: PushConfig) -> Result<(Self, SessionEvents), FieldError> {
-        let client = SignalClient::new(&cfg.url, &cfg.psk, &cfg.room, cfg.role.clone());
+        // D2: gateway_src = Some → 本地网关模式（信封 wire，无 PSK）；None → 直连 server
+        let client = match &cfg.gateway_src {
+            Some(src) => SignalClient::new_gateway(&cfg.url, src, &cfg.room, cfg.role.clone()),
+            None => SignalClient::new(&cfg.url, &cfg.psk, &cfg.room, cfg.role.clone()),
+        };
         let signal = client.connect().await.map_err(FieldError::Link)?;
         tracing::info!(room = %cfg.room, "PushSession connected to room");
 
