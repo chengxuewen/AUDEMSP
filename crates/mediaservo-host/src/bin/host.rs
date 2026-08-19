@@ -4,17 +4,12 @@
 //! - `host init [<dir>]`        — 生成 `etc/host.toml` 模板 + `etc/link/signing.pem`
 //!   （Ed25519 PKCS#8 keypair，0600）+ `etc/link/ros_bridge.yaml`（B3：ROS 节点
 //!   配置单一来源——topic 清单 + 令牌路径，从 host.toml 相机/流清单导出）
-//! - `host start [<dir>]` — 读 etc/host.toml → translate → 写 run/oxfile.toml
+//! - `host start [<dir>]` — 读 etc/host.toml → 校验 → 翻译 → 写 run/oxfile.toml
 //!   → `oxmgr apply run/oxfile.toml` 拉起全部 host 进程
+//! - `host apply [<dir>]`  — 同上（E4 云端配置闭环本地等价物；增量: 新增 Start/
+//!   变更 Recreate/未变 Noop）
+//! - `host restart [<dir>]`— `oxmgr stop <oxfile>` 后重新 apply（全量重启）
 //! - `host stop [<dir>]`  — `oxmgr stop run/oxfile.toml` + `oxmgr delete run/oxfile.toml`
-//!   （config 目标解析 oxfile 内全部 app，幂等；动词见 OxMgr docs/CLI.md）
-//! - `host status [<dir>]`— `oxmgr list --json` 过滤 `namespace == "host"` 输出状态表
-//! - `host doctor [<dir>]`— 环境诊断（oxmgr 可用 / host.toml 解析 / oxfile 生成），
-//!   退出码 = 失败检查数
-//! - `host token issue ...`  — 用 etc/link/signing.pem 签发能力令牌（C4 最小签发，
-//!   G1 全量签发前的 e2e 需用）
-//! - `host version`           — 打印版本号
-//!
 //! OxMgr 动词核对（C11/C18，来源 .refinfo/OxMgr/docs/CLI.md + SKILL.md）：
 //! `apply <config>` / `list [--json]` / `stop <name|id|config>` / `delete <name|id|config>`
 //! （**无** `stop/delete --namespace` 旗标；config 目标自动解析 oxfile 内全部 app，
@@ -51,7 +46,7 @@ enabled = false
 enabled = false
 "#;
 
-const USAGE: &str = "用法: host <init|start|stop|status|doctor|token|version> [<dir>]（目录为位置参数，默认 .host/）";
+const USAGE: &str = "用法: host <init|start|apply|restart|stop|status|doctor|token|version> [<dir>]（目录为位置参数，默认 .host/）";
 
 fn main() {
     let mut args = std::env::args();
@@ -62,7 +57,9 @@ fn main() {
     };
     let code = match cmd.as_str() {
         "init" => cmd_init(&mut args),
-        "start" => cmd_start(&mut args),
+        "start" => cmd_apply_impl(&mut args, "start"),
+        "apply" => cmd_apply_impl(&mut args, "apply"),
+        "restart" => cmd_restart(&mut args),
         "stop" => cmd_stop(&mut args),
         "status" => cmd_status(&mut args),
         "doctor" => cmd_doctor(&mut args),
@@ -198,8 +195,10 @@ fn write_private_pem(path: &Path, data: &[u8]) -> std::io::Result<()> {
     f.write_all(data)
 }
 
-/// `host start [<dir>]`: 翻译 host.toml → run/oxfile.toml → `oxmgr apply`。
-fn cmd_start(args: &mut impl Iterator<Item = String>) -> i32 {
+/// `host start [<dir>]` / `host apply [<dir>]`（共享实现）: 读 host.toml → 校验 →
+/// 翻译 → 原子写 run/oxfile.toml → `oxmgr apply`（增量: 新增 Start/变更 Recreate/
+/// 未变 Noop）。verb = "start"|"apply"（日志前缀）。
+fn cmd_apply_impl(args: &mut impl Iterator<Item = String>, verb: &str) -> i32 {
     let dir = match parse_dir(args) {
         Ok(d) => d,
         Err(e) => {
@@ -207,33 +206,46 @@ fn cmd_start(args: &mut impl Iterator<Item = String>) -> i32 {
             return 2;
         }
     };
-    let cfg_path = dir.join("etc").join("host.toml");
-    let cfg = match std::fs::read_to_string(&cfg_path) {
-        Ok(cfg) => cfg,
+    match mediaservo_host::translate::apply_config(&dir) {
+        Ok(()) => {
+            println!("{verb}: 已应用 {}", dir.join("run").join("oxfile.toml").display());
+            0
+        }
         Err(e) => {
-            eprintln!("start: 读取 {} 失败: {e} — 先运行 host init <dir>", cfg_path.display());
-            return 1;
+            eprintln!("{verb}: {e}");
+            1
+        }
+    }
+}
+
+/// `host restart [<dir>]`: `oxmgr stop <oxfile>`（停全部 app）后重新 apply（全量重启）。
+fn cmd_restart(args: &mut impl Iterator<Item = String>) -> i32 {
+    let dir = match parse_dir(args) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
         }
     };
-    let ox = match mediaservo_host::translate::to_oxfile_in_dir(&cfg, &dir) {
-        Ok(ox) => ox,
-        Err(e) => {
-            eprintln!("start: {e}");
-            return 1;
+    let oxfile = dir.join("run").join("oxfile.toml");
+    if !oxfile.exists() {
+        eprintln!("restart: 无 {} — 先 host start/apply", oxfile.display());
+        return 1;
+    }
+    let code = run_oxmgr(&["stop", oxfile.to_str().expect("oxfile path utf8")]);
+    if code != 0 {
+        return code;
+    }
+    match mediaservo_host::translate::apply_config(&dir) {
+        Ok(()) => {
+            println!("restart: 已全量重启（{}", dir.join("run").join("oxfile.toml").display());
+            0
         }
-    };
-    let run_dir = dir.join("run");
-    if let Err(e) = std::fs::create_dir_all(&run_dir) {
-        eprintln!("start: 创建 {} 失败: {e}", run_dir.display());
-        return 1;
+        Err(e) => {
+            eprintln!("restart: {e}");
+            1
+        }
     }
-    let oxfile = run_dir.join("oxfile.toml");
-    if let Err(e) = std::fs::write(&oxfile, ox) {
-        eprintln!("start: 写入 {} 失败: {e}", oxfile.display());
-        return 1;
-    }
-    println!("start: 已生成 {}", oxfile.display());
-    run_oxmgr(&["apply", oxfile.to_str().expect("oxfile path utf8")])
 }
 
 /// `host stop [<dir>]`: `oxmgr stop <oxfile>` + `oxmgr delete <oxfile>`（幂等）。

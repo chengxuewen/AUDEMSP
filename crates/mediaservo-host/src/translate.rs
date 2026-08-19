@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
+use mediaservo_common::protocol::SignalingMessage;
 use serde::Deserialize;
 
 /// host.toml 解析模型（Phase A 子集：只需 cameras/streams 做实例化）。
@@ -101,10 +102,134 @@ pub fn to_oxfile_in_dir(cfg: &str, dir: &Path) -> Result<String, String> {
     to_oxfile_with_paths(cfg, &config_path, &token_dir)
 }
 
+// ── E4 云端配置闭环: 校验/备份/写入/apply 共享实现（host CLI 与 host-agent 同源） ──
+
+/// 校验 host.toml（与各消费进程同一解析路径：camera/stream/record/signaling；
+/// 另含重复 id 守卫——重复 → oxfile app 名重复 → oxmgr apply 硬错误）。
+pub fn validate(cfg: &str) -> Result<(), String> {
+    let cameras = camera_configs(cfg)?;
+    let streams = stream_configs(cfg)?;
+    record_config(cfg)?;
+    signaling_local_port(cfg)?;
+    let mut seen = std::collections::HashSet::new();
+    for c in &cameras {
+        if !seen.insert(c.id.clone()) {
+            return Err(format!("host.toml 解析失败: 相机 id 重复: {}", c.id));
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    for s in &streams {
+        if !seen.insert(s.id.clone()) {
+            return Err(format!("host.toml 解析失败: 流 id 重复: {}", s.id));
+        }
+    }
+    Ok(())
+}
+
+/// 原子写（tmp + rename）— oxmgr file-watch 只见完整文件，读端不见半写状态。
+fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
+    let tmp = path.with_extension("toml.tmp");
+    std::fs::write(&tmp, content).map_err(|e| format!("写入 {} 失败: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("写入 {} 失败: {e}", path.display()))
+}
+
+/// 校验 + 翻译 + 原子写 run/oxfile.toml，返回 oxfile 路径。
+pub fn write_oxfile(cfg: &str, dir: &Path) -> Result<PathBuf, String> {
+    validate(cfg)?;
+    let ox = to_oxfile_in_dir(cfg, dir)?;
+    let run_dir = dir.join("run");
+    std::fs::create_dir_all(&run_dir).map_err(|e| format!("创建 {} 失败: {e}", run_dir.display()))?;
+    let oxfile = run_dir.join("oxfile.toml");
+    atomic_write(&oxfile, &ox)?;
+    Ok(oxfile)
+}
+
+/// 备份当前 host.toml → etc/host.toml.bak-<version>（ConfigPush 应用前置）。
+pub fn backup_host_config(dir: &Path, version: u64) -> Result<PathBuf, String> {
+    let cfg_path = dir.join("etc").join("host.toml");
+    let bak = dir.join("etc").join(format!("host.toml.bak-{version}"));
+    std::fs::copy(&cfg_path, &bak).map_err(|e| format!("备份 {} → {} 失败: {e}", cfg_path.display(), bak.display()))?;
+    Ok(bak)
+}
+
+/// E4 ConfigPush 应用（agent 侧；纯进程内可单测）：校验 → 备份 → 写 host.toml →
+/// 重生成 oxfile。任一失败返回 Err（拒绝原因；文件未被部分改写——校验先行）。
+pub fn apply_config_push(dir: &Path, config: &str, version: u64) -> Result<(), String> {
+    validate(config)?;
+    backup_host_config(dir, version)?;
+    atomic_write(&dir.join("etc").join("host.toml"), config)?;
+    write_oxfile(config, dir)?;
+    Ok(())
+}
+
+/// oxmgr apply <run/oxfile.toml>（CLI 与 agent 共享；增量: 新增 Start/变更 Recreate/未变 Noop）。
+pub fn oxmgr_apply(dir: &Path) -> Result<(), String> {
+    let oxfile = dir.join("run").join("oxfile.toml");
+    if !oxfile.exists() {
+        return Err(format!("{} 不存在 — 先 write_oxfile/host apply", oxfile.display()));
+    }
+    let out = std::process::Command::new("oxmgr")
+        .arg("apply")
+        .arg(&oxfile)
+        .output()
+        .map_err(|e| format!("oxmgr 执行失败: {e} — 请先安装 OxMgr 并加入 PATH"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "oxmgr apply 失败 (exit {}): {}",
+            out.status.code().unwrap_or(1),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+/// `host apply` 共享实现: 读 host.toml → 校验 → 翻译 → 写 oxfile → oxmgr apply。
+pub fn apply_config(dir: &Path) -> Result<(), String> {
+    let cfg = std::fs::read_to_string(dir.join("etc").join("host.toml"))
+        .map_err(|e| format!("读取 host.toml 失败: {e} — 先运行 host init <dir>"))?;
+    write_oxfile(&cfg, dir)?;
+    oxmgr_apply(dir)
+}
+
+/// E4 agent 应用体（应用 + 审计日志；oxmgr apply 由调用方执行——测试/CLI 可分离）。
+/// 返回成功应用的版本号；失败 Err(拒绝原因)（审计日志已打 warn，C15）。
+pub fn handle_config_push(dir: &Path, push: &SignalingMessage) -> Result<u64, String> {
+    let SignalingMessage::ConfigPush { config, version, .. } = push else {
+        return Err("网关待应用消息非 ConfigPush".into());
+    };
+    match apply_config_push(dir, config, *version) {
+        Ok(()) => {
+            tracing::info!(
+                version,
+                dir = %dir.display(),
+                "ConfigPush 应用成功 — host.toml 已更新 + oxfile 已重生成"
+            );
+            Ok(*version)
+        }
+        Err(e) => {
+            tracing::warn!(version, "ConfigPush 拒绝: {e} — host.toml 未变更");
+            Err(e)
+        }
+    }
+}
+
+
 fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Result<String, String> {
     let (cameras, streams) = camera_and_stream_ids(cfg)?;
 
-    let mut out = String::from("version = 1\n\n[defaults]\nnamespace = \"host\"\nrestart_policy = \"always\"\n\n");
+    let mut out = String::from("version = 1\n\n[defaults]\nnamespace = \"host\"\nrestart_policy = \"always\"\n");
+    // E4 热生效: [defaults] watch = host.toml（内容指纹）— agent/CLI 写入新配置后
+    // oxmgr file-watch 重启受影响进程（进程启动时重读 host.toml 生效）；
+    // 增删 app（相机/流）由 `oxmgr apply` 增量处理（Start/Recreate），watch 兜底
+    // 纯内容变更（如 fps，命令不变 → apply Noop）。cwd 是 watch 前置要求（OxMgr
+    // 源码 watch_fingerprint_for_process 实证）；无路径变体（doctor）不带 watch。
+    if let (Some(cwd), Some(watch)) = (
+        config_path.parent().and_then(|p| p.parent()).map(|d| d.to_string_lossy().into_owned()),
+        (!config_path.as_os_str().is_empty()).then(|| config_path.to_string_lossy().into_owned()),
+    ) {
+        out.push_str(&format!("cwd = \"{cwd}\"\nwatch = [\"{watch}\"]\nwatch_delay_secs = 1\n"));
+    }
+    out.push('\n');
 
     for name in FIXED_APPS {
         let mut cmd = exe_cmd(name);
@@ -298,4 +423,107 @@ fn push_app(out: &mut String, name: &str, command: &str, restart_policy: &str) {
     out.push_str(&format!(
         "[[apps]]\nname = \"{name}\"\ncommand = \"{command}\"\nrestart_policy = \"{restart_policy}\"\n\n"
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CFG_V0: &str = r#"
+[[cameras]]
+id = "cam0"
+fps = 30
+
+[[streams]]
+id = "s0"
+camera = "cam0"
+"#;
+
+    fn write_host_toml(dir: &Path, cfg: &str) {
+        let etc = dir.join("etc");
+        std::fs::create_dir_all(&etc).unwrap();
+        std::fs::write(etc.join("host.toml"), cfg).unwrap();
+    }
+
+    #[test]
+    fn validate_rejects_invalid_toml() {
+        let err = validate("not toml [[[").unwrap_err();
+        assert!(err.contains("解析失败"), "{err}");
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_ids() {
+        let dup_cam = "[[cameras]]\nid = \"cam0\"\n[[cameras]]\nid = \"cam0\"\n";
+        assert!(validate(dup_cam).unwrap_err().contains("重复"), "相机 id 重复必须拒绝");
+        let dup_stream = "[[streams]]\nid = \"s0\"\n[[streams]]\nid = \"s0\"\n";
+        assert!(validate(dup_stream).unwrap_err().contains("重复"), "流 id 重复必须拒绝");
+    }
+
+    #[test]
+    fn validate_accepts_wellformed_config() {
+        validate(CFG_V0).expect("合法配置应通过");
+    }
+
+    #[test]
+    fn write_oxfile_writes_translated_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let oxfile = write_oxfile(CFG_V0, dir.path()).expect("write_oxfile");
+        assert_eq!(oxfile, dir.path().join("run").join("oxfile.toml"));
+        let ox = std::fs::read_to_string(&oxfile).unwrap();
+        assert!(ox.contains("host-capturer"), "相机实例应入 oxfile: {ox}");
+        assert!(ox.contains("host-streamer"), "流实例应入 oxfile");
+    }
+
+    #[test]
+    fn oxfile_watches_host_toml_with_cwd() {
+        let dir = tempfile::tempdir().unwrap();
+        let ox = to_oxfile_in_dir(CFG_V0, dir.path()).expect("to_oxfile_in_dir");
+        let expected_watch = format!("watch = [\"{}\"]", dir.path().join("etc").join("host.toml").display());
+        assert!(ox.contains(&expected_watch), "oxfile 应 watch host.toml 实现热生效: {ox}");
+        assert!(ox.contains("watch_delay_secs"), "watch 应带防抖: {ox}");
+        assert!(ox.contains("cwd = \""), "watch 前置要求 cwd: {ox}");
+        // 无路径变体（doctor 用）不带 watch
+        assert!(!to_oxfile(CFG_V0).unwrap().contains("watch"), "to_oxfile 无路径变体不应 watch");
+    }
+
+    #[test]
+    fn apply_config_push_updates_host_toml_backs_up_and_regenerates_oxfile() {
+        let dir = tempfile::tempdir().unwrap();
+        write_host_toml(dir.path(), CFG_V0);
+        let cfg_v1 = format!("{CFG_V0}[[cameras]]\nid = \"cam1\"\nfps = 15\n");
+
+        apply_config_push(dir.path(), &cfg_v1, 7).expect("apply_config_push");
+
+        // host.toml 已更新
+        let now = std::fs::read_to_string(dir.path().join("etc").join("host.toml")).unwrap();
+        assert_eq!(now, cfg_v1, "host.toml 应为新配置");
+        // 备份含旧配置
+        let bak = std::fs::read_to_string(dir.path().join("etc").join("host.toml.bak-7")).unwrap();
+        assert_eq!(bak, CFG_V0, "备份应为旧配置");
+        // oxfile 重新生成（新相机实例）
+        let ox = std::fs::read_to_string(dir.path().join("run").join("oxfile.toml")).unwrap();
+        assert!(ox.contains("host-capturer-cam1"), "新相机实例应入 oxfile: {ox}");
+    }
+
+    #[test]
+    fn apply_config_push_rejects_invalid_and_leaves_files_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        write_host_toml(dir.path(), CFG_V0);
+
+        let err = apply_config_push(dir.path(), "not toml [[[", 9).unwrap_err();
+        assert!(err.contains("解析失败"), "拒绝原因应含解析失败: {err}");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("etc").join("host.toml")).unwrap(),
+            CFG_V0,
+            "非法配置不得改写 host.toml"
+        );
+        assert!(
+            !dir.path().join("etc").join("host.toml.bak-9").exists(),
+            "非法配置不得产生备份"
+        );
+        assert!(
+            !dir.path().join("run").join("oxfile.toml").exists(),
+            "非法配置不得改写 oxfile"
+        );
+    }
 }
