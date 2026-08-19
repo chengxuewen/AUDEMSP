@@ -151,6 +151,25 @@ mod imp {
         pub peers: DashMap<String, SfuPeer>,
     }
 
+    /// H3: 管理面板房间列表摘要（音频会议面板数据源）。
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "snake_case")]
+    pub struct SfuRoomSummary {
+        pub room_id: String,
+        /// 已连接参与者（peer）数。
+        pub participants: usize,
+        /// 房间内 producer 总数。
+        pub producers: usize,
+        /// 房间内 consumer 总数。
+        pub consumers: usize,
+        /// H2 音频房间（audio- 前缀）。
+        pub audio: bool,
+        /// 房间内 producer id 列表（SfuStats 查询用）。
+        pub producer_ids: Vec<String>,
+        /// 房间内 consumer id 列表（SfuStats 查询用）。
+        pub consumer_ids: Vec<String>,
+    }
+
     /// Global SFU manager — owns WorkerManager, maps room_id → SfuRoom.
     #[allow(dead_code)]
     pub struct SfuManager {
@@ -748,9 +767,38 @@ mod imp {
         pub fn send_frame(&self, _room_id: &str, _rtp_data: &[u8]) -> Result<(), String> {
             Err("send_frame requires DirectProducer; WebRtcTransport producers receive RTP from client-side ICE/DTLS".into())
         }
+
         /// Number of active rooms.
         pub fn room_count(&self) -> usize {
             self.rooms.len()
+        }
+
+        /// H3: 全部房间摘要（管理面板房间列表）— 含 producer/consumer id 供 SfuStats 查询。
+        pub fn list_rooms(&self) -> Vec<SfuRoomSummary> {
+            self.rooms
+                .iter()
+                .map(|room| {
+                    let mut producer_ids = Vec::new();
+                    let mut consumer_ids = Vec::new();
+                    let mut producers = 0;
+                    let mut consumers = 0;
+                    for peer in room.peers.iter() {
+                        producers += peer.producers.len();
+                        consumers += peer.consumers.len();
+                        producer_ids.extend(peer.producers.iter().map(|p| p.id().to_string()));
+                        consumer_ids.extend(peer.consumers.iter().map(|c| c.id().to_string()));
+                    }
+                    SfuRoomSummary {
+                        room_id: room.key().clone(),
+                        participants: room.peers.len(),
+                        producers,
+                        consumers,
+                        audio: super::is_audio_room(room.key()),
+                        producer_ids,
+                        consumer_ids,
+                    }
+                })
+                .collect()
         }
 
         /// H2: 查询 producer 的入站 RTP 统计（get_stats）— 媒体面证据（音频房间 e2e）。

@@ -40,6 +40,16 @@ impl StatusRegistry {
             .unwrap_or_else(|e| e.into_inner())
             .remove(room_id);
     }
+
+    /// 全量快照（room_id → 最新上报）— H3 多车监控视图数据源。
+    pub fn list(&self) -> Vec<(String, SignalingMessage)> {
+        self.latest
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -102,5 +112,16 @@ mod tests {
         reg.store("room-a", report("room-a", 100));
         reg.remove("room-a");
         assert!(reg.get("room-a").is_none());
+    }
+
+    #[test]
+    fn list_returns_all_rooms() {
+        let reg = StatusRegistry::default();
+        reg.store("room-a", report("room-a", 100));
+        reg.store("room-b", report("room-b", 200));
+        let all = reg.list();
+        assert_eq!(all.len(), 2, "应返回全部房间");
+        assert!(all.iter().any(|(k, _)| k == "room-a"));
+        assert!(all.iter().any(|(k, _)| k == "room-b"));
     }
 }

@@ -96,14 +96,23 @@ struct ErrorResponse {
 // ── Router ──────────────────────────────────────────────────────────────────
 
 pub fn admin_router(state: AdminState) -> Router {
-    Router::new()
+    let mut router = Router::new()
         .route("/api/admin/rooms", get(list_rooms))
         .route("/api/admin/rooms/{id}", get(get_room).delete(remove_room))
         .route("/api/admin/peers/{id}", delete(kick_peer))
         .route("/api/admin/stats", get(stats))
+        .route("/api/admin/status", get(list_status))
         .route("/api/admin/config", get(server_config))
         .route("/api/admin/config/push", axum::routing::post(push_config))
-        .route("/api/admin/events", get(ws_events))
+        .route("/api/admin/events", get(ws_events));
+    // H3: SFU 管理端点（仅 sfu-mediasoup 构建存在 — 原生构建无 SfuManager）。
+    #[cfg(feature = "sfu-mediasoup")]
+    {
+        router = router
+            .route("/api/admin/sfu/rooms", get(sfu_rooms))
+            .route("/api/admin/sfu/stats", get(sfu_stats));
+    }
+    router
         .with_state(state.clone())
         // PIT-103 (G2 顺手修): admin API 此前完全无鉴权（check_auth 死代码）—
         // 客户端（www admin）REST 已带 Bearer、events WS 已带 ?token=，此处补服务端强制。
@@ -255,31 +264,47 @@ fn extract_token(req: &axum::http::Request<Body>) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn check_auth(req: &axum::http::Request<Body>, state: &AdminState) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+fn check_auth(req: &axum::http::Request<Body>, state: &AdminState) -> Result<JwtClaims, (StatusCode, Json<ErrorResponse>)> {
     let secret = state.admin_jwt_secret.as_ref().ok_or_else(|| {
         (StatusCode::SERVICE_UNAVAILABLE, Json(ErrorResponse { error: "admin jwt secret not configured".into() }))
     })?;
     let token = extract_token(req).ok_or_else(|| {
         (StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "missing authorization token".into() }))
     })?;
-    let claims = JwtAuth::new(secret).verify(&token).map_err(|_| {
+    JwtAuth::new(secret).verify(&token).map_err(|_| {
         (StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "invalid token".into() }))
-    })?;
-    // G3: 按角色而非 sub 判定（账号体系: 任意 username + admin role 均可;
-    // bootstrap token sub=admin + role=admin 兼容）。
-    if claims.role.as_deref() != Some("admin") {
-        return Err((StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "admin role required".into() })));
-    }
-    Ok(())
+    })
 }
 
 /// admin API 全路由鉴权中间件（axum 0.7 from_fn 标准形态）。
+/// H3 角色感知: admin = 全部端点; dispatcher = 只读 GET（/api/admin/config 除外 — 配置属 admin 专属;
+/// 写操作 POST/DELETE 一律拒绝）。viewer/operator/未知角色 → 401（现有语义不变）。
 async fn auth_middleware(
     State(state): State<AdminState>,
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Result<axum::response::Response, (StatusCode, Json<ErrorResponse>)> {
-    check_auth(&req, &state)?;
+    let claims = check_auth(&req, &state)?;
+    let role = claims.role.as_deref().unwrap_or("");
+    let is_admin = role == "admin";
+    if !is_admin && role != "dispatcher" {
+        return Err((StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "admin or dispatcher role required".into() })));
+    }
+    if !is_admin {
+        // H3 dispatcher: 只读视图（音频房间/状态/视频监控），无 config/control。
+        let read_only = matches!(*req.method(), axum::http::Method::GET)
+            && !req.uri().path().starts_with("/api/admin/config");
+        if !read_only {
+            let detail = "dispatcher role is read-only";
+            tracing::warn!("admin API denied: {detail} (path={})", req.uri().path());
+            crate::audit::log_event(crate::audit::AuditEvent::AuthorizationDenied {
+                action: "admin_api".into(),
+                peer_id: claims.sub.clone(),
+                detail: format!("{detail} (path={})", req.uri().path()),
+            });
+            return Err((StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: detail.into() })));
+        }
+    }
     Ok(next.run(req).await)
 }
 
@@ -386,6 +411,64 @@ async fn stats(State(state): State<AdminState>) -> Json<StatsResponse> {
         total_peers,
         active_connections,
     })
+}
+
+/// H3: 多车监控视图数据源 — StatusRegistry 全量快照（每房间最新 StatusReport）。
+async fn list_status(State(state): State<AdminState>) -> Json<serde_json::Value> {
+    let vehicles = state
+        .signaling
+        .status_registry
+        .list()
+        .into_iter()
+        .map(|(room_id, report)| serde_json::json!({ "room_id": room_id, "report": report }))
+        .collect::<Vec<_>>();
+    Json(serde_json::json!({ "vehicles": vehicles }))
+}
+
+/// H3: 音频会议面板数据源 — SFU 房间列表摘要（participants/producers/consumers + ids）。
+#[cfg(feature = "sfu-mediasoup")]
+async fn sfu_rooms(State(state): State<AdminState>) -> Json<serde_json::Value> {
+    let rooms = state.sfu_manager.list_rooms();
+    Json(serde_json::json!({ "rooms": rooms }))
+}
+
+/// H3: SfuStats REST 查询（镜像 WS 信令 SfuStatsRequest — H2 协议的管理面路径）。
+/// 查询参数: ?producer_id=X 或 ?consumer_id=X（任一）。
+#[cfg(feature = "sfu-mediasoup")]
+async fn sfu_stats(
+    State(state): State<AdminState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let producer_id = params.get("producer_id").cloned();
+    let consumer_id = params.get("consumer_id").cloned();
+    let qid = producer_id.clone().or_else(|| consumer_id.clone());
+    let Some(qid) = qid else {
+        return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: "producer_id or consumer_id required".into() })));
+    };
+    let result = if let Some(pid) = producer_id {
+        let (kind, bytes, packets, score) = state.sfu_manager.producer_stats(&pid).await.map_err(|e| {
+            tracing::error!("admin sfu_stats producer failed: {e}");
+            (StatusCode::NOT_FOUND, Json(ErrorResponse { error: e }))
+        })?;
+        serde_json::json!({
+            "producer_id": pid, "consumer_id": None::<String>,
+            "kind": kind, "byte_count": bytes, "packet_count": packets, "score": score,
+        })
+    } else if let Some(cid) = consumer_id {
+        let (kind, bytes, packets, score) = state.sfu_manager.consumer_stats(&cid).await.map_err(|e| {
+            tracing::error!("admin sfu_stats consumer failed: {e}");
+            (StatusCode::NOT_FOUND, Json(ErrorResponse { error: e }))
+        })?;
+        serde_json::json!({
+            "producer_id": None::<String>, "consumer_id": cid,
+            "kind": kind, "byte_count": bytes, "packet_count": packets, "score": score,
+        })
+    } else {
+        unreachable!("query_id guard above");
+    };
+    // C15: 响应路径日志（查询成功侧也留痕，运维可见）。
+    tracing::info!("admin sfu_stats: {qid} → {} bytes / {} packets", result["byte_count"], result["packet_count"]);
+    Ok(Json(result))
 }
 
 #[derive(Serialize)]
@@ -674,7 +757,7 @@ mod tests {
 
     #[tokio::test]
     async fn stats_returns_200() {
-        let state = make_state().await;
+        let state = super::tests::make_state().await;
         let token = admin_token(&state);
         let app = admin_router(state);
 
@@ -696,7 +779,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "auth temporarily disabled"]
     async fn stats_returns_401_without_token() {
-        let state = make_state().await;
+        let state = super::tests::make_state().await;
         let app = admin_router(state);
 
         let response = app
@@ -716,7 +799,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "auth temporarily disabled"]
     async fn stats_returns_401_with_invalid_token() {
-        let state = make_state().await;
+        let state = super::tests::make_state().await;
         let app = admin_router(state);
 
         let response = app
@@ -737,7 +820,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "auth temporarily disabled"]
     async fn stats_returns_503_without_secret() {
-        let state = make_state().await;
+        let state = super::tests::make_state().await;
         let app = admin_router(state);
 
         let response = app
@@ -757,7 +840,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_rooms_returns_devices_and_rooms() {
-        let state = make_state().await;
+        let state = super::tests::make_state().await;
         let token = admin_token(&state);
         let app = admin_router(state);
 
@@ -778,7 +861,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_room_returns_404_for_missing() {
-        let state = make_state().await;
+        let state = super::tests::make_state().await;
         let token = admin_token(&state);
         let app = admin_router(state);
 
@@ -799,7 +882,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_room_returns_404_for_missing() {
-        let state = make_state().await;
+        let state = super::tests::make_state().await;
         let token = admin_token(&state);
         let app = admin_router(state);
 
@@ -820,7 +903,7 @@ mod tests {
 
     #[tokio::test]
     async fn kick_peer_returns_404_for_missing() {
-        let state = make_state().await;
+        let state = super::tests::make_state().await;
         let token = admin_token(&state);
         let app = admin_router(state);
 
@@ -883,16 +966,24 @@ mod g3_tests {
     }
 
     fn operator_token(secret: &str) -> String {
+        role_token(secret, "operator", Some(vec!["ms-car1".into()]))
+    }
+
+    fn dispatcher_token(secret: &str) -> String {
+        role_token(secret, "dispatcher", None)
+    }
+
+    fn role_token(secret: &str, role: &str, vehicles: Option<Vec<String>>) -> String {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as usize;
         let claims = mediaservo_common::auth::JwtClaims {
-            sub: "carol".into(),
+            sub: "u".into(),
             iat: now,
             exp: now + 3600,
-            role: Some("operator".into()),
-            vehicles: Some(vec!["ms-car1".into()]),
+            role: Some(role.into()),
+            vehicles,
         };
         jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
@@ -1100,5 +1191,166 @@ mod g3_tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // ── H3: dispatcher 角色只读 + 新端点 ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn dispatcher_can_read_status() {
+        let state = super::tests::make_state().await;
+        let secret = state.admin_jwt_secret.clone().unwrap();
+        let app = admin_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/api/admin/status")
+                    .header("Authorization", format!("Bearer {}", dispatcher_token(&secret)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "dispatcher 可读状态视图");
+    }
+
+    #[tokio::test]
+    async fn dispatcher_readonly_write_denied() {
+        let state = super::tests::make_state().await;
+        let secret = state.admin_jwt_secret.clone().unwrap();
+        let app = admin_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri("/api/admin/rooms/ms-car1")
+                    .header("Authorization", format!("Bearer {}", dispatcher_token(&secret)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "dispatcher 禁止写操作");
+    }
+
+    #[tokio::test]
+    async fn dispatcher_config_denied() {
+        let state = super::tests::make_state().await;
+        let secret = state.admin_jwt_secret.clone().unwrap();
+        let app = admin_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/api/admin/config")
+                    .header("Authorization", format!("Bearer {}", dispatcher_token(&secret)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "config 属 admin 专属");
+    }
+
+    #[tokio::test]
+    async fn admin_can_delete_room() {
+        let state = super::tests::make_state().await;
+        let secret = state.admin_jwt_secret.clone().unwrap();
+        let app = admin_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri("/api/admin/rooms/ms-car1")
+                    .header("Authorization", format!("Bearer {}", role_token(&secret, "admin", None)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "admin 不被只读拦截（房间不存在 → 404 而非 401）");
+    }
+
+    #[tokio::test]
+    async fn status_endpoint_returns_stored_reports() {
+        let state = super::tests::make_state().await;
+        use mediaservo_common::protocol::SignalStatusJson;
+        let report = mediaservo_common::protocol::SignalingMessage::StatusReport {
+            room_id: "ms-car1".into(),
+            topics: vec![],
+            streams: vec![],
+            processes: vec![],
+            signal: SignalStatusJson {
+                remote_connected: true,
+                remote_since_secs: Some(42),
+                remote_peer_id: "p".into(),
+                children: vec![],
+                agent_uptime_secs: 7,
+            },
+            ts: 1000,
+            config_version: 0,
+        };
+        state.signaling.status_registry.store("ms-car1", report);
+        let secret = state.admin_jwt_secret.clone().unwrap();
+        let app = admin_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/api/admin/status")
+                    .header("Authorization", format!("Bearer {}", role_token(&secret, "admin", None)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["vehicles"][0]["room_id"], "ms-car1");
+        assert_eq!(json["vehicles"][0]["report"]["ts"], 1000);
+    }
+
+    #[cfg(feature = "sfu-mediasoup")]
+    #[tokio::test]
+    async fn sfu_rooms_returns_empty_list() {
+        let state = super::tests::make_state().await;
+        let secret = state.admin_jwt_secret.clone().unwrap();
+        let app = admin_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/api/admin/sfu/rooms")
+                    .header("Authorization", format!("Bearer {}", dispatcher_token(&secret)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "dispatcher 可读 SFU 房间列表");
+        let body = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["rooms"], serde_json::json!([]));
+    }
+
+    #[cfg(feature = "sfu-mediasoup")]
+    #[tokio::test]
+    async fn sfu_stats_requires_query_id() {
+        let state = super::tests::make_state().await;
+        let secret = state.admin_jwt_secret.clone().unwrap();
+        let app = admin_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/api/admin/sfu/stats")
+                    .header("Authorization", format!("Bearer {}", dispatcher_token(&secret)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "缺少 producer/consumer id → 400");
     }
 }

@@ -19,4 +19,13 @@
 #   admin:
 #     password_hash: "sha256:<64 hex>"
 #     role: admin
-accounts: {}
+# 开发用账号（占位 — 部署前请替换）: 仅用于本地 Docker dev + H3 前端 e2e。
+#   admin:      admin123   → role admin（全部能力）
+#   dispatcher: dispatch123 → role dispatcher（音频/状态/视频监控只读）
+accounts:
+  admin:
+    password_hash: "sha256:bf6b5bdb74c79ece9fc0ad0ac9fb0359f9555d4f35a83b2e6ec69ae99e09603d"
+    role: admin
+  dispatcher:
+    password_hash: "sha256:51f00e625e5fb3aff1c5a55eff96d1f2f03273afd8b0bc2514961e33dd82f8b2"
+    role: dispatcher
