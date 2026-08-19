@@ -7,6 +7,8 @@
 pub mod translate;
 /// 控制平面（Task F1）：控制信封 + 执行器接口。
 pub mod control;
+/// 紧急停车平面（Task F2）：急停执行器闩锁 + 强审计。
+pub mod emergency;
 /// 初始化日志系统，role 作为首个日志事件的标识字段。
 pub fn init_logging(role: &str) {
     mediaservo_common::logging::init(mediaservo_common::logging::LoggingConfig::default());
