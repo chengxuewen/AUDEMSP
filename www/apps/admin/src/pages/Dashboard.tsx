@@ -1,5 +1,6 @@
 import { useDevices } from '../hooks/useDevices';
 import { useAdminWS } from '../hooks/useAdminWS';
+import { useAuth } from '../hooks/useAuth';
 import StatsCard from '../components/StatsCard';
 import StatusBadge from '../components/StatusBadge';
 import { getStats, deleteRoom } from '../api/client';
@@ -11,6 +12,7 @@ import './Dashboard.css';
 
 export default function Dashboard() {
   const { devices, loading, error } = useDevices();
+  const { isAdmin } = useAuth();
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [expanded, setExpanded] = useState(new Set());
   const [selectedStream, setSelectedStream] = useState<{ deviceId: string; stream: StreamSnapshot } | null>(null);
@@ -56,7 +58,7 @@ export default function Dashboard() {
       ) : (
         <div className="device-list">
           {devices.map((device) => (
-            <DeviceGroup key={device.device_id} device={device} expanded={expanded.has(device.device_id)} onToggle={() => toggle(device.device_id)} onSelectStream={(stream) => setSelectedStream({ deviceId: device.device_id, stream })} onPlayStream={() => { (window as any).__playT0 = performance.now(); console.log('[Play] 点击 Play (' + device.device_id + ') t0=' + Math.round((window as any).__playT0)); setPlayingRoom(device.device_id); }} />
+            <DeviceGroup key={device.device_id} device={device} canManage={isAdmin} expanded={expanded.has(device.device_id)} onToggle={() => toggle(device.device_id)} onSelectStream={(stream) => setSelectedStream({ deviceId: device.device_id, stream })} onPlayStream={() => { (window as any).__playT0 = performance.now(); console.log('[Play] 点击 Play (' + device.device_id + ') t0=' + Math.round((window as any).__playT0)); setPlayingRoom(device.device_id); }} />
           ))}
         </div>
       )}
@@ -65,6 +67,7 @@ export default function Dashboard() {
           deviceId={selectedStream.deviceId}
           streamId={selectedStream.stream.stream_id}
           consumers={selectedStream.stream.consumers}
+          canManage={isAdmin}
           onClose={() => setSelectedStream(null)}
         />
       )}
@@ -80,7 +83,7 @@ export default function Dashboard() {
   );
 }
 
-function DeviceGroup({ device, expanded, onToggle, onSelectStream, onPlayStream }: { device: DeviceSnapshot; expanded: boolean; onToggle: () => void; onSelectStream: (stream: StreamSnapshot) => void; onPlayStream: () => void }) {
+function DeviceGroup({ device, canManage, expanded, onToggle, onSelectStream, onPlayStream }: { device: DeviceSnapshot; canManage: boolean; expanded: boolean; onToggle: () => void; onSelectStream: (stream: StreamSnapshot) => void; onPlayStream: () => void }) {
   const status = device.streams.length > 0 ? 'online' : 'offline';
 
   return (
@@ -103,7 +106,8 @@ function DeviceGroup({ device, expanded, onToggle, onSelectStream, onPlayStream 
                   <span key={c.peer_id} className="consumer-tag">👁 {c.peer_id}</span>
                 ))}
               </div>
-              <button className="btn-sm" onClick={(e) => { e.stopPropagation(); deleteRoom(`${device.device_id}_${stream.stream_id}`); }}>Close</button>
+              {/* H3: 关闭流 = 控制操作，仅 admin（dispatcher 只读） */}
+              {canManage && <button className="btn-sm" onClick={(e) => { e.stopPropagation(); deleteRoom(`${device.device_id}_${stream.stream_id}`); }}>Close</button>}
             </div>
           ))}
         </div>

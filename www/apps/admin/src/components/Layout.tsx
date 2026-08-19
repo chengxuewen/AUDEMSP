@@ -1,18 +1,34 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import './Layout.css';
 
 export default function Layout() {
+  const { role, username, canMonitor } = useAuth();
+
   return (
     <div className="layout">
       <header className="header">
         <span className="logo">📡 MediaServo Admin</span>
-        <span className="version">v0.1.0</span>
+        <span className="version">
+          {username ? `${username}${role ? ` [${role}]` : ''} · ` : ''}v0.1.0
+        </span>
       </header>
       <div className="main">
         <nav className="sidebar">
           <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             📊 Dashboard
           </NavLink>
+          {/* H3: 音频会议 + 多车监控 = G3 can_status 角色（operator/admin/dispatcher） */}
+          {canMonitor && (
+            <NavLink to="/audio" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              🎙️ Audio Conference
+            </NavLink>
+          )}
+          {canMonitor && (
+            <NavLink to="/vehicles" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              🚗 Vehicles
+            </NavLink>
+          )}
           <NavLink to="/settings" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             ⚙️ Settings
           </NavLink>

@@ -8,9 +8,10 @@ interface Props {
   consumers: Consumer[];
   onClose: () => void;
   onKick?: (peerId: string) => void;
+  canManage?: boolean;
 }
 
-export default function StreamDetail({ deviceId, streamId, consumers, onClose, onKick }: Props) {
+export default function StreamDetail({ deviceId, streamId, consumers, onClose, onKick, canManage = true }: Props) {
   return (
     <div className="stream-detail-overlay" onClick={onClose}>
       <div className="stream-detail" onClick={(e) => e.stopPropagation()}>
@@ -40,12 +41,14 @@ export default function StreamDetail({ deviceId, streamId, consumers, onClose, o
               ))}
             </ul>
           )}
-          <button
-            className="btn-danger"
-            onClick={async () => { await deleteRoom(`${deviceId}_${streamId}`); onClose(); }}
-          >
-            Close Stream
-          </button>
+          {canManage && (
+            <button
+              className="btn-danger"
+              onClick={async () => { await deleteRoom(`${deviceId}_${streamId}`); onClose(); }}
+            >
+              Close Stream
+            </button>
+          )}
         </div>
       </div>
     </div>
