@@ -109,17 +109,22 @@ pub struct CameraConfig {
 }
 
 /// 解析全部相机配置（C1 capturer 用；`camera_and_stream_ids` 保持 A2/B3 消费面）。
+/// fps=0 拒绝（generator.start(0) 线程内 panic → 静默挂起，C1 审查发现）。
 pub fn camera_configs(cfg: &str) -> Result<Vec<CameraConfig>, String> {
     let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
-    Ok(cfg
-        .cameras
-        .into_iter()
-        .map(|c| CameraConfig {
+    let mut out = Vec::with_capacity(cfg.cameras.len());
+    for c in cfg.cameras {
+        let fps = c.fps.unwrap_or(30);
+        if fps == 0 {
+            return Err(format!("host.toml 解析失败: 相机 {} fps=0 无效（须 > 0）", c.id));
+        }
+        out.push(CameraConfig {
             id: c.id,
             source: c.source.unwrap_or_else(|| "stub".into()),
-            fps: c.fps.unwrap_or(30),
-        })
-        .collect())
+            fps,
+        });
+    }
+    Ok(out)
 }
 
 /// 按 id 查单个相机配置（不存在 → Ok(None)）。

@@ -56,3 +56,15 @@ fn to_oxfile_in_dir_appends_config_and_token_paths() {
     assert!(ox.contains("host-capturer --camera cam0"));
     assert!(!ox.contains("--config"));
 }
+
+#[test]
+fn camera_config_rejects_zero_fps() {
+    // C1 审查发现: fps=0 → generator.start 线程内 panic → 死线程 + 主线程永久阻塞
+    // （C15 "failure as hang" 类）——必须在配置解析层拒绝。
+    let cfg = "[[cameras]]\nid = \"cam0\"\nfps = 0\n";
+    let err = mediaservo_host::translate::camera_configs(cfg).unwrap_err();
+    assert!(err.contains("fps"), "错误信息应指明 fps, got: {err}");
+    assert!(err.contains("cam0"), "错误信息应含相机 id, got: {err}");
+    // 单查同样拒绝
+    assert!(mediaservo_host::translate::camera_config(cfg, "cam0").is_err());
+}
