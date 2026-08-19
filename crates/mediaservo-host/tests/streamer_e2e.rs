@@ -53,6 +53,11 @@ fn ws_url() -> String {
     })
 }
 
+/// 同二进制内两个真 server 房间 e2e（D2 单流 / D3 双流）串行化：并发运行会
+/// 撞 "vehicle" 房间（server 单 host 槽，join_full_host_slot_errors）与
+/// camera/cam0 topic（FrameBus 单发布者，TopicConflict）。
+static ROOM_E2E_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn bad_args_exit_2_with_usage() {
     for args in [
@@ -183,6 +188,7 @@ fn admin_rooms() -> serde_json::Value {
 /// → 外部 mediasoup server 收流，且仅一个车位会话。
 #[tokio::test]
 async fn streamer_pushes_through_gateway_to_server() {
+    let _guard = ROOM_E2E_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     cleanup_iceoryx();
     let _url = ws_url();
     let dir = tempfile::tempdir().expect("tempdir");
@@ -291,6 +297,166 @@ async fn streamer_pushes_through_gateway_to_server() {
     unsafe { libc::kill(capturer.id() as i32, libc::SIGTERM) };
     let ct = capturer.wait().expect("wait capturer");
     assert_eq!(ct.code(), Some(0), "capturer 应优雅退出 0, got {ct:?}");
+    unsafe { libc::kill(agent.id() as i32, libc::SIGTERM) };
+    let at = agent.wait().expect("wait agent");
+    assert_eq!(at.code(), Some(0), "agent 应优雅退出 0, got {at:?}");
+}
+
+/// E2E (D3): 双路推流经同一网关会话 — host-agent + capturer×2 (cam0/cam1)
+/// + streamer×2 (s0/s1, 同一 --gateway) → 外部 mediasoup server:
+/// ① 两路流均出站 bytes_sent>0 且 frames_encoded>0（D4 证据模式）
+/// ② admin 房间列表 = 唯一 vehicle 房间（含 host），无 stream-* 房间
+/// ③ 两 streamer + 两 capturer 全程存活
+/// ④ SIGTERM → 五进程优雅退出 0
+///
+/// D-H6「多路 produce = 同 peer 多 transport」: 每 streamer 经同一网关
+/// 单 WS 上 Server，各自 Create/Connect/Produce 在网关 FIFO 按序配对。
+#[tokio::test]
+async fn two_streamers_share_one_vehicle_session() {
+    let _guard = ROOM_E2E_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    cleanup_iceoryx();
+    let _url = ws_url();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let pid = std::process::id();
+    let s0 = format!("s{pid}-0");
+    let s1 = format!("s{pid}-1");
+
+    // host.toml: cam0/cam1 stub 30fps + 两路流（各自显式 camera 引用）
+    let cfg_path = dir.path().join("host.toml");
+    std::fs::write(
+        &cfg_path,
+        format!(
+            "[[cameras]]\nid = \"cam0\"\nsource = \"stub\"\nfps = 30\n\
+             [[cameras]]\nid = \"cam1\"\nsource = \"stub\"\nfps = 30\n\
+             [[streams]]\nid = \"{s0}\"\ncamera = \"cam0\"\ncodec = \"vp8\"\n\
+             [[streams]]\nid = \"{s1}\"\ncamera = \"cam1\"\ncodec = \"vp8\"\n"
+        ),
+    )
+    .expect("write host.toml");
+
+    // 令牌: capturer=Capture（camera/*）, streamer=Recorder（camera/*）— 每进程独立 node id
+    let mut tok_paths = Vec::new();
+    for (role, node) in [
+        (Role::Capture, format!("capture-{pid}-cam0")),
+        (Role::Capture, format!("capture-{pid}-cam1")),
+        (Role::Recorder, format!("streamer-{pid}-s0")),
+        (Role::Recorder, format!("streamer-{pid}-s1")),
+    ] {
+        let (tok, vk) = token(role, &node);
+        let p = dir.path().join(format!("{node}.token"));
+        std::fs::write(&p, TokenFile::encode(&tok, &vk)).expect("write token");
+        tok_paths.push(p);
+    }
+
+    // host-agent（本地网关）: 随机端口 + 远端指真 server
+    let gw_port = free_local_port();
+    let agent_log = tempfile::NamedTempFile::new().expect("agent log");
+    let mut agent = Command::new(env!("CARGO_BIN_EXE_host-agent"))
+        .args([
+            "--port",
+            &gw_port.to_string(),
+            "--remote",
+            &ws_url(),
+            "--room",
+            "vehicle",
+        ])
+        .stdout(Stdio::from(agent_log.reopen().expect("reopen agent log")))
+        .stderr(Stdio::from(agent_log.reopen().expect("reopen agent log")))
+        .spawn()
+        .expect("spawn host-agent");
+    wait_for(&agent_log, "agent 已加入整车房间");
+
+    // capturer×2（先起：streamer 首帧 gate 依赖发布端）
+    let mut capturers = Vec::new();
+    let mut cap_logs = Vec::new();
+    for (i, cam) in ["cam0", "cam1"].iter().enumerate() {
+        let cap_log = tempfile::NamedTempFile::new().expect("cap log");
+        let capturer = Command::new(env!("CARGO_BIN_EXE_host-capturer"))
+            .args([
+                "--camera",
+                cam,
+                "--config",
+                cfg_path.to_str().expect("cfg utf8"),
+                "--token",
+                tok_paths[i].to_str().expect("tok utf8"),
+            ])
+            .stdout(Stdio::from(cap_log.reopen().expect("reopen cap log")))
+            .stderr(Stdio::from(cap_log.reopen().expect("reopen cap log")))
+            .spawn()
+            .expect("spawn host-capturer");
+        wait_for(&cap_log, "capturer ready");
+        capturers.push(capturer);
+        cap_logs.push(cap_log);
+    }
+
+    // streamer×2 → 同一本地网关（顺序启动，各自协商完整后再起下一个）
+    let mut streamers = Vec::new();
+    let mut str_logs = Vec::new();
+    for (i, s) in [s0.as_str(), s1.as_str()].iter().enumerate() {
+        let str_log = tempfile::NamedTempFile::new().expect("str log");
+        let streamer = Command::new(env!("CARGO_BIN_EXE_host-streamer"))
+            .args([
+                "--stream",
+                s,
+                "--config",
+                cfg_path.to_str().expect("cfg utf8"),
+                "--token",
+                tok_paths[2 + i].to_str().expect("tok utf8"),
+                "--gateway",
+                &format!("ws://127.0.0.1:{gw_port}/ws"),
+            ])
+            .stdout(Stdio::from(str_log.reopen().expect("reopen str log")))
+            .stderr(Stdio::from(str_log.reopen().expect("reopen str log")))
+            .spawn()
+            .expect("spawn host-streamer");
+        wait_for(&str_log, "streamer ready");
+        streamers.push(streamer);
+        str_logs.push(str_log);
+    }
+    // ① 两路流证据: 各自出站统计 bytes_sent>0 且 frames_encoded>0（server 已收帧）
+    let ev0 = wait_for_flow(&str_logs[0]);
+    let ev1 = wait_for_flow(&str_logs[1]);
+    eprintln!("[streamer_e2e] stream {s0} 证据: {ev0}");
+    eprintln!("[streamer_e2e] stream {s1} 证据: {ev1}");
+
+    // ③ 两 streamer + 两 capturer 全程存活（未提前退出）
+    for (i, st) in streamers.iter_mut().enumerate() {
+        assert!(st.try_wait().expect("try_wait").is_none(), "streamer {i} 应存活");
+    }
+    for (i, cp) in capturers.iter_mut().enumerate() {
+        assert!(cp.try_wait().expect("try_wait").is_none(), "capturer {i} 应存活");
+    }
+
+    // ② 一车一会话: 唯一 vehicle 房间（含 host），无 stream-* 房间
+    let rooms = admin_rooms();
+    let rooms_arr = rooms["rooms"].as_array().expect("rooms array");
+    eprintln!("[streamer_e2e] admin rooms: {rooms}");
+    let vehicle: Vec<_> = rooms_arr.iter().filter(|r| r["id"] == "vehicle").collect();
+    assert_eq!(vehicle.len(), 1, "应恰好一个 vehicle 房间（两流同车）: got {rooms}");
+    assert!(
+        vehicle[0]["host"].is_string(),
+        "vehicle 房间应含 host peer: got {rooms}"
+    );
+    assert!(
+        !rooms_arr
+            .iter()
+            .any(|r| r["id"].as_str().is_some_and(|id| id.starts_with("stream-"))),
+        "streamer RoomJoin 应被网关拦截（无 stream-* 房间）: got {rooms}"
+    );
+
+    // ④ SIGTERM → 五进程优雅退出 0（先 streamer 后 capturer 后 agent）
+    for st in &streamers {
+        unsafe { libc::kill(st.id() as i32, libc::SIGTERM) };
+    }
+    for st in &mut streamers {
+        assert_eq!(st.wait().expect("wait streamer").code(), Some(0), "streamer 应优雅退出 0");
+    }
+    for cp in &capturers {
+        unsafe { libc::kill(cp.id() as i32, libc::SIGTERM) };
+    }
+    for cp in &mut capturers {
+        assert_eq!(cp.wait().expect("wait capturer").code(), Some(0), "capturer 应优雅退出 0");
+    }
     unsafe { libc::kill(agent.id() as i32, libc::SIGTERM) };
     let at = agent.wait().expect("wait agent");
     assert_eq!(at.code(), Some(0), "agent 应优雅退出 0, got {at:?}");
