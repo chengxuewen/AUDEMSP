@@ -1,0 +1,14 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:5173",
+      "localStorage": [
+        {
+          "name": "mediaservo_admin_token",
+          "value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkaXNwYXRjaGVyIiwiaWF0IjoxNzg3MTc0MDE3LCJleHAiOjE3ODcyMTcyMTcsInJvbGUiOiJkaXNwYXRjaGVyIiwidmVoaWNsZXMiOltdfQ.HQKpS8wBtWAVGwA7XDNOjW3S72Wx8Kyte-6ksZoUkgc"
+        }
+      ]
+    }
+  ]
+}

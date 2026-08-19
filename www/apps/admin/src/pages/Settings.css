@@ -9,6 +9,9 @@
 .token-row { display: flex; gap: 0.5rem; align-items: center; }
 .token-input { flex: 1; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; font-family: monospace; outline: none; }
 .token-input:focus { border-color: #4361ee; }
+.login-input { padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; outline: none; }
+.login-input:focus { border-color: #4361ee; }
+.token-input:focus { border-color: #4361ee; }
 .token-status { font-size: 0.85rem; margin-top: 0.5rem; }
 .token-status { font-size: 0.85rem; margin-top: 0.5rem; }
 .token-status.saved { color: #27ae60; }

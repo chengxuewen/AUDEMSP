@@ -7,6 +7,7 @@ export default function Settings() {
   const [password, setPassword] = useState('');
   const [token, setTokenInput] = useState('');
   const [saved, setSaved] = useState(hasToken());
+  const [showSaved, setShowSaved] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
   const currentUser = getUsername();
@@ -22,6 +23,7 @@ export default function Settings() {
       setUsernameInput('');
       setPassword('');
       setSaved(true);
+      setShowSaved(true);
     } catch (e) {
       setLoginError(e instanceof Error ? e.message : 'Login failed');
     } finally {
@@ -34,12 +36,14 @@ export default function Settings() {
       setToken(token.trim());
       setTokenInput('');
       setSaved(true);
+      setShowSaved(true);
     }
   };
 
   const handleClear = () => {
     clearToken();
     setSaved(false);
+    setShowSaved(false);
   };
 
   return (
@@ -55,14 +59,14 @@ export default function Settings() {
         <div className="token-row">
           <input
             type="text"
-            className="token-input"
+            className="login-input"
             placeholder="username"
             value={username}
             onChange={(e) => setUsernameInput(e.target.value)}
           />
           <input
             type="password"
-            className="token-input"
+            className="login-input"
             placeholder="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -88,7 +92,7 @@ export default function Settings() {
           <button className="btn" onClick={handleSave}>Save Token</button>
           {saved && <button className="btn btn-outline" onClick={handleClear}>Clear</button>}
         </div>
-        {saved && !currentUser && <p className="token-status saved">✅ Token saved</p>}
+        {showSaved && <p className="token-status saved">✅ Token saved</p>}
       </section>
 
       <section className="setting-group">

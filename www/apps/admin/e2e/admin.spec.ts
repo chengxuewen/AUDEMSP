@@ -24,6 +24,8 @@ test.describe('Admin Layout', () => {
 
 test.describe('Dashboard Page', () => {
   test('shows dashboard content on load', async ({ page }) => {
+    // storageState（global-setup 登录）提供 admin token — PIT-103 鉴权后仍需登录态。
+    await page.goto('/');
     await page.goto('/');
     // The dashboard shows "No active devices" when empty, or stats cards when live
     await expect(page.locator('.dashboard')).toBeVisible();
@@ -42,20 +44,22 @@ test.describe('Settings Page', () => {
   });
 
   test('save button is clickable with empty input (no-op)', async ({ page }) => {
-    await page.locator('button', { hasText: 'Save Token' }).click();
-    // No token status appears because input was empty
-    await expect(page.locator('.token-status')).toHaveCount(0);
+    const tokenSection = page.locator('.setting-group', { hasText: 'Admin Token' });
+    await tokenSection.locator('button', { hasText: 'Save Token' }).click();
+    // No token status appears in the token section because input was empty
+    await expect(tokenSection.locator('.token-status')).toHaveCount(0);
   });
 
   test('saves and clears a token', async ({ page }) => {
-    await page.locator('input.token-input').fill('test-jwt-token');
-    await page.locator('button', { hasText: 'Save Token' }).click();
-    await expect(page.locator('.token-status')).toContainText('Token saved');
+    const tokenSection = page.locator('.setting-group', { hasText: 'Admin Token' });
+    await tokenSection.locator('input.token-input').fill('test-jwt-token');
+    await tokenSection.locator('button', { hasText: 'Save Token' }).click();
+    await expect(tokenSection.locator('.token-status')).toContainText('Token saved');
     // Clear button appears after save
-    const clearBtn = page.locator('button', { hasText: 'Clear' });
+    const clearBtn = tokenSection.locator('button', { hasText: 'Clear' });
     await expect(clearBtn).toBeVisible();
     await clearBtn.click();
-    await expect(page.locator('.token-status')).toHaveCount(0);
-    await expect(page.locator('button', { hasText: 'Clear' })).toHaveCount(0);
+    await expect(tokenSection.locator('.token-status')).toHaveCount(0);
+    await expect(tokenSection.locator('button', { hasText: 'Clear' })).toHaveCount(0);
   });
 });
