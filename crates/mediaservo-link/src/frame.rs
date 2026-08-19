@@ -9,7 +9,8 @@ pub struct FrameMeta {
     pub seq: u64,
     pub width: u32,
     pub height: u32,
-    /// 像素格式（0=未知, 1=I420, 2=NV12, 3=RGBA）。
+    /// 像素格式（0=未知, 1=I420, 2=NV12, 3=RGBA, 4=JSON 载荷——非像素数据，
+    /// 如 E2 streamer 推流状态 stats/* topic）。
     pub format: u8,
     /// 元数据版本（演进用，D243）。
     pub version: u8,

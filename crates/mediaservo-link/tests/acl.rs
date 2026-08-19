@@ -56,9 +56,37 @@ fn perception_pub_perception_sub_camera() {
     assert!(!a.can_publish(&FrameTopic::new("video/x")));
 }
 
-#[test]
-fn puller_no_perm() {
+    #[test]
+    fn puller_no_perm() {
     let a = acl(Role::Puller);
     assert!(!a.can_publish(&FrameTopic::new("camera/x")));
     assert!(!a.can_subscribe(&FrameTopic::new("camera/x")));
+}
+
+#[test]
+    fn pusher_pub_stats_sub_frames() {
+    let a = acl(Role::Pusher);
+    assert!(a.can_subscribe(&FrameTopic::new("camera/front/raw")));
+    assert!(!a.can_publish(&FrameTopic::new("camera/front/raw")));
+    // E2 推流状态上报（streamer 进程）
+    assert!(a.can_publish(&FrameTopic::new("stats/stream-s0")));
+}
+
+#[test]
+    fn recorder_pub_stats_sub_frames() {
+    let a = acl(Role::Recorder);
+    assert!(a.can_subscribe(&FrameTopic::new("camera/front/raw")));
+    assert!(!a.can_publish(&FrameTopic::new("camera/front/raw")));
+    // E2 推流状态上报（streamer 令牌缺省 Recorder，C2 遗留）
+    assert!(a.can_publish(&FrameTopic::new("stats/stream-s0")));
+}
+
+    #[test]
+fn monitor_sub_frames_and_stats_no_pub() {
+    let a = acl(Role::Monitor);
+    assert!(a.can_subscribe(&FrameTopic::new("camera/front/raw")));
+    assert!(a.can_subscribe(&FrameTopic::new("stats/stream-s0")));
+    assert!(!a.can_subscribe(&FrameTopic::new("control/cmd")));
+    assert!(!a.can_publish(&FrameTopic::new("camera/front/raw")));
+    assert!(!a.can_publish(&FrameTopic::new("stats/stream-s0")));
 }

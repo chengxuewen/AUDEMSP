@@ -20,6 +20,8 @@ pub enum Role {
     Control,
     /// 感知节点：发布感知结果、订阅相机帧。
     Perception,
+    /// 监控节点（host-agent 数据面监控，E2）：订阅相机帧 + 推流状态，不发布。
+    Monitor,
 }
 
 /// 节点 ACL（静态，D237）。
@@ -39,14 +41,15 @@ impl NodeAcl {
         let (publish_allow, subscribe_allow): (Vec<String>, Vec<String>) = match role {
             Role::Capture => (vec!["camera/*".into()], vec![]),
             Role::Processor => (vec!["video/*".into()], vec!["camera/*".into()]),
-            Role::Pusher => (vec![], vec!["camera/*".into(), "video/*".into()]),
+            Role::Pusher => (vec!["stats/*".into()], vec!["camera/*".into(), "video/*".into()]),
             Role::Puller => (vec![], vec![]),
-            Role::Recorder => (vec![], vec!["camera/*".into(), "video/*".into()]),
+            Role::Recorder => (vec!["stats/*".into()], vec!["camera/*".into(), "video/*".into()]),
             Role::Control => (
                 vec!["control/cmd".into()],
                 vec!["control/telemetry".into(), "status/*".into()],
             ),
             Role::Perception => (vec!["perception/*".into()], vec!["camera/*".into()]),
+            Role::Monitor => (vec![], vec!["camera/*".into(), "stats/*".into()]),
         };
         Self { node_id, role, publish_allow, subscribe_allow }
     }
