@@ -8,6 +8,7 @@ pub mod config;
 pub mod monitor;
 pub mod relay;
 pub mod room;
+pub mod status;
 pub mod sfu;
 pub mod health;
 pub mod signaling;

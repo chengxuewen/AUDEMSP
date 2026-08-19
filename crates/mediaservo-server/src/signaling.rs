@@ -1,4 +1,5 @@
 use crate::audit::{self, AuditEvent};
+use crate::status::StatusRegistry;
 use crate::room::RoomManager;
 use crate::health::{HealthChecker, HealthStatus};
 use axum::Router;
@@ -45,6 +46,8 @@ pub struct SignalingServer {
     pub pending_messages: Arc<dashmap::DashMap<String, Vec<String>>>,
     /// JWT authenticator (optional; PSK used as fallback).
     pub jwt_auth: Option<JwtAuth>,
+    /// 整车状态上报注册表（E3: 每房间最新 StatusReport; H 阶段 admin API 读取）。
+    pub status_registry: Arc<StatusRegistry>,
 }
 
 impl SignalingServer {
@@ -60,6 +63,7 @@ impl SignalingServer {
             ws_max_message_size,
             pending_messages: Arc::new(dashmap::DashMap::new()),
             jwt_auth,
+            status_registry: Arc::new(StatusRegistry::default()),
         }
     }
 
@@ -74,6 +78,7 @@ impl SignalingServer {
             ws_max_message_size,
             pending_messages: Arc::new(dashmap::DashMap::new()),
             jwt_auth,
+            status_registry: Arc::new(StatusRegistry::default()),
         }
     }
 
@@ -438,6 +443,17 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     break;
                 }
 
+                // v4 (E3): 整车状态上报 — Server 直接消费存储（非 relay 消息，
+                // 不广播房间；旧 Server 解析失败静默丢弃 = 可容忍，周期性上报自愈）
+                if let Ok(sig) = serde_json::from_str::<SignalingMessage>(&text_str) {
+                    let is_report = matches!(&sig, SignalingMessage::StatusReport { .. });
+                    if is_report {
+                        server.status_registry.store(&relay_room, sig);
+                        tracing::info!("StatusReport stored for room {relay_room}");
+                        continue;
+                    }
+                }
+
                 // Check for SFU transport messages (server-side handling)
                 #[cfg(feature = "sfu-mediasoup")]
                 {
@@ -595,6 +611,10 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
     #[cfg(feature = "sfu-mediasoup")]
     if room_removed {
         server.sfu_manager.remove_room(&relay_room);
+    }
+    // E3: 空房无状态可报 — 清理状态注册表，避免陈旧数据悬挂
+    if room_removed {
+        server.status_registry.remove(&relay_room);
     }
 
     let leave_msg = SignalingMessage::RoomLeave {

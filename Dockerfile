@@ -53,6 +53,13 @@ COPY crates/mediaservo-client/Cargo.toml crates/mediaservo-client/
 COPY crates/mediaservo-link/Cargo.toml crates/mediaservo-link/
 COPY crates/mediaservo-deck/Cargo.toml crates/mediaservo-deck/
 COPY crates/mediaservo-field/Cargo.toml crates/mediaservo-field/
+COPY bindings/c/mediaservo-field-c/Cargo.toml bindings/c/mediaservo-field-c/
+COPY bindings/c/mediaservo-link-c/Cargo.toml bindings/c/mediaservo-link-c/
+COPY bindings/c/mediaservo-deck-c/Cargo.toml bindings/c/mediaservo-deck-c/
+COPY bindings/cxx/mediaservo-link-cxx/Cargo.toml bindings/cxx/mediaservo-link-cxx/
+COPY bindings/cxx/mediaservo-deck-cxx/Cargo.toml bindings/cxx/mediaservo-deck-cxx/
+COPY bindings/cxx/mediaservo-field-cxx/Cargo.toml bindings/cxx/mediaservo-field-cxx/
+COPY bindings/node/rust/mediaservo-node/Cargo.toml bindings/node/rust/mediaservo-node/
 # PIT-76: vendored [patch] 依赖需要 manifest（fetch 阶段）
 COPY vendor/webrtc-sys/Cargo.toml vendor/webrtc-sys/
 # dummy src 全建 — cargo fetch 要求依赖 crate 有 targets（缺 src 报 no targets specified）
@@ -67,7 +74,13 @@ RUN mkdir -p crates/mediaservo-common/src && touch crates/mediaservo-common/src/
           crates/mediaservo-link/src/lib.rs crates/mediaservo-deck/src/lib.rs crates/mediaservo-field/src/lib.rs && \
     mkdir -p crates/mediaservo-media/examples crates/mediaservo-webrtc/examples && touch crates/mediaservo-media/examples/square-gen-egui.rs \
           crates/mediaservo-media/examples/viewer.rs crates/mediaservo-media/examples/square-gen.rs \
-          crates/mediaservo-webrtc/examples/webrtc_loopback_egui.rs
+          crates/mediaservo-webrtc/examples/webrtc_loopback_egui.rs && \
+    mkdir -p bindings/c/mediaservo-field-c/src bindings/c/mediaservo-link-c/src bindings/c/mediaservo-deck-c/src \
+             bindings/cxx/mediaservo-link-cxx/src bindings/cxx/mediaservo-deck-cxx/src bindings/cxx/mediaservo-field-cxx/src \
+             bindings/node/rust/mediaservo-node/src && \
+    touch bindings/c/mediaservo-field-c/src/lib.rs bindings/c/mediaservo-link-c/src/lib.rs bindings/c/mediaservo-deck-c/src/lib.rs \
+          bindings/cxx/mediaservo-link-cxx/src/lib.rs bindings/cxx/mediaservo-deck-cxx/src/lib.rs bindings/cxx/mediaservo-field-cxx/src/lib.rs \
+          bindings/node/rust/mediaservo-node/src/lib.rs
 RUN cargo fetch
 RUN rm -rf crates/*/src
 COPY . .
@@ -89,6 +102,13 @@ COPY crates/mediaservo-client/Cargo.toml crates/mediaservo-client/
 COPY crates/mediaservo-link/Cargo.toml crates/mediaservo-link/
 COPY crates/mediaservo-deck/Cargo.toml crates/mediaservo-deck/
 COPY crates/mediaservo-field/Cargo.toml crates/mediaservo-field/
+COPY bindings/c/mediaservo-field-c/Cargo.toml bindings/c/mediaservo-field-c/
+COPY bindings/c/mediaservo-link-c/Cargo.toml bindings/c/mediaservo-link-c/
+COPY bindings/c/mediaservo-deck-c/Cargo.toml bindings/c/mediaservo-deck-c/
+COPY bindings/cxx/mediaservo-link-cxx/Cargo.toml bindings/cxx/mediaservo-link-cxx/
+COPY bindings/cxx/mediaservo-deck-cxx/Cargo.toml bindings/cxx/mediaservo-deck-cxx/
+COPY bindings/cxx/mediaservo-field-cxx/Cargo.toml bindings/cxx/mediaservo-field-cxx/
+COPY bindings/node/rust/mediaservo-node/Cargo.toml bindings/node/rust/mediaservo-node/
 # PIT-76: vendored [patch] 依赖需要 manifest（fetch 阶段）
 COPY vendor/webrtc-sys/Cargo.toml vendor/webrtc-sys/
 
@@ -103,7 +123,13 @@ RUN mkdir -p crates/mediaservo-common/src && touch crates/mediaservo-common/src/
           crates/mediaservo-link/src/lib.rs crates/mediaservo-deck/src/lib.rs crates/mediaservo-field/src/lib.rs && \
     mkdir -p crates/mediaservo-media/examples crates/mediaservo-webrtc/examples && touch crates/mediaservo-media/examples/square-gen-egui.rs \
           crates/mediaservo-media/examples/viewer.rs crates/mediaservo-media/examples/square-gen.rs \
-          crates/mediaservo-webrtc/examples/webrtc_loopback_egui.rs
+          crates/mediaservo-webrtc/examples/webrtc_loopback_egui.rs && \
+    mkdir -p bindings/c/mediaservo-field-c/src bindings/c/mediaservo-link-c/src bindings/c/mediaservo-deck-c/src \
+             bindings/cxx/mediaservo-link-cxx/src bindings/cxx/mediaservo-deck-cxx/src bindings/cxx/mediaservo-field-cxx/src \
+             bindings/node/rust/mediaservo-node/src && \
+    touch bindings/c/mediaservo-field-c/src/lib.rs bindings/c/mediaservo-link-c/src/lib.rs bindings/c/mediaservo-deck-c/src/lib.rs \
+          bindings/cxx/mediaservo-link-cxx/src/lib.rs bindings/cxx/mediaservo-deck-cxx/src/lib.rs bindings/cxx/mediaservo-field-cxx/src/lib.rs \
+          bindings/node/rust/mediaservo-node/src/lib.rs
 
 # 3. Fetch and build dependencies (cached — only re-runs on Cargo.toml changes)
 RUN cargo fetch && \
