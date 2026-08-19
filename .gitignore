@@ -104,6 +104,7 @@ bindings/python/mediaservo/examples/recorded.mp4/bindings/python/mediaservo/medi
 /bindings/python/mediaservo/mediaservo.egg-info/
 
 # host multi-process runtime artifacts (host init/start at repo root)
+.host/
 /etc/
 /run/
 /recordings/
