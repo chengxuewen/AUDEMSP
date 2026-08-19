@@ -220,6 +220,22 @@ impl RTCPeerConnection {
                 };
             }
         }
+        // H2: 音频 track（webrtc-sys）— AudioTrackSource + AudioTrack，stage 供
+        // add_transceiver_with_track 使用；write_frame 推 PCM i16（libwebrtc 内部 opus 编码）。
+        #[cfg(feature = "backend-webrtc-sys")]
+        if kind == TrackKind::Audio {
+            let (track_backend, media_track) = self.factory.create_audio_track();
+            self.backend.stage_media_track(media_track);
+            return TrackSender {
+                id: track_id.to_string(),
+                kind,
+                audio_config: Some(crate::track::RTCAudioTrackConfig {
+                    sample_rate: 48000,
+                    channels: 1,
+                }),
+                backend: track_backend,
+            };
+        }
         TrackSender::new(track_id.to_string(), kind)
     }
 

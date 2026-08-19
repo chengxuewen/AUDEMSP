@@ -1016,11 +1016,12 @@ impl webrtc_sys::data_channel::DataChannelObserver for DcObserver {
 // ── WebrtcSysTrack ──
 
 
-/// webrtc-sys video track backend.
-/// Holds a libwebrtc VideoTrackSource for pushing raw I420 frames.
-/// libwebrtc handles encoding internally (VP8/H.264).
+/// webrtc-sys media track backend.
+/// Holds a libwebrtc VideoTrackSource (raw I420 push) and/or an
+/// AudioTrackSource (PCM i16 push — H2; libwebrtc encodes to opus internally).
 pub(crate) struct WebrtcSysTrack {
     video_source: Mutex<Option<SharedPtr<webrtc_sys::video_track::ffi::VideoTrackSource>>>,
+    audio_source: Mutex<Option<SharedPtr<webrtc_sys::audio_track::ffi::AudioTrackSource>>>,
     // PIT-63: 锚定单调 wall-clock 时间戳 — BASE(SystemTime 锚点) + Instant::elapsed()(单调增量)。
     // 裸 SystemTime::now() 非单调 (NTP 跳变/挂起恢复 → ts 倒退 → aligned 倒退 → FramerateController 重置);
     // 假时钟 (+33333us/次) 与 libwebrtc 时间域不一致 (PIT-61 实验史)。
@@ -1041,7 +1042,7 @@ impl WebrtcSysTrack {
 impl Default for WebrtcSysTrack {
     fn default() -> Self {
         let (ts_base_us, ts_anchor) = Self::new_clock_anchor();
-        Self { video_source: Mutex::new(None), ts_base_us, ts_anchor }
+        Self { video_source: Mutex::new(None), audio_source: Mutex::new(None), ts_base_us, ts_anchor }
     }
 }
 
@@ -1049,15 +1050,17 @@ impl std::fmt::Debug for WebrtcSysTrack {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WebrtcSysTrack")
             .field("video_source", &self.video_source.lock().unwrap().is_some())
+            .field("audio_source", &self.audio_source.lock().unwrap().is_some())
             .finish()
     }
 }
 
 impl Clone for WebrtcSysTrack {
     fn clone(&self) -> Self {
-        let source = self.video_source.lock().unwrap().clone();
+        let video = self.video_source.lock().unwrap().clone();
+        let audio = self.audio_source.lock().unwrap().clone();
         let (ts_base_us, ts_anchor) = Self::new_clock_anchor();
-        Self { video_source: Mutex::new(source), ts_base_us, ts_anchor }
+        Self { video_source: Mutex::new(video), audio_source: Mutex::new(audio), ts_base_us, ts_anchor }
     }
 }
 
@@ -1066,22 +1069,36 @@ impl WebrtcSysTrack {
         source: SharedPtr<webrtc_sys::video_track::ffi::VideoTrackSource>,
     ) -> Self {
         let (ts_base_us, ts_anchor) = Self::new_clock_anchor();
-        Self { video_source: Mutex::new(Some(source)), ts_base_us, ts_anchor }
+        Self { video_source: Mutex::new(Some(source)), audio_source: Mutex::new(None), ts_base_us, ts_anchor }
+    }
+    pub(crate) fn with_audio_source(
+        source: SharedPtr<webrtc_sys::audio_track::ffi::AudioTrackSource>,
+    ) -> Self {
+        let (ts_base_us, ts_anchor) = Self::new_clock_anchor();
+        Self { video_source: Mutex::new(None), audio_source: Mutex::new(Some(source)), ts_base_us, ts_anchor }
     }
 }
+
+/// capture_frame 完成回调（queue 模式 backpressure 通知）— H2 无背压需求，no-op。
+extern "C" fn noop_audio_complete(_ctx: *const webrtc_sys::audio_track::SourceContext) {}
 
 impl TrackWriteBackend for WebrtcSysTrack {
     async fn write_frame(
         &self,
         data: &[u8],
-        _kind: TrackKind,
-        _audio_config: Option<&RTCAudioTrackConfig>,
+        kind: TrackKind,
+        audio_config: Option<&RTCAudioTrackConfig>,
     ) -> Result<(), RTCError> {
+        if kind == TrackKind::Audio {
+            let cfg = audio_config
+                .ok_or_else(|| RTCError::Track("audio write_frame requires audio_config".into()))?;
+            return self.write_pcm(data, cfg);
+        }
         tracing::debug!(
-            "TrackSender::write_frame (webrtc-sys): {} bytes (encoded pass-through)",
+            "TrackSender::write_frame (webrtc-sys): {} bytes (encoded video pass-through)",
             data.len()
         );
-        // ponytail: encoded frame passthrough — stub for now, real encoding deferred
+        // ponytail: encoded video frame passthrough — stub for now, real encoding deferred
         Ok(())
     }
 
@@ -1153,6 +1170,51 @@ use webrtc_sys::video_frame::ffi as vf;
         };
 
         source.on_captured_frame(&frame, &metadata);
+        Ok(())
+    }
+}
+
+impl WebrtcSysTrack {
+    /// H2: 推 PCM i16（交织）到 AudioTrackSource — libwebrtc 内部 opus 编码后走 RTP。
+    /// 帧长必须恰 10ms（48000Hz/100 = 480 样本/通道）— livekit capture_frame 语义。
+    fn write_pcm(&self, data: &[u8], cfg: &RTCAudioTrackConfig) -> Result<(), RTCError> {
+        let source = self.audio_source.lock().unwrap().clone()
+            .ok_or_else(|| RTCError::Track("audio source not initialized".into()))?;
+        let channels = cfg.channels.max(1);
+        let samples_total = data.len() / 2; // i16 = 2 bytes
+        let frames = samples_total / channels as usize;
+        if frames == 0 {
+            return Ok(());
+        }
+        let frames_10ms = (cfg.sample_rate / 100) as usize;
+        if frames != frames_10ms {
+            return Err(RTCError::Track(format!(
+                "audio capture_frame requires 10ms frames ({frames_10ms} samples/ch), got {frames}"
+            )));
+        }
+        // SAFETY: 调用方（tone generator / e2e）保证 data 来自 i16 对齐缓冲（Vec<i16> 即 2 字节对齐）;
+        // 帧长已按 10ms 校验; capture_frame 内部加锁拷贝，无生命周期逃逸。
+        let pcm = unsafe { std::slice::from_raw_parts(data.as_ptr() as *const i16, samples_total) };
+        let ok = unsafe {
+            source.capture_frame(
+                pcm,
+                cfg.sample_rate,
+                channels,
+                frames,
+                std::ptr::null(),
+                webrtc_sys::audio_track::CompleteCallback(noop_audio_complete),
+            )
+        };
+        if !ok {
+            tracing::warn!("audio capture_frame rejected (queue full)");
+            return Err(RTCError::Track("audio capture_frame rejected (source queue full)".into()));
+        }
+        // 临时诊断（H2）: capture_frame 成功计数
+        static PCM_PUSHED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = PCM_PUSHED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if n % 50 == 0 {
+            tracing::debug!("audio capture_frame pushed (total {})", n + 1);
+        }
         Ok(())
     }
 }
@@ -1488,6 +1550,36 @@ impl WebrtcSysFactory {
         // Create VideoTrack from factory, then convert to MediaStreamTrack
         let video_track = self.factory.create_video_track("video".into(), source);
         let media_track = vt::video_to_media(video_track);
+
+        (backend, media_track)
+    }
+
+    /// Create an audio track with a new AudioTrackSource (H2).
+    /// Returns (WebrtcSysTrack, SharedPtr<MediaStreamTrack>) —
+    /// the media track can be added to the RTCPeerConnection via add_track.
+    /// 48kHz mono, queue_size_ms=100（容忍 10ms 节奏抖动; 0 = fast path 需严格 10ms）。
+    pub(crate) fn create_audio_track(
+        &self,
+    ) -> (
+        WebrtcSysTrack,
+        cxx::SharedPtr<webrtc_sys::media_stream_track::ffi::MediaStreamTrack>,
+    ) {
+        use webrtc_sys::audio_track::ffi as at;
+
+        let source = at::new_audio_track_source(
+            at::AudioSourceOptions {
+                echo_cancellation: false,
+                noise_suppression: false,
+                auto_gain_control: false,
+            },
+            48000,
+            1,
+            100,
+        );
+        let backend = WebrtcSysTrack::with_audio_source(source.clone());
+
+        let audio_track = self.factory.create_audio_track("audio".into(), source);
+        let media_track = at::audio_to_media(audio_track);
 
         (backend, media_track)
     }

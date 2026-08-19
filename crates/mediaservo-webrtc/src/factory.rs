@@ -43,6 +43,32 @@ impl RTCPeerConnectionFactory {
     ) {
         self.backend.create_video_track()
     }
+    /// Create an audio track with a real audio track backend (H2).
+    /// 48kHz mono AudioTrackSource — write_frame 推 PCM i16，libwebrtc 内部 opus 编码。
+    #[cfg(feature = "backend-webrtc-sys")]
+    pub fn create_audio_track(&self, track_id: &str) -> TrackSender {
+        let (backend, _media_track) = self.backend.create_audio_track();
+        TrackSender {
+            id: track_id.to_string(),
+            kind: TrackKind::Audio,
+            audio_config: Some(crate::track::RTCAudioTrackConfig {
+                sample_rate: 48000,
+                channels: 1,
+            }),
+            backend,
+        }
+    }
+
+    /// Create an audio track returning raw backend + media track (for webrtc-sys binding).
+    #[cfg(feature = "backend-webrtc-sys")]
+    pub fn create_audio_track_raw(
+        &self,
+    ) -> (
+        crate::backend::webrtc_sys::WebrtcSysTrack,
+        cxx::SharedPtr<webrtc_sys::media_stream_track::ffi::MediaStreamTrack>,
+    ) {
+        self.backend.create_audio_track()
+    }
 }
 
 impl Default for RTCPeerConnectionFactory {
