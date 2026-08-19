@@ -3,8 +3,9 @@
 //! ① `flow_stats_from_simulated_publisher`: 进程内模拟发布者 30fps（ts_mono 步进）
 //!   → FlowSnapshot fps/bps 正确（容差）+ 停止发布后 stalled 出现（数据面事实，
 //!   无 grace）；
-//! ② `streamer_stats_ingestion`: 假 stats topic（Pusher 角色发布
-//!   `StreamerStats` JSON）→ snapshot.streams 反映 bytes_sent/frames_encoded/connected；
+//! ② `streamer_stats_ingestion`: 假 stats topic（Recorder 角色发布——Pusher 单方向
+//!   契约不可发布 stats，streamer 令牌缺省 Recorder，C2 遗留；`StreamerStats` JSON）
+//!   → snapshot.streams 反映 bytes_sent/frames_encoded/connected；
 //! ③ `real_capturer_flow_then_stall`: 真实 host-capturer 二进制 → monitor 见流
 //!   （fps≈30）；杀进程 → 默认 2s floor 后 stalled。
 //!

@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use mediaservo_link::{CapabilityToken, Ed25519VerifyingKey, FrameBus, FrameMeta, FrameStream, FrameTopic};
+use mediaservo_link::{CapabilityToken, Ed25519VerifyingKey, FrameBus, FrameStream, FrameTopic};
 
 use crate::translate;
 
@@ -188,7 +188,7 @@ impl FlowMonitor {
             };
             let stalled = st
                 .last_arrival
-                .map_or(true, |t| t.elapsed() > *threshold);
+                .is_none_or(|t| t.elapsed() > *threshold);
             out.topics.push(TopicFlow {
                 topic: name.clone(),
                 fps,
@@ -211,7 +211,7 @@ impl FlowMonitor {
                     s.frames_encoded,
                     s.frame_width,
                     s.frame_height,
-                    st.last_stats.map_or(false, |t| t.elapsed() < STATS_FRESHNESS),
+                    st.last_stats.is_some_and(|t| t.elapsed() < STATS_FRESHNESS),
                 ),
                 None => (0, 0, 0, 0, false),
             };
@@ -237,7 +237,7 @@ fn stall_threshold(floor: Duration, fps: u32) -> Duration {
 }
 
 /// 帧 drain 任务：latest-slot 到达 → 窗口状态更新（计数/字节/ts/到达时刻）。
-fn spawn_frame_drain(mut stream: FrameStream, state: Arc<Mutex<TopicState>>) -> tokio::task::JoinHandle<()> {
+fn spawn_frame_drain(stream: FrameStream, state: Arc<Mutex<TopicState>>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(f) = stream.recv().await {
             let mut st = state.lock().expect("topic state lock");
@@ -253,7 +253,7 @@ fn spawn_frame_drain(mut stream: FrameStream, state: Arc<Mutex<TopicState>>) -> 
 
 /// stats drain 任务：JSON 解析失败打日志（C15，不静默）。
 fn spawn_stats_drain(
-    mut stream: FrameStream,
+    stream: FrameStream,
     state: Arc<Mutex<StreamState>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
