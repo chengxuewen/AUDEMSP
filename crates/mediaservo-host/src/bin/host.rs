@@ -121,7 +121,7 @@ fn cmd_init(args: &mut impl Iterator<Item = String>) -> i32 {
     } else {
         match gen_signing_pem() {
             Ok(pem) => {
-                if let Err(e) = write_private_pem(&pem_path, &pem) {
+                if let Err(e) = write_private_pem(&pem_path, pem.as_bytes()) {
                     eprintln!("init: 写入 {} 失败: {e}", pem_path.display());
                     return 1;
                 }
@@ -176,8 +176,8 @@ fn gen_signing_pem() -> Result<String, String> {
     Ok(doc.to_string())
 }
 
-/// 写私钥文件并设 0600 权限。
-fn write_private_pem(path: &Path, pem: &str) -> std::io::Result<()> {
+/// 写凭据文件（私钥/能力令牌）并设 0600 权限。
+fn write_private_pem(path: &Path, data: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let mut f = std::fs::File::create(path)?;
     #[cfg(unix)]
@@ -185,7 +185,7 @@ fn write_private_pem(path: &Path, pem: &str) -> std::io::Result<()> {
         use std::os::unix::fs::PermissionsExt;
         f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
-    f.write_all(pem.as_bytes())
+    f.write_all(data)
 }
 
 /// `host start --dir <dir>`: 翻译 host.toml → run/oxfile.toml → `oxmgr apply`。
@@ -336,6 +336,10 @@ fn cmd_token_issue(args: &mut impl Iterator<Item = String>) -> i32 {
                     eprintln!("--node 缺值");
                     return 2;
                 };
+                if v.is_empty() {
+                    eprintln!("--node 不能为空");
+                    return 2;
+                }
                 node = Some(v);
             }
             "--topic" => {
@@ -343,6 +347,10 @@ fn cmd_token_issue(args: &mut impl Iterator<Item = String>) -> i32 {
                     eprintln!("--topic 缺值");
                     return 2;
                 };
+                if v.is_empty() {
+                    eprintln!("--topic 不能为空");
+                    return 2;
+                }
                 topics.push(v);
             }
             "--out" => {
@@ -412,7 +420,8 @@ fn cmd_token_issue(args: &mut impl Iterator<Item = String>) -> i32 {
     };
     let vk = Ed25519VerifyingKey::from_pem(vk_pem.as_bytes());
     let bytes = TokenFile::encode(&token, &vk);
-    if let Err(e) = std::fs::write(&out, bytes) {
+    // C4 review: 能力令牌与 signing.pem 同级凭据保护 — 0600 写入（复用 write_private_pem）
+    if let Err(e) = write_private_pem(&out, &bytes) {
         eprintln!("token: 写入 {} 失败: {e}", out.display());
         return 1;
     }

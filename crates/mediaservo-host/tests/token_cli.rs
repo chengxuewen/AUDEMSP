@@ -150,3 +150,41 @@ fn issue_missing_required_args_exit_2() {
         assert_eq!(out.status.code(), Some(2), "args {args:?} 应 exit 2");
     }
 }
+
+/// C4 review: 能力令牌文件必须 0600（与 signing.pem 同级凭据保护）。
+#[test]
+fn issue_token_file_is_0600() {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        init(dir.path());
+        let tok = dir.path().join("cam0.token");
+        let out = issue(
+            dir.path(),
+            &[
+                "--role", "capture", "--node", "cap-1",
+                "--topic", "camera/cam0", "--out", tok.to_str().expect("utf8"),
+            ],
+        );
+        assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+        let mode = std::fs::metadata(&tok).expect("metadata").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "令牌文件必须 0600（能力凭据）, got {mode:o}");
+    }
+}
+
+/// C4 review: --node/--topic 空字符串拒绝（exit 2 + 明确报错）。
+#[test]
+fn issue_rejects_empty_node_and_topic() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init(dir.path());
+    for args in [
+        vec!["--role", "capture", "--node", "", "--out", "x.token"],
+        vec!["--role", "pusher", "--node", "n", "--topic", "", "--out", "x.token"],
+    ] {
+        let out = issue(dir.path(), &args);
+        assert_eq!(out.status.code(), Some(2), "args {args:?} 空值应 exit 2");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!stderr.is_empty(), "空值应报错");
+    }
+}

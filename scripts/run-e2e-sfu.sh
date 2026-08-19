@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # 浏览器 SFU 拉流 E2E — 前置: server 容器 + Host 进程运行中
 # 用法: bash scripts/run-e2e-sfu.sh [--headful] [--legacy]
 #   --legacy: 检查旧单进程 host-legacy（默认: 多进程 host-streamer, C4）
