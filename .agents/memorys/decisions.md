@@ -600,3 +600,23 @@ facade 仍是纯编解码（不吞 mux，D229）；后续如果 playback 落地�
 **原因**: ① **C++11 起步可用为硬约束**（用户；车端嵌入式旧工具链）——手写 std::variant Result 是 C++17（-std=c++11 编译 38 错误实证），tl::expected C++11 全绿（0 错误实证）；② C++11 手写替代（aligned_storage/union）= 重造轮子（C18）；③ 零真实消费者 → source-breaking 可接受（D241 只锁 C ABI）；④ 完全迁移优于兼容层（"半迁移比不迁移糟"——integration 视角）；⑤ 未来 Jetson 编译器升级 → 一行 swap std::expected。
 
 **影响**: 契约变更（误用异常 logic_error → bad_expected_access，catch(std::exception) 兼容）；error() on success 为标准 UB（旧手写防御抛被标准替代）；契约测试 test_result_common.cpp 为 std::expected swap 回归锚；三头+测试全站 -std=c++11 门禁。
+
+## D251: G3 舱端分级授权 — 账号 JWT 复用 + 急停经信令强审计 (2026-08-19)
+
+**决策**: ① 舱端操作员账号 = accounts.yaml 注册表 + POST /api/auth/login 签发 JWT
+`{sub, role, vehicles, iat, exp}`，**复用 admin_jwt_secret/HS256/既有 JwtAuth 中间件**
+（D-H11 选项② 最小实现）——不引入第二套签名体系；② **急停命令经信令转发**（新增
+EmergencyCommand 变体）而非 P2P DC——强审计要求"谁/何时/哪个车/什么命令"全量留痕，
+P2P 流量服务端不可见；底盘/云台常规控制仍走 P2P DC（协商期按角色授权 = 强制点）；
+③ 授权矩阵为纯函数层（roles.rs）+ SessionIdentity 三态（Device/Account/Legacy），
+仅账号与设备会话启用强制（PSK legacy 部署行为不变，additive）。
+
+**原因**: ① 已有 admin JWT 体系（bootstrap token + 中间件 + /ws 子协议认证）零改造复用；
+账号与 admin 同 secret 同算法 = 运维面最小；② 急停是唯一必须强审计的命令，信令转发
+同时解决"多舱端并发急停可见性"与"DC 未建立时急停可用性"；③ 矩阵纯函数层使全组合
+测试无 mediasoup 依赖（原生可跑），WS/SFU 强制点为薄接线。
+
+**影响**: 错误码 4011（未知角色）/4031（授权拒绝）; audit 事件 EmergencyCommand +
+AuthorizationDenied（有界 256 环形缓冲 recent() 可查）; 车端 host-agent 需处理
+EmergencyCommand 转发（H 阶段 host-emergency）; 状态/告警的 operator 消费端点归 H
+（当前 status_registry 仅 admin API 读）。

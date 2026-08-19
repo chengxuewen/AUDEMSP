@@ -398,3 +398,40 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **link 兜底** (1874d6a): 发布端列表每重启只变一次，若那次连接创建被 degradation handler 吞掉则永不重试 → 订阅线程 5s 无帧重建 subscriber（FrameStream 句柄不变，D241；失败保留旧句柄 30s 冷却重试）+ framebus_crash_recovery 测试 2/2（64B@10fps + 1080p@30fps）
 - **e2e 完成** (2dd8c9f): 杀前基线 ≥30 帧 + 后台 drainer 确定性断言归零帧；[record] enabled → host-recorder 真实长生命周期订阅端全程存活验证
 - 验证: crash_recovery 3/3 稳定（~3s/run）、host 全量 51 绿、link 全绿、pixi run check 0 error
+
+## G4 设备身份配发完成 (2026-08-19, b21c05e)
+
+- **Wire 契约（G2 server 侧实现面）**: RoomJoin 增加可选 device_id/device_secret（serde skip-if-none,
+  additive 双向兼容）——缺省 = PSK 路径；携带 = G2 设备认证；失败回 Error（client 已实证明确报错）
+- **identity.json**（D-H13 实例根, 0600）: `{device_id: "ms-<12hex>", device_secret: "<64hex>"}`;
+  `host init` 幂等——仅缺失时生成, 覆盖会使 server 注册失效; 损坏显式报错（C15）
+- **携带链**: host-agent --config → 实例目录 → load_identity → GatewayConfig.device →
+  SignalClient::with_device_credentials → RoomJoin（PSK 并存, G2 切换校验）
+- **测试**: link wire 2 新增（携带 + 4010 报错）+ common 序列化契约 + identity 单测 3 +
+  CLI init e2e + gateway e2e 携带断言; 回归 host 96/link 55/client 13 全绿 + e2e_sfu 4/4 +
+  codec_prefs 6/6（live server）
+- 验证: `--tests --benches` 编译挂已在 G2 顺手修（d49bd7f bench.rs cfg 门控 + async 特征感知构造）
+
+## G3 舱端分级授权完成 (2026-08-19, c825e76/9c13dfa/e17160f)
+
+- **账号模型（D-H11 选项②, JWT 复用）**: accounts.yaml `{username: {password_hash: "sha256:<hex>", role, vehicles}}`
+  — sha256(username:password) 单向哈希 + username 盐（同 G2 devices 存储决策）; 未知用户/错密 wire 逐字一致防枚举;
+  POST /api/auth/login → JWT {sub, role, vehicles, iat, exp}（HS256 与 admin_jwt_secret 同 secret 同算法, 12h）
+- **四级角色矩阵（roles.rs 纯函数, 表驱动 11 测试）**: viewer/operator/admin/dispatcher ×
+  pull(白名单)/control/emergency/config/status/audio; SessionIdentity(Device/Account/Legacy) —
+  additive: 仅账号与设备会话启用强制, PSK legacy 不受限（未配置账号部署行为不变）
+- **强制点**: ① RoomJoin 门（账号禁 Host 防抢占 + 按房间主车白名单/租户隔离"车 A 不可见车 B" +
+  车端 join 登记 room_owners）② EmergencyCommand（operator/admin+车访问权 → 强审计
+  谁/何时/车/命令 + 转发车端; 经信令转发 = 可审计 — P2P DC 常规控制协商期已授权, 边界文档化）
+  ③ SFU Produce 账号拒绝/车端自动允许（回归实证）④ SFU Consume 账号仅有权车 producer
+  （producer_owners 纵深防御）⑤ ConfigPush 入站一律拒绝（server 单向下发）⑥ admin REST
+  config push 按 role==admin（check_auth sub→role）
+- **审计**: audit.rs EmergencyCommand + AuthorizationDenied 事件 + 有界 256 环形缓冲
+  （audit::recent() 运维/测试读; tracing 日志仍是主通道; C15 denial 全审计）
+- **错误码**: 4011 未知角色（握手期拒）; 4031 授权拒绝（join/consume/produce/emergency/config）
+- **测试**: server 122 全绿（Docker test-server: lib 71 + admin_e2e 6 + e2e 25 + e2e_sfu 4 +
+  integration 16）; 原生 --no-default-features 117 绿; live server 回归 field push_e2e 6/6 +
+  controller_e2e 1/1; pixi run check 0 error
+- **P2P 边界**: 底盘/云台控制走 P2P DC（协商期按角色授权 = 控制权的强制点）; 急停走信令
+  转发（强审计要求 — P2P 流量服务端不可见）; DeviceStream 房间 SDP 帧过滤天然阻断
+  P2P 协商绕过（租户隔离竞态关闭）
