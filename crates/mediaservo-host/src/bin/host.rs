@@ -248,9 +248,10 @@ fn cmd_restart(args: &mut impl Iterator<Item = String>) -> i32 {
     }
 }
 
-/// `host stop [<dir>]`: `oxmgr stop <oxfile>` + `oxmgr delete <oxfile>`（幂等）。
+/// `host stop [<dir>]`: `oxmgr stop <oxfile>` + `oxmgr delete <oxfile>` + 兜底清
+/// 残留 host 命名空间 app（历史 rename/中断 apply 遗留）——停后命名空间必空。
 ///
-/// 无 run/oxfile.toml（从未 apply 或已删除）→ 视为无进程，直接成功。
+/// 无 run/oxfile.toml（从未 apply 或已删除）→ 仍清残留，无残留则直接成功。
 fn cmd_stop(args: &mut impl Iterator<Item = String>) -> i32 {
     let dir = match parse_dir(args) {
         Ok(d) => d,
@@ -259,17 +260,38 @@ fn cmd_stop(args: &mut impl Iterator<Item = String>) -> i32 {
             return 2;
         }
     };
+    let mut failed = 0;
     let oxfile = dir.join("run").join("oxfile.toml");
-    if !oxfile.exists() {
+    if oxfile.exists() {
+        let oxfile = oxfile.to_str().expect("oxfile path utf8");
+        if run_oxmgr(&["stop", oxfile]) != 0 {
+            failed = 1;
+        }
+        if run_oxmgr(&["delete", oxfile]) != 0 {
+            failed = 1;
+        }
+    } else {
         println!("stop: 无 {}，无已管理进程", oxfile.display());
-        return 0;
     }
-    let oxfile = oxfile.to_str().expect("oxfile path utf8");
-    let code = run_oxmgr(&["stop", oxfile]);
-    if code != 0 {
-        return code;
+    // 兜底: 残留 host 命名空间 app（oxfile 外遗留）逐个删除
+    match mediaservo_host::translate::live_host_apps() {
+        Ok(leftovers) => {
+            for name in leftovers {
+                eprintln!("stop: 清理残留 app {name}");
+                if run_oxmgr(&["delete", &name]) != 0 {
+                    failed = 1;
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("stop: 查询残留失败: {e}");
+            failed = 1;
+        }
     }
-    run_oxmgr(&["delete", oxfile])
+    if failed == 0 {
+        println!("stop: 已停止全部 host 进程");
+    }
+    failed
 }
 
 /// `host status [<dir>]`: `oxmgr list --json` 过滤 host 命名空间，输出状态表。

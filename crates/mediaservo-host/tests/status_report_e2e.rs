@@ -95,7 +95,7 @@ async fn status_report_reaches_mock_server_with_expected_content() {
                     "固定进程 host-agent 应在期望并集中: {processes:?}"
                 );
                 assert!(
-                    processes.iter().any(|p| p.name == "host-capturer" && p.expected),
+                    processes.iter().any(|p| p.name == "host-capturer-cam0" && p.expected),
                     "host.toml 相机实例应在期望并集中（单相机无 id 后缀）: {processes:?}"
                 );
                 assert!(signal.remote_connected, "网关已入房, remote 应 connected");

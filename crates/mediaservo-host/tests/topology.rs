@@ -20,7 +20,7 @@ fn expected_process_names_covers_fixed_and_instances() {
     for want in [
         "host-agent", "host-controller", "host-emergency", "host-audio",
         "host-capturer-cam0", "host-capturer-cam1", "host-capturer-cam2",
-        "host-streamer",
+        "host-streamer-s0",
     ] {
         assert!(names.contains(&want.to_string()), "缺少期望进程 {want}: {names:?}");
     }

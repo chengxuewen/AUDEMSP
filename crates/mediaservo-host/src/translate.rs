@@ -85,7 +85,8 @@ const FIXED_APPS: [&str; 5] = [
 
 /// host.toml → oxfile.toml 文本。
 ///
-/// 单实例用类型名（如 `host-capturer`），多实例追加实例 id（如 `host-capturer-cam1`）
+/// 实例名一律 `类型-id`（如 `host-capturer-cam0`）——E4 配置演进下 app 身份稳定：
+/// 增删相机/流不得改名既有实例（1↔N 边界 rename 会丢 oxmgr 历史 + 留残留进程）。
 /// ——OxMgr validate 拒绝重复 app 名（CLI.md "duplicate app name" 硬错误）。
 /// 无路径变体：capturer 实例仅 `--camera <id>`（A2 形态，doctor/测试用）。
 pub fn to_oxfile(cfg: &str) -> Result<String, String> {
@@ -180,7 +181,70 @@ pub fn oxmgr_apply(dir: &Path) -> Result<(), String> {
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
+    // 删除路径: 清理不再存在于新 oxfile 的 host 命名空间 app。oxmgr apply 默认只
+    // 增量不动缺省 app，而 --prune 是全量跨命名空间（实证会误杀其他工具 app）——
+    // 故按名逐个 delete 精确同步。
+    for name in removed_apps(&live_host_apps()?, &oxfile_app_names(&oxfile)?) {
+        match std::process::Command::new("oxmgr").arg("delete").arg(&name).output() {
+            Ok(out) if out.status.success() => {
+                tracing::info!(app = %name, "oxmgr delete 已移除配置外 app");
+            }
+            Ok(out) => tracing::warn!(
+                app = %name,
+                "oxmgr delete 失败: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+            Err(e) => tracing::warn!(app = %name, "oxmgr delete 执行失败: {e}"),
+        }
+    }
     Ok(())
+}
+
+/// 待删除 app = live host 命名空间 − 新 oxfile 内 app（纯函数，可单测）。
+fn removed_apps(live: &[String], desired: &[String]) -> Vec<String> {
+    live.iter().filter(|n| !desired.contains(n)).cloned().collect()
+}
+
+/// oxmgr list --json 中 host 命名空间 app 名列表（removal 清理 + host stop 兜底）。
+pub fn live_host_apps() -> Result<Vec<String>, String> {
+    let out = std::process::Command::new("oxmgr")
+        .args(["list", "--json"])
+        .output()
+        .map_err(|e| format!("oxmgr 执行失败: {e} — 请先安装 OxMgr 并加入 PATH"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "oxmgr list 失败 (exit {}): {}",
+            out.status.code().unwrap_or(1),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let val: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .map_err(|e| format!("oxmgr list --json 解析失败: {e}"))?;
+    Ok(val
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter(|p| p.get("namespace").and_then(|n| n.as_str()) == Some("host"))
+                .filter_map(|p| p.get("name").and_then(|n| n.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// 解析 oxfile [[apps]].name（removal 对比的期望侧）。
+fn oxfile_app_names(path: &Path) -> Result<Vec<String>, String> {
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("读取 {} 失败: {e}", path.display()))?;
+    let val: toml::Value = toml::from_str(&text).map_err(|e| format!("解析 {} 失败: {e}", path.display()))?;
+    Ok(val
+        .get("apps")
+        .and_then(|a| a.as_array())
+        .map(|apps| {
+            apps.iter()
+                .filter_map(|a| a.get("name").and_then(|n| n.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
 /// `host apply` 共享实现: 读 host.toml → 校验 → 翻译 → 写 oxfile → oxmgr apply。
@@ -258,7 +322,7 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
         push_app(&mut out, name, &cmd, policy);
     }
     for cam in &cameras {
-        let name = instance_name("host-capturer", cam, cameras.len() > 1);
+        let name = instance_name("host-capturer", cam);
         let mut cmd = format!("{} --camera {}", exe_cmd("host-capturer"), cam);
         if !config_path.as_os_str().is_empty() {
             cmd.push_str(&format!(
@@ -271,7 +335,7 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
         push_app(&mut out, &name, &cmd, "always");
     }
     for stream in &streams {
-        let name = instance_name("host-streamer", stream, streams.len() > 1);
+        let name = instance_name("host-streamer", stream);
         let mut cmd = format!("{} --stream {}", exe_cmd("host-streamer"), stream);
         // D2: 子进程 WS 目标 = 本地网关（[signaling] local_port 或缺省 17980）
         cmd.push_str(&format!(" --gateway {}", signaling_gateway_url(cfg)?));
@@ -299,10 +363,10 @@ pub fn expected_process_names(cfg: &str) -> Result<Vec<String>, String> {
         out.retain(|n| n != "host-recorder");
     }
     for cam in &cameras {
-        out.push(instance_name("host-capturer", cam, cameras.len() > 1));
+        out.push(instance_name("host-capturer", cam));
     }
     for stream in &streams {
-        out.push(instance_name("host-streamer", stream, streams.len() > 1));
+        out.push(instance_name("host-streamer", stream));
     }
     Ok(out)
 }
@@ -400,13 +464,10 @@ pub fn stream_config(cfg: &str, id: &str) -> Result<Option<StreamConfig>, String
     Ok(stream_configs(cfg)?.into_iter().find(|s| s.id == id))
 }
 
-/// 单实例用类型名，多实例追加实例 id 保证名字唯一。
-fn instance_name(kind: &str, id: &str, plural: bool) -> String {
-    if plural {
-        format!("{kind}-{id}")
-    } else {
-        kind.to_string()
-    }
+/// 实例 app 名统一 `类型-id`（E4 稳定身份：配置增删不 rename 既有实例，
+/// oxmgr 重启历史/健康记录连续；拓扑期望态同源）。
+fn instance_name(kind: &str, id: &str) -> String {
+    format!("{kind}-{id}")
 }
 
 /// 进程可执行文件路径：与 host CLI 同目录（同 target 产物）；测试运行时
@@ -525,5 +586,25 @@ camera = "cam0"
             !dir.path().join("run").join("oxfile.toml").exists(),
             "非法配置不得改写 oxfile"
         );
+    }
+
+    #[test]
+    fn removed_apps_diff_live_vs_desired() {
+        let live = vec!["host-agent".into(), "host-capturer-cam0".into(), "host-capturer-cam1".into()];
+        let desired = vec!["host-agent".into(), "host-capturer-cam0".into()];
+        assert_eq!(removed_apps(&live, &desired), vec!["host-capturer-cam1"]);
+        // 全部在期望内 → 无删除
+        assert!(removed_apps(&live, &live).is_empty());
+    }
+
+    #[test]
+    fn instance_names_stable_across_count_change() {
+        // 单相机也带 id 后缀 — 增相机后 cam0 的 app 名不变（身份稳定）
+        let ox1 = to_oxfile(CFG_V0).unwrap();
+        assert!(ox1.contains("name = \"host-capturer-cam0\""), "单相机: {ox1}");
+        let v2 = format!("{CFG_V0}[[cameras]]\nid = \"cam1\"\nfps = 15\n");
+        let ox2 = to_oxfile(&v2).unwrap();
+        assert!(ox2.contains("name = \"host-capturer-cam0\""), "双相机 cam0 名不变: {ox2}");
+        assert!(ox2.contains("name = \"host-capturer-cam1\""), "双相机 cam1 入 oxfile: {ox2}");
     }
 }

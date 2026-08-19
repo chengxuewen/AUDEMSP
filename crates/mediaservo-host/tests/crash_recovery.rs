@@ -222,7 +222,7 @@ async fn capturer_kill9_restart_resumes_frames_to_subscribers() {
     assert_eq!(procs.len(), 6, "预期 6 进程 (5 fixed + capturer), got: {procs:?}");
     let capturer_pid = procs
         .iter()
-        .find(|(n, _, _)| n == "host-capturer")
+        .find(|(n, _, _)| n == "host-capturer-cam0")
         .map(|(_, _, pid)| *pid)
         .expect("host-capturer 在 oxmgr 中");
     let recorder_pid = procs
@@ -267,7 +267,7 @@ async fn capturer_kill9_restart_resumes_frames_to_subscribers() {
         std::thread::sleep(Duration::from_millis(500));
         let cur = oxmgr_host_procs()
             .into_iter()
-            .find(|(n, _, _)| n == "host-capturer")
+            .find(|(n, _, _)| n == "host-capturer-cam0")
             .map(|(_, s, pid)| (s, pid))
             .unwrap_or_default();
         if cur.1 != 0 && cur.1 != capturer_pid {
@@ -308,7 +308,7 @@ async fn capturer_kill9_restart_resumes_frames_to_subscribers() {
     assert!(
         reset_seen,
         "20s 内同一订阅端句柄未见重启后归零帧（seq 应 < {last_seq_before}）— \
-         发布端未重启/未重发布? log: 见 oxmgr logs/host-capturer.out.log"
+         发布端未重启/未重发布? log: 见 oxmgr logs/host-capturer-cam0.out.log"
     );
 
     // ⑦ 崩溃隔离: recorder 全程存活（pid 不变 + running）— 无 crash-loop（仅 recorder 驻留时）
