@@ -13,7 +13,6 @@
 //! 5. 周期 SfuStats 日志（媒体面证据; PIT-105: libwebrtc 音频编码不产包 — 字节>0 待修复）
 //! 6. SIGTERM / `--duration` → 优雅退出 0（C15: 失败可见，部署 restart_policy 拉起）
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -162,7 +161,7 @@ async fn publish_audio(
         .add_track("audio", TrackKind::Audio)
         .map_err(|e| format!("add audio track: {e}"))?;
     let answer = pc
-        .create_answer(&RTCAnswerOptions::default())
+        .create_answer(&RTCAnswerOptions {})
         .await
         .map_err(|e| format!("create answer: {e}"))?;
     pc.set_local_description(&answer)
@@ -228,7 +227,7 @@ async fn publish_audio(
         let freq = f64::from(tone_hz);
         loop {
             interval.tick().await;
-            let frame = audio::tone_frame(&mut phase);
+            let frame = audio::tone_frame(&mut phase, freq);
             if tone_track.write_frame(&frame).await.is_err() {
                 break;
             }
@@ -351,7 +350,7 @@ async fn subscribe_producer(
             .await
             .map_err(|e| format!("set remote description: {e}"))?;
         let answer = pc
-            .create_answer(&RTCAnswerOptions::default())
+            .create_answer(&RTCAnswerOptions {})
             .await
             .map_err(|e| format!("create answer: {e}"))?;
         pc.set_local_description(&answer)
@@ -409,7 +408,7 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         }
         (_, Some(srv)) => {
             let psk = args.psk.clone().ok_or("直连模式需要 --psk")?;
-            SignalClient::new(&srv, &psk, &args.room, PeerRole::Consumer)
+            SignalClient::new(srv, &psk, &args.room, PeerRole::Consumer)
                 .connect()
                 .await
         }
@@ -430,7 +429,7 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     tracing::info!("host-audio: 已加入音频房间 {}", args.room);
 
     // 发布 1 路 opus
-    let (producer_id, _sender) = match publish_audio(&*signal, &args.room, args.tone_hz).await {
+    let (producer_id, _sender) = match publish_audio(&signal, &args.room, args.tone_hz).await {
         Ok(v) => v,
         Err(e) => {
             tracing::error!("host-audio: publish 失败: {e}");
@@ -448,7 +447,6 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     let signal_for_events = signal;
     let pid = producer_id.clone();
     let consumer_ids_for_stats = consumer_ids.clone();
-    let stats_room = args.room.clone();
 
     let stats_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(STATS_INTERVAL);
@@ -487,7 +485,7 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
                         let room = room.clone();
                         let cids = consumer_ids_for_events.clone();
                         tokio::spawn(async move {
-                            subscribe_producer(&*signal, &room, &np, cids).await;
+                            subscribe_producer(&signal, &room, &np, cids).await;
                         });
                     }
                     Ok(SignalEvent::Disconnected { reason }) => {

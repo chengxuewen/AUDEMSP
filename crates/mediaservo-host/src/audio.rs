@@ -57,12 +57,11 @@ pub fn build_remote_audio_sdp(
         format!("a=rtpmap:{OPUS_PT} opus/{SAMPLE_RATE}/2"),
         format!("a=fmtp:{OPUS_PT} minptime=10;useinbandfec=1"),
     ];
-    if sendonly {
-        if let Some(ssrc) = ssrc {
+    if sendonly
+        && let Some(ssrc) = ssrc {
             lines.push(format!("a=ssrc:{ssrc} cname:mediaservo-audio"));
             lines.push(format!("a=ssrc:{ssrc} msid:audio audio"));
         }
-    }
     if let Some(candidates) = ice_candidates {
         for c in candidates {
             if c.ip.contains(".local") {
@@ -156,11 +155,10 @@ pub fn build_audio_produce_rtp_parameters(params: &RTCRtpParameters) -> Value {
     })
 }
 
-/// 440Hz 正弦 tone 帧（10ms i16 单声道 PCM，LE 字节序）。
+/// 正弦 tone 帧（10ms i16 单声道 PCM，LE 字节序; freq_hz 任意频率）。
 /// 有实际载荷 → opus 不静音压缩（防 DTX 零包）；替代硬件麦克风的合成源（stub source）。
-pub fn tone_frame(phase: &mut f64) -> Vec<u8> {
-    let freq = 440.0;
-    let step = 2.0 * std::f64::consts::PI * freq / SAMPLE_RATE as f64;
+pub fn tone_frame(phase: &mut f64, freq_hz: f64) -> Vec<u8> {
+    let step = 2.0 * std::f64::consts::PI * freq_hz / SAMPLE_RATE as f64;
     let mut out = Vec::with_capacity(FRAME_SAMPLES * 2);
     for _ in 0..FRAME_SAMPLES {
         let sample = (*phase).sin() * 0.1 * i16::MAX as f64;
@@ -252,11 +250,11 @@ mod tests {
     #[test]
     fn tone_frame_is_10ms_mono_pcm() {
         let mut phase = 0.0;
-        let frame = tone_frame(&mut phase);
+        let frame = tone_frame(&mut phase, 440.0);
         assert_eq!(frame.len(), FRAME_SAMPLES * 2);
         assert_ne!(frame, vec![0u8; FRAME_SAMPLES * 2], "tone 非零载荷");
         let mut phase2 = 0.0;
-        tone_frame(&mut phase2);
+        tone_frame(&mut phase2, 880.0);
         assert!(phase2 > 0.0, "相位推进");
     }
 }

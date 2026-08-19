@@ -76,3 +76,30 @@ test result: ok. 2 passed (host_audio_e2e: 已加入音频房间 → published p
 3. ALSA/MMAPI 麦克风接入 host-audio（tone stub 替换点已留: tone 任务即捕获泵）
 4. 账号两方发言（D-H11 can_produce 修订 — 安全决策需用户）
 5. host-agent 多房间模型（当前整车单会话；音频房间直通已兼容，agent 级编排待 Phase D 扩展）
+
+---
+
+## I1-I4 审查修复 (2026-08-19, 追加)
+
+### I1 (clippy gate) — 网关 or-pattern 重复臂 ✅
+- **根因**: H2 改 rewrite_room 尾部时把 H1 已有的 CreateDataProducer..ConsumeData 4 臂再次写入 → unreachable_patterns ×4。
+- **修复**: 删除第二块重复臂; clippy 验证 `cargo clippy -p mediaservo-host` 无新增警告（其余 gateway.rs 警告为 4a7f5da 前既有）。
+
+### I2 (dead flag) — host-audio --tone 未穿透 ✅
+- **根因**: tone_frame 硬编码 440Hz, host-audio 的 freq 变量未用。
+- **修复**: `tone_frame(phase, freq_hz)` 参数化（audio.rs 单测覆盖 440/880 双频）+ host-audio 传入 `f64::from(tone_hz)`; 顺带清 host-audio clippy 5 项（unused PathBuf/stats_room, default_constructed_unit_structs ×2, needless borrow）。
+- **验证**: host_audio_e2e 3/3 重跑通过。
+
+### I3 (untested paths) ✅
+**① 设备身份音频 join** (`server/tests/e2e_sfu.rs` +`e2e_audio_room_device_identity`): 设备凭证（G2 模式）加入 `audio-ms-car1` → room_joined; 他车设备 ms-car2 join 同房间 → 4031（租户隔离经音频房间）; 设备在音频房间 produce 视频 → 4031（音频房间门经设备路径）。**test-server 136 全绿**。
+**② 网关模式音频直通** (`host_audio_e2e.rs` +`audio_through_gateway_reaches_audio_room`): host-agent 真进程 + 网关探针（SignalClient::new_gateway）在 audio- 房间 produce 视频 → **server 4031**（服务端音频房间门对网关转发请求生效 = 房间语义未被并入整车房间）+ host-audio --gateway 全流程（join+publish+exit 0）+ agent SIGTERM 0。
+- **附带修复（网关真实 bug）**: rewrite_room 的 audio- 直通判定原用 `room` 参数（upstream 方向 = 整车房间）→ 音频房间请求被并入整车房间; 改为判定**消息自身 room_id**（`msg_room_id` 辅助 + 单测 `rewrite_room_passthrough_audio_rooms`）。网关探针实证: 修复前视频 produce 被接受（Produced）, 修复后 4031。
+
+### I4 (PIT-105 探针未提交) ✅
+- **探针提交**: `webrtc/tests/audio_source_sink_probe.rs` — capture_frame → AudioTrack sink 回调 ≥1 断言（源→轨道链证据）; `#[ignore = "PIT-105 证据探针"]` 低频运行; `--ignored` 强制跑 1/1 通过（sink callbacks 计数实证）。
+- **e2e PCM 推流断言**: e2e_audio_conf tone 任务计数成功 write_frame（Arc<AtomicU64>）; 断言 total_pushed > 0（tone 静默失败不再被放过; 实测 1590 帧）。顺带 clippy --fix 清 e2e_audio_conf 8 处 never_loop + 机械建议。
+
+### 回归
+- e2e_audio_conf 2/2 + host_audio_e2e 3/3 + e2e_sfu 4/4 + codec_prefs 6/6（live server）
+- server 136（Docker）+ host lib 46 + pixi run check 0 error
+- clippy: 变更文件零新增警告（gateway/host-audio/audio.rs/两测试文件）

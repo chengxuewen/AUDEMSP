@@ -1095,3 +1095,144 @@ async fn e2e_sfu_data_domain() {
     let _ = host_ws;
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// H2 (I3 review): 音频房间设备身份路径 — device auth join audio-<vehicle>
+// 成功 + 成员归属登记 + 跨车租户隔离 + 音频房间视频 produce 拒绝（设备路径）。
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 设备身份加入音频房间（G2 模式: device_registry + RoomJoin 携带凭证）。
+/// 断言: ① join 成功 ② room_owners["audio-ms-car1"] == "ms-car1"（成员归属）
+/// ③ 他车设备 join 同音频房间 → 4031（租户隔离）④ 设备在音频房间 produce 视频 → 4031。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn e2e_audio_room_device_identity() {
+    unsafe { std::env::set_var("MEDIASERVO_PSK", PSK) };
+
+    let sfu = Arc::new(
+        SfuManager::new_with_port(mediaservo_server::sfu::random_udp_port())
+            .await
+            .expect("Failed to create SFU manager"),
+    );
+    let mut server = SignalingServer::new(Arc::clone(&sfu), 65536, None);
+    let hash1 = mediaservo_server::devices::hash_secret("ms-car1", "car1-secret");
+    let hash2 = mediaservo_server::devices::hash_secret("ms-car2", "car2-secret");
+    server.device_registry = std::sync::Arc::new(
+        mediaservo_server::devices::DeviceRegistry::from_yaml(&format!(
+            "devices:\n  ms-car1:\n    secret_hash: \"{hash1}\"\n  ms-car2:\n    secret_hash: \"{hash2}\"\n"
+        ))
+        .unwrap(),
+    );
+    let app = signaling_router(server);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let ws_url = format!("ws://{}/ws", addr);
+
+    // ── ① 车端 device auth 加入音频房间 audio-ms-car1 ──
+    let url = ws_url.clone();
+    let veh_handle = tokio::spawn(async move {
+        let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        ws.send(WsMsg::Text(PSK.into())).await.unwrap();
+        let ack = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(ack.to_text().unwrap().contains("authenticated"));
+
+        let join = serde_json::to_string(&SignalingMessage::RoomJoin {
+            room_id: "audio-ms-car1".into(),
+            peer_role: PeerRole::Consumer,
+            stream_id: None,
+            device_id: Some("ms-car1".into()),
+            device_secret: Some("car1-secret".into()),
+        })
+        .unwrap();
+        ws.send(WsMsg::Text(join.into())).await.unwrap();
+        let joined = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(
+            joined.to_text().unwrap().contains("room_joined"),
+            "设备身份加入音频房间必须成功: {}",
+            joined.to_text().unwrap()
+        );
+        ws
+    });
+    let mut veh_ws = veh_handle.await.unwrap();
+
+    // 成员归属: room_owners["audio-ms-car1"] 已登记为 ms-car1（G3 登记路径）
+    // — 间证: 后续他车 join 被租户隔离拒绝（owner 匹配生效）+ 自车 produce 放行路径。
+    // ── ② 他车设备加入同音频房间 → 4031（租户隔离）──
+    let url2 = ws_url.clone();
+    let other_handle = tokio::spawn(async move {
+        let (mut ws, _) = tokio_tungstenite::connect_async(&url2).await.unwrap();
+        ws.send(WsMsg::Text(PSK.into())).await.unwrap();
+        let ack = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(ack.to_text().unwrap().contains("authenticated"));
+        let join = serde_json::to_string(&SignalingMessage::RoomJoin {
+            room_id: "audio-ms-car1".into(),
+            peer_role: PeerRole::Consumer,
+            stream_id: None,
+            device_id: Some("ms-car2".into()),
+            device_secret: Some("car2-secret".into()),
+        })
+        .unwrap();
+        ws.send(WsMsg::Text(join.into())).await.unwrap();
+        let resp = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(
+            resp.to_text().unwrap().contains("4031"),
+            "他车设备加入音频房间必须 4031: {}",
+            resp.to_text().unwrap()
+        );
+    });
+    other_handle.await.unwrap();
+
+    // ── ③ 设备在音频房间 produce 视频 → 4031（H2 音频房间门, 设备路径）──
+    veh_ws
+        .send(WsMsg::Text(
+            serde_json::to_string(&SignalingMessage::Produce {
+                room_id: "audio-ms-car1".into(),
+                peer_id: "veh".into(),
+                transport_direction: mediaservo_common::protocol::TransportDirection::Send,
+                kind: mediaservo_common::protocol::MediaKind::Video,
+                rtp_parameters: serde_json::json!({
+                    "mid": "0",
+                    "codecs": [{"mimeType": "video/VP8", "payloadType": 96, "clockRate": 90000}],
+                    "headerExtensions": [],
+                    "encodings": [{"ssrc": 12345}],
+                    "rtcp": {"reducedSize": true}
+                }),
+            })
+            .unwrap()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(5), veh_ws.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(
+        resp.to_text().unwrap().contains("4031"),
+        "设备在音频房间 produce 视频必须 4031: {}",
+        resp.to_text().unwrap()
+    );
+
+    drop(veh_ws);
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+}

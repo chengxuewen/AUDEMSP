@@ -312,14 +312,9 @@ fn is_relay_msg(msg: &SignalingMessage) -> bool {
     )
 }
 
-/// room_id 改写（整车房间 ↔ 子进程房间；Error 无房间字段）。
-fn rewrite_room(msg: &mut SignalingMessage, room: &str) {
+/// 消息自身的房间 id（无房间字段的变体返回 None）。
+fn msg_room_id(msg: &SignalingMessage) -> Option<&str> {
     use SignalingMessage::*;
-    // H2: 音频房间（audio-<vehicle>）子进程已用规范房间名（网关不重写 —
-    // 重写到整车房间会把音频会议并入视频房间，破坏每车独立音频房语义）。
-    if room.starts_with("audio-") {
-        return;
-    }
     match msg {
         RoomJoin { room_id, .. }
         | RoomJoined { room_id, .. }
@@ -340,6 +335,37 @@ fn rewrite_room(msg: &mut SignalingMessage, room: &str) {
         | DataProducerCreated { room_id, .. }
         | NewDataProducer { room_id, .. }
         | ConsumeData { room_id, .. }
+        | DataConsumed { room_id, .. }
+        | EmergencyCommand { room_id, .. } => Some(room_id),
+        _ => None,
+    }
+}
+
+/// room_id 改写（整车房间 ↔ 子进程房间；Error 无房间字段）。
+fn rewrite_room(msg: &mut SignalingMessage, room: &str) {
+    use SignalingMessage::*;
+    // H2: 音频房间（audio-<vehicle>）消息不改写 — 判定**消息自身**的 room_id
+    // （upstream 方向 room 参数 = 整车房间而非消息房间，用错值会把音频房间请求
+    // 并入整车视频房间 — I3 review 网关探针实证 4031 未触发）。
+    if msg_room_id(msg).is_some_and(|r| r.starts_with("audio-")) {
+        return;
+    }
+    match msg {
+        RoomJoin { room_id, .. }
+        | RoomJoined { room_id, .. }
+        | RoomLeave { room_id, .. }
+        | Sdp { room_id, .. }
+        | RTCIceCandidate { room_id, .. }
+        | CreateWebRtcTransport { room_id, .. }
+        | WebRtcTransportCreated { room_id, .. }
+        | ConnectWebRtcTransport { room_id, .. }
+        | Frame { room_id, .. }
+        | Produce { room_id, .. }
+        | Produced { room_id, .. }
+        | NewProducer { room_id, .. }
+        | EncoderStatus { room_id, .. }
+        | Consume { room_id, .. }
+        | Consumed { room_id, .. }
         | CreateDataProducer { room_id, .. }
         | DataProducerCreated { room_id, .. }
         | NewDataProducer { room_id, .. }
@@ -588,13 +614,11 @@ async fn conn_task(
                                 UpstreamAction::Drop => {}
                             }
                         }
-                        if let Some(msg) = reply {
-                            if let Some(t) = env_json(&LocalEnvelope { src: "server".into(), msg }) {
-                                if ws_tx.send(Message::Text(t.into())).await.is_err() {
+                        if let Some(msg) = reply
+                            && let Some(t) = env_json(&LocalEnvelope { src: "server".into(), msg })
+                                && ws_tx.send(Message::Text(t)).await.is_err() {
                                     break;
                                 }
-                            }
-                        }
                     }
                     Some(Ok(Message::Close(_))) | None => break,
                     Some(Ok(_)) => {}
@@ -608,7 +632,7 @@ async fn conn_task(
                 match outgoing {
                     Some(env) => {
                         let Some(text) = env_json(&env) else { continue };
-                        if ws_tx.send(Message::Text(text.into())).await.is_err() {
+                        if ws_tx.send(Message::Text(text)).await.is_err() {
                             break;
                         }
                     }
@@ -705,6 +729,39 @@ async fn run_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// H2 (I3 review): 音频房间消息不改写 — 判定消息自身 room_id（upstream
+    /// 方向 room 参数 = 整车房间，早期实现误用它导致音频房间被并入整车房间）。
+    #[test]
+    fn rewrite_room_passthrough_audio_rooms() {
+        use mediaservo_common::protocol::TransportDirection;
+        let mut msg = SignalingMessage::CreateWebRtcTransport {
+            room_id: "audio-ms-car1".into(),
+            peer_id: "audio".into(),
+            direction: TransportDirection::Send,
+        };
+        rewrite_room(&mut msg, "vehicle");
+        match &msg {
+            SignalingMessage::CreateWebRtcTransport { room_id, .. } => {
+                assert_eq!(room_id, "audio-ms-car1", "音频房间必须原样（不改写）")
+            }
+            other => panic!("意外变体: {other:?}"),
+        }
+
+        // 非音频房间照常改写
+        let mut msg2 = SignalingMessage::CreateWebRtcTransport {
+            room_id: "stream-cam0".into(),
+            peer_id: "s".into(),
+            direction: TransportDirection::Send,
+        };
+        rewrite_room(&mut msg2, "vehicle");
+        match &msg2 {
+            SignalingMessage::CreateWebRtcTransport { room_id, .. } => {
+                assert_eq!(room_id, "vehicle", "非音频房间必须改写为整车房间")
+            }
+            other => panic!("意外变体: {other:?}"),
+        }
+    }
 
     fn test_state() -> Arc<Mutex<State>> {
         Arc::new(Mutex::new(State {

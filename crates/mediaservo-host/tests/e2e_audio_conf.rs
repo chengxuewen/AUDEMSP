@@ -29,7 +29,7 @@ fn init_logging_once() {
     use std::sync::Once;
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let _ = mediaservo_common::logging::init(mediaservo_common::logging::LoggingConfig::default());
+        mediaservo_common::logging::init(mediaservo_common::logging::LoggingConfig::default());
     });
 }
 
@@ -63,7 +63,7 @@ where
     S: SinkExt<WsMsg> + StreamExt<Item = Result<WsMsg, tokio_tungstenite::tungstenite::Error>> + Unpin,
     <S as futures_util::Sink<WsMsg>>::Error: std::fmt::Debug,
 {
-    ws.send(WsMsg::Text(psk().into())).await.unwrap();
+    ws.send(WsMsg::Text(psk())).await.unwrap();
     let ack = tokio::time::timeout(Duration::from_secs(5), ws.next())
         .await
         .unwrap()
@@ -79,7 +79,7 @@ where
         stream_id: None,
     })
     .unwrap();
-    ws.send(WsMsg::Text(join.into())).await.unwrap();
+    ws.send(WsMsg::Text(join)).await.unwrap();
     let joined = tokio::time::timeout(Duration::from_secs(5), ws.next())
         .await
         .unwrap()
@@ -154,12 +154,11 @@ fn build_remote_audio_sdp(
         format!("a=rtpmap:{OPUS_PT} opus/{SAMPLE_RATE}/2"),
         format!("a=fmtp:{OPUS_PT} minptime=10;useinbandfec=1"),
     ];
-    if sendonly {
-        if let Some(ssrc) = ssrc {
+    if sendonly
+        && let Some(ssrc) = ssrc {
             lines.push(format!("a=ssrc:{ssrc} cname:mediaservo-audio"));
             lines.push(format!("a=ssrc:{ssrc} msid:audio audio"));
         }
-    }
     if let Some(candidates) = ice_candidates {
         for c in candidates {
             if c.ip.contains(".local") {
@@ -223,12 +222,11 @@ where
             peer_id: peer.into(),
             direction: TransportDirection::Send,
         })
-        .unwrap()
-        .into(),
+        .unwrap(),
     ))
     .await
     .unwrap();
-    let (send_tid, ice_params, dtls_params, ice_candidates) = loop {
+    let (send_tid, ice_params, dtls_params, ice_candidates) = {
         let sig = next_sig_skip_noise(ws).await;
         match sig {
             SignalingMessage::WebRtcTransportCreated {
@@ -237,7 +235,7 @@ where
                 dtls_parameters,
                 ice_candidates,
                 ..
-            } => break (transport_id, ice_parameters, dtls_parameters, ice_candidates),
+            } => (transport_id, ice_parameters, dtls_parameters, ice_candidates),
             other => panic!("producer {peer}: expected WebRtcTransportCreated, got {other:?}"),
         }
     };
@@ -262,7 +260,7 @@ where
     // track id 必须与 libwebrtc 内部 track label 一致（create_audio_track 建 "audio"）—
     // sender_get_parameters 按 track.id() 匹配。
     let track_id = pc.add_track("audio", TrackKind::Audio).unwrap();
-    let answer = pc.create_answer(&RTCAnswerOptions::default()).await.unwrap();
+    let answer = pc.create_answer(&RTCAnswerOptions).await.unwrap();
     tracing::info!("producer {peer} answer SDP:\n{}", answer.sdp);
     pc.set_local_description(&answer).await.unwrap();
 
@@ -281,8 +279,7 @@ where
                 role: "client".to_string(),
             },
         })
-        .unwrap()
-        .into(),
+        .unwrap(),
     ))
     .await
     .unwrap();
@@ -361,13 +358,13 @@ where
             "rtcp": {"reducedSize": rtp_params.rtcp.reduced_size},
         }),
     };
-    ws.send(WsMsg::Text(serde_json::to_string(&produce).unwrap().into()))
+    ws.send(WsMsg::Text(serde_json::to_string(&produce).unwrap()))
         .await
         .unwrap();
-    let producer_id = loop {
+    let producer_id = {
         let sig = next_sig_skip_noise(ws).await;
         match sig {
-            SignalingMessage::Produced { producer_id, .. } => break producer_id,
+            SignalingMessage::Produced { producer_id, .. } => producer_id,
             SignalingMessage::Error { code, message } => panic!("producer {peer}: Produce error {code}: {message}"),
             other => panic!("producer {peer}: expected Produced, got {other:?}"),
         }
@@ -390,7 +387,7 @@ where
             match tone_track.write_frame(&frame).await {
                 Ok(()) => {
                     sent += 1;
-                    if sent % 100 == 0 {
+                    if sent.is_multiple_of(100) {
                         tracing::info!("{peer}: tone frames sent: {sent}");
                     }
                 }
@@ -424,12 +421,11 @@ where
             peer_id: peer.into(),
             direction: TransportDirection::Recv,
         })
-        .unwrap()
-        .into(),
+        .unwrap(),
     ))
     .await
     .unwrap();
-    let (recv_tid, ice_params, dtls_params, ice_candidates) = loop {
+    let (recv_tid, ice_params, dtls_params, ice_candidates) = {
         let sig = next_sig_skip_noise(ws).await;
         match sig {
             SignalingMessage::WebRtcTransportCreated {
@@ -438,7 +434,7 @@ where
                 dtls_parameters,
                 ice_candidates,
                 ..
-            } => break (transport_id, ice_parameters, dtls_parameters, ice_candidates),
+            } => (transport_id, ice_parameters, dtls_parameters, ice_candidates),
             other => panic!("consumer {peer}: expected WebRtcTransportCreated, got {other:?}"),
         }
     };
@@ -457,16 +453,15 @@ where
                 ],
             }),
         })
-        .unwrap()
-        .into(),
+        .unwrap(),
     ))
     .await
     .unwrap();
-    let (consumer_id, consumer_rtp) = loop {
+    let (consumer_id, consumer_rtp) = {
         let sig = next_sig_skip_noise(ws).await;
         match sig {
             SignalingMessage::Consumed { consumer_id, rtp_parameters, .. } => {
-                break (consumer_id, rtp_parameters)
+                (consumer_id, rtp_parameters)
             }
             SignalingMessage::Error { code, message } => {
                 panic!("consumer {peer}: Consume error {code}: {message}")
@@ -517,7 +512,7 @@ where
     );
     let remote_desc = RTCSessionDescription::new(RTCSdpType::Offer, remote_sdp);
     pc.set_remote_description(&remote_desc).await.unwrap();
-    let answer = pc.create_answer(&RTCAnswerOptions::default()).await.unwrap();
+    let answer = pc.create_answer(&RTCAnswerOptions).await.unwrap();
     pc.set_local_description(&answer).await.unwrap();
 
     // 4. ConnectWebRtcTransport（DTLS — mediasoup 转发的前提）
@@ -535,8 +530,7 @@ where
                 role: "client".to_string(),
             },
         })
-        .unwrap()
-        .into(),
+        .unwrap(),
     ))
     .await
     .unwrap();
@@ -564,15 +558,14 @@ where
             producer_id: producer_id.map(|s| s.to_string()),
             consumer_id: consumer_id.map(|s| s.to_string()),
         })
-        .unwrap()
-        .into(),
+        .unwrap(),
     ))
     .await
     .unwrap();
-    loop {
+    {
         let sig = next_sig_skip_noise(ws).await;
         match sig {
-            SignalingMessage::SfuStats { .. } => return sig,
+            SignalingMessage::SfuStats { .. } => sig,
             SignalingMessage::Error { code, message } => {
                 panic!("SfuStatsRequest error {code}: {message}")
             }
@@ -608,13 +601,13 @@ async fn e2e_audio_conf_three_party_all_hear_all() {
 
     // 每人消费其他两人 → 6 consumers
     let mut consumer_ids = Vec::new();
-    for i in 0..3 {
-        for j in 0..3 {
+    for (i, ws) in ws_list.iter_mut().enumerate() {
+        for (j, pid) in producers.iter().enumerate() {
             if i == j {
                 continue;
             }
-            let cid = audio_consumer(&mut ws_list[i], &room, peers[i], &producers[j]).await;
-            consumer_ids.push((cid, producers[j].clone()));
+            let cid = audio_consumer(ws, &room, peers[i], pid).await;
+            consumer_ids.push((cid, pid.clone()));
         }
     }
 
@@ -626,7 +619,7 @@ async fn e2e_audio_conf_three_party_all_hear_all() {
     // PIT-105: 本 vendor libwebrtc 构建 AudioTrackSource→RTP 编码链路不产包
     // （capture_frame 成功、sink 交付实证，但 outbound RTP 为零）— byte_count>0
     // 断言在 PIT-105 修复后启用；当前断言 wiring 证据（kind=Audio + 统计可达）。
-    for (i, pid) in producers.iter().enumerate() {
+    for pid in &producers {
         match sfu_stats(&mut ws_list[0], Some(pid), None).await {
             SignalingMessage::SfuStats { byte_count, packet_count, kind, .. } => {
                 assert_eq!(kind, Some(MediaKind::Audio), "producer {pid} 必须是音频");
@@ -678,15 +671,14 @@ async fn e2e_audio_room_rejects_video_produce() {
             peer_id: "neg-peer".into(),
             direction: TransportDirection::Send,
         })
-        .unwrap()
-        .into(),
+        .unwrap(),
     ))
     .await
     .unwrap();
-    let _ = loop {
+    let _ = {
         let sig = next_sig_skip_noise(&mut ws).await;
         match sig {
-            SignalingMessage::WebRtcTransportCreated { transport_id, .. } => break transport_id,
+            SignalingMessage::WebRtcTransportCreated { transport_id, .. } => transport_id,
             other => panic!("expected WebRtcTransportCreated, got {other:?}"),
         }
     };
@@ -706,19 +698,17 @@ async fn e2e_audio_room_rejects_video_produce() {
                 "rtcp": {"reducedSize": true}
             }),
         })
-        .unwrap()
-        .into(),
+        .unwrap(),
     ))
     .await
     .unwrap();
-    loop {
+    {
         let sig = next_sig_skip_noise(&mut ws).await;
         match sig {
             SignalingMessage::Error { code, message } => {
                 assert_eq!(code, 4031, "音频房间视频 produce 必须 4031: {message}");
                 assert!(message.contains("audio rooms allow audio producers only"));
-                break;
-            }
+                            }
             SignalingMessage::Produced { .. } => {
                 panic!("音频房间视频 produce 必须被拒，却返回 Produced")
             }
