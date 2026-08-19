@@ -90,40 +90,62 @@ fn payload_to_frame(meta: &FrameMeta, payload: &[u8]) -> Option<VideoFrame> {
 
 /// link FrameStream → deck `Frames` 适配器（closed_loop 参考模式 + stall 警告）。
 ///
-/// 看门狗决策：recv 超时（10s 无帧）只打 warn 继续等——recorder 必须存活过
-/// capturer 重启（C5）；capturer 恢复发布后帧自动续录（FrameBus 订阅常驻）。
-/// 仅流关停（recv None）才结束录制。
+/// 看门狗决策（C5 crash-recovery 对齐）: 无帧**不退出**——recorder 必须存活过
+/// capturer 重启（停帧期间帧稀疏，pts 时间间隙由 MP4 时间戳保留）；capturer
+/// 恢复发布后帧自动续录（FrameBus 订阅常驻）。仅流关停（recv None）才结束录制。
+///
+/// stall 检测位置（审查 #1 修复）: deck `Recorder::record` 的帧泵以 50ms 轮询
+/// `next()`（外层 timeout）——**不能在 next 内再用内层 timeout 包 recv**（外层
+/// 50ms 取消内层 10s 等待 → 永不触发）。改为在每次泵 tick 处评估
+/// `last_frame.elapsed()`：>10s 打 warn（节流 1 次/10s 防刷屏）后继续等待。
 struct LinkFrames {
     stream: mediaservo_link::FrameStream,
     topic: String,
     last_frame: Instant,
+    last_warn: Instant,
 }
 
 impl Frames for LinkFrames {
     async fn next(&mut self) -> Option<VideoFrame> {
         loop {
-            match tokio::time::timeout(STALL_WARN_INTERVAL, self.stream.recv()).await {
-                Ok(Some(f)) => {
-                    let meta = f.meta();
-                    if let Some(frame) = payload_to_frame(meta, f.payload()) {
-                        self.last_frame = Instant::now();
-                        return Some(frame);
-                    }
-                    tracing::warn!(
-                        topic = %self.topic,
-                        seq = meta.seq,
-                        "invalid frame skipped (format={} {}x{} payload={})",
-                        meta.format, meta.width, meta.height, f.payload().len()
-                    );
-                }
-                Ok(None) => return None, // 流关停（FrameBus close）
-                Err(_) => tracing::warn!(
+            // 泵 tick（约 50ms/次）: 评估无帧时长，>10s 节流告警（stall 只打日志）
+            let idle = self.last_frame.elapsed();
+            if idle >= STALL_WARN_INTERVAL && self.last_warn.elapsed() >= STALL_WARN_INTERVAL {
+                self.last_warn = Instant::now();
+                tracing::warn!(
                     topic = %self.topic,
-                    idle_secs = self.last_frame.elapsed().as_secs(),
+                    idle_secs = idle.as_secs(),
                     "无帧 — capturer 未运行? 录制继续（C3 看门狗: 不退出）"
-                ),
+                );
             }
+            // 直接 recv（无内层 timeout — 外层 50ms 泵轮询负责唤醒/取消）
+            let f = self.stream.recv().await?;
+            let meta = f.meta();
+            if let Some(frame) = payload_to_frame(meta, f.payload()) {
+                self.last_frame = Instant::now();
+                return Some(frame);
+            }
+            tracing::warn!(
+                topic = %self.topic,
+                seq = meta.seq,
+                "invalid frame skipped (format={} {}x{} payload={})",
+                meta.format, meta.width, meta.height, f.payload().len()
+            );
         }
+    }
+}
+
+/// 出错路径（审查 #2）: 停止已创建的全部录制任务并等其收尾（flush + trailer），
+/// 避免残留无 trailer 的残缺 mp4。
+async fn stop_and_finish(
+    stops: &[mediaservo_deck::record::StopSignal],
+    tasks: Vec<tokio::task::JoinHandle<Result<(), mediaservo_deck::DeckError>>>,
+) {
+    for s in stops {
+        s.stop();
+    }
+    for t in tasks {
+        let _ = tokio::time::timeout(FINISH_TIMEOUT, t).await;
     }
 }
 
@@ -215,13 +237,15 @@ async fn main() -> ExitCode {
 
     // 每相机: 订阅 camera/<id> + deck Recorder 落盘任务（持续录制至 SIGTERM）
     let mut stops: Vec<mediaservo_deck::record::StopSignal> = Vec::new();
-    let mut tasks = Vec::new();
+    let mut tasks: Vec<tokio::task::JoinHandle<Result<(), mediaservo_deck::DeckError>>> = Vec::new();
     let mut ids: Vec<String> = Vec::new();
     for cam in &cams {
         let topic = FrameTopic::new(format!("camera/{}", cam.id));
         let frames = match bus.subscribe(&topic) {
             Ok(f) => f,
             Err(e) => {
+                // 审查 #2: 已创建的录制任务必须收尾（flush + trailer），否则残留无 trailer 的残缺 mp4
+                stop_and_finish(&stops, tasks).await;
                 eprintln!("recorder: 订阅 {} 失败: {e}", topic.as_str());
                 return ExitCode::from(1);
             }
@@ -238,6 +262,8 @@ async fn main() -> ExitCode {
         ) {
             Ok(r) => r,
             Err(e) => {
+                // 审查 #2: 同上 — 停掉先前相机再退出
+                stop_and_finish(&stops, tasks).await;
                 eprintln!("recorder: 创建录制器 {} 失败: {e}", path.display());
                 return ExitCode::from(1);
             }
@@ -247,6 +273,7 @@ async fn main() -> ExitCode {
             stream: frames,
             topic: topic.as_str().to_string(),
             last_frame: Instant::now(),
+            last_warn: Instant::now(),
         };
         tasks.push(tokio::spawn(async move {
             recorder.record(link_frames).await
