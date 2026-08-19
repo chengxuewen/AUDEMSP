@@ -18,7 +18,7 @@ use mediaservo_common::protocol::{
     TransportDirection,
 };
 use mediaservo_host::gateway::{run_gateway, GatewayConfig, LocalEnvelope};
-use mediaservo_link::RetryConfig;
+use mediaservo_link::{DeviceCredential, RetryConfig};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::Message;
@@ -44,6 +44,7 @@ fn cfg(remote: SocketAddr) -> GatewayConfig {
         local_port: 0, // 临时端口
         remote_url: format!("ws://{remote}/ws"),
         psk: "test-psk".into(),
+        device: None,
         room: VEHICLE_ROOM.into(),
         retry: RetryConfig {
             max_retries: 3,
@@ -116,6 +117,8 @@ async fn join<S: WsIo>(ws: &mut WebSocketStream<S>, room: &str) -> String {
         ws.send(Message::Text(env(
             "child",
             SignalingMessage::RoomJoin {
+                device_id: None,
+                device_secret: None,
                 room_id: room.into(),
                 peer_role: PeerRole::Host,
                 stream_id: None,
@@ -727,5 +730,59 @@ async fn frame_relay_does_not_steal_p2p_ownership() {
         "B 不应收到消息, got {:?}",
         extra.ok().map(|(_, m)| m)
     );
+    server.await.unwrap();
+}
+
+// ── G4: 远端 Join 携带设备凭证（device_id/device_secret，additive）──────────
+
+#[tokio::test]
+async fn remote_join_carries_device_credentials() {
+    // mock 远端 server：PSK 确认后断言 RoomJoin 携带设备凭证（G4 wire 契约）
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("mock accept");
+        let mut ws = tokio_tungstenite::accept_async(stream).await.expect("mock ws handshake");
+        let psk = ws.next().await.unwrap().unwrap();
+        assert!(matches!(psk, Message::Text(_)), "首条应为 PSK 文本");
+        ws.send(Message::Text(
+            serde_json::to_string(&SignalingMessage::Error { code: 0, message: String::new() })
+                .unwrap()
+                .into(),
+        ))
+        .await
+        .unwrap();
+        let join = ws.next().await.unwrap().unwrap();
+        match serde_json::from_str::<SignalingMessage>(join.to_text().unwrap()).unwrap() {
+            SignalingMessage::RoomJoin { device_id, device_secret, .. } => {
+                assert_eq!(device_id.as_deref(), Some("ms-gw-device"), "远端 RoomJoin 应携带 device_id");
+                assert_eq!(device_secret.as_deref(), Some("gw-secret"), "远端 RoomJoin 应携带 device_secret");
+            }
+            other => panic!("expected RoomJoin, got {other:?}"),
+        }
+        ws.send(Message::Text(
+            serde_json::to_string(&SignalingMessage::RoomJoined {
+                room_id: VEHICLE_ROOM.into(),
+                peer_id: VEHICLE_PEER.into(),
+            })
+            .unwrap()
+            .into(),
+        ))
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(500)).await; // 保持连接至断言完成
+    });
+
+    // 网关携带设备凭证（host-agent 从 identity.json 加载后注入）
+    let mut gateway_cfg = cfg(addr);
+    gateway_cfg.device = Some(mediaservo_link::DeviceCredential {
+        device_id: "ms-gw-device".into(),
+        device_secret: "gw-secret".into(),
+    });
+    let (port, _handle) = run_gateway(gateway_cfg).await.expect("run_gateway");
+    // 本地子进程 join：合成 RoomJoined 证明远端会话已就绪（连接全链路）
+    let mut child = local(port).await;
+    let peer = join(&mut child, "child-room").await;
+    assert_eq!(peer, VEHICLE_PEER);
     server.await.unwrap();
 }

@@ -47,6 +47,8 @@ fn main() {
             room_id: "room-abc-123".into(),
             peer_role: PeerRole::Host,
             stream_id: None,
+            device_id: None,
+            device_secret: None,
         };
         serde_json::to_string(&msg).unwrap();
     });

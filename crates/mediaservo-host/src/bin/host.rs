@@ -142,6 +142,23 @@ fn cmd_init(args: &mut impl Iterator<Item = String>) -> i32 {
         }
     }
 
+    // G4: 设备身份 identity.json（D-H13 实例根，0600；幂等——仅缺失时生成，
+    // 覆盖会使 server 侧注册失效）。损坏文件显式报错（C15），不静默覆盖。
+    match mediaservo_host::identity::ensure_identity(&dir) {
+        Ok(cred) => {
+            let p = dir.join(mediaservo_host::identity::IDENTITY_FILE);
+            if p.exists() {
+                eprintln!("init: {} 已存在，跳过", p.display());
+            } else {
+                println!("已生成 {}（device_id={}，0600）", p.display(), cred.device_id);
+            }
+        }
+        Err(e) => {
+            eprintln!("init: {e}");
+            return 1;
+        }
+    }
+
     // 生成 ros_bridge.yaml（B3）：topic 清单 + 令牌路径，ROS 节点配置单一来源。
     // 从已存在的 host.toml 解析（init 刚写入模板或用户已编辑），解析失败即报错——
     // 静默写空清单会让 ROS 节点连不上任何 topic（C15）。

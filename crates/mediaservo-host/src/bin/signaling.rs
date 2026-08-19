@@ -97,6 +97,8 @@ impl SignalingClient {
 
         // Phase 2: Join room
         let join_msg = SignalingMessage::RoomJoin {
+            device_id: None,
+            device_secret: None,
             room_id: self.room_id.clone(),
             peer_role: PeerRole::Host,
             stream_id: None,

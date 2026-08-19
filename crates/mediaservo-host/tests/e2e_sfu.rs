@@ -165,6 +165,8 @@ async fn ws_auth_and_join<S>(
 
     let join =
         serde_json::to_string(&SignalingMessage::RoomJoin {
+            device_id: None,
+            device_secret: None,
             room_id: room_id.into(),
             peer_role: role,
             stream_id: None,

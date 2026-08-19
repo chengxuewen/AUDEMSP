@@ -57,6 +57,8 @@ async fn e2e_sfu_lifecycle() {
             room_id: ROOM.into(),
             peer_role: PeerRole::Host,
             stream_id: None,
+            device_id: None,
+            device_secret: None,
         })
         .unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
@@ -108,6 +110,8 @@ async fn e2e_sfu_lifecycle() {
             room_id: ROOM.into(),
             peer_role: PeerRole::Remote,
             stream_id: None,
+            device_id: None,
+            device_secret: None,
         })
         .unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
@@ -188,6 +192,8 @@ async fn e2e_sfu_cleanup_on_disconnect() {
         room_id: ROOM.into(),
         peer_role: PeerRole::Host,
         stream_id: None,
+        device_id: None,
+        device_secret: None,
     })
     .unwrap();
     ws.send(WsMsg::Text(join.into())).await.unwrap();
@@ -250,6 +256,8 @@ async fn e2e_sfu_consume_pipeline() {
 
         let join = serde_json::to_string(&SignalingMessage::RoomJoin {
             room_id: "sfu-consume-room".into(), peer_role: PeerRole::Host, stream_id: None,
+            device_id: None,
+            device_secret: None,
         }).unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
         let joined = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next()).await.unwrap().unwrap().unwrap();
@@ -314,6 +322,8 @@ async fn e2e_sfu_consume_pipeline() {
 
         let join = serde_json::to_string(&SignalingMessage::RoomJoin {
             room_id: "sfu-consume-room".into(), peer_role: PeerRole::Remote, stream_id: None,
+            device_id: None,
+            device_secret: None,
         }).unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
         let joined = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next()).await.unwrap().unwrap().unwrap();

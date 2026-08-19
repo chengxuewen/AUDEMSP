@@ -45,6 +45,8 @@ async fn integration_signaling_pipeline() {
             room_id: ROOM.into(),
             peer_role: PeerRole::Host,
             stream_id: None,
+            device_id: None,
+            device_secret: None,
         }).unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
         let joined = ws.next().await.unwrap().unwrap();
@@ -74,6 +76,8 @@ async fn integration_signaling_pipeline() {
             room_id: ROOM.into(),
             peer_role: PeerRole::Remote,
             stream_id: None,
+            device_id: None,
+            device_secret: None,
         }).unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
         let joined = ws.next().await.unwrap().unwrap();
@@ -292,6 +296,8 @@ async fn e2e_video_frame_relay() {
             room_id: ROOM.into(),
             peer_role: PeerRole::Host,
             stream_id: None,
+            device_id: None,
+            device_secret: None,
         }).unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
         ws.next().await.unwrap().unwrap(); // room_joined
@@ -327,6 +333,8 @@ async fn e2e_video_frame_relay() {
             room_id: ROOM.into(),
             peer_role: PeerRole::Remote,
             stream_id: None,
+            device_id: None,
+            device_secret: None,
         }).unwrap();
         ws.send(WsMsg::Text(join.into())).await.unwrap();
         ws.next().await.unwrap().unwrap(); // room_joined

@@ -56,6 +56,9 @@ pub struct GatewayConfig {
     pub remote_url: String,
     /// PSK（每连接重认证，B1 语义）。
     pub psk: String,
+    /// G4 设备凭证（D-H11）：Some = 远端 Join 携带 device_id/device_secret（additive）；
+    /// None = PSK 路径（G2 切换校验前保持）。host-agent 从 identity.json 加载。
+    pub device: Option<mediaservo_link::DeviceCredential>,
     /// 整车房间（agent 单次 join 的房间）。
     pub room: String,
     /// 远端连接重试配置（断线重连复用）。
@@ -68,6 +71,7 @@ impl Default for GatewayConfig {
             local_port: DEFAULT_LOCAL_PORT,
             remote_url: "ws://127.0.0.1:9800/ws".into(),
             psk: "mediaservo-dev".into(),
+            device: None,
             // TODO(D3): 整车房间由 host.toml 配置（[host] device_id 或 [signaling] room）接入
             room: "vehicle".into(),
             retry: RetryConfig::default(),
@@ -605,7 +609,11 @@ async fn remote_loop(
     state: Arc<Mutex<State>>,
     mut remote_rx: mpsc::UnboundedReceiver<SignalingMessage>,
 ) {
-    let client = SignalClient::new(&config.remote_url, &config.psk, &config.room, PeerRole::Host);
+    let mut client = SignalClient::new(&config.remote_url, &config.psk, &config.room, PeerRole::Host);
+    // G4: 设备凭证随 Join 携带（additive；None = PSK 路径）
+    if let Some(cred) = config.device.clone() {
+        client = client.with_device_credentials(cred);
+    }
     loop {
         let session = match client.connect_with_retry(config.retry).await {
             Ok(s) => s,

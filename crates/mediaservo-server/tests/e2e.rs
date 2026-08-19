@@ -188,6 +188,8 @@ fn protocol_roundtrip_room_join() {
         room_id: "room-1".into(),
         peer_role: PeerRole::Host,
         stream_id: None,
+        device_id: None,
+        device_secret: None,
     };
     let json = serde_json::to_string(&msg).unwrap();
     let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();

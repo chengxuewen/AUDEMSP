@@ -84,6 +84,18 @@ pub struct SignalClient {
     /// D2 本地网关模式：Some(src) = 信封 wire（无 PSK 挑战，信任边界 127.0.0.1）；
     /// None = 直连 server（PSK 认证）。
     gateway_src: Option<String>,
+    /// G4 设备凭证（D-H11）：Some = RoomJoin 携带 device_id/device_secret（additive），
+    /// G2 起 server 校验；None = PSK 认证路径（现状保持）。
+    device: Option<DeviceCredential>,
+}
+
+/// 设备凭证（identity.json 格式 + RoomJoin wire 载体，G4/D-H13）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceCredential {
+    /// 设备 ID（host init 生成，如 `ms-<12 hex>`）。
+    pub device_id: String,
+    /// 设备密钥（32 随机字节 hex）。
+    pub device_secret: String,
 }
 
 impl SignalClient {
@@ -94,6 +106,7 @@ impl SignalClient {
             room_id: room_id.to_string(),
             role,
             gateway_src: None,
+            device: None,
         }
     }
 
@@ -106,7 +119,14 @@ impl SignalClient {
             room_id: room_id.to_string(),
             role,
             gateway_src: Some(src.to_string()),
+            device: None,
         }
+    }
+
+    /// 附加设备凭证（G4）：RoomJoin 携带 device_id/device_secret（additive，PSK 并存）。
+    pub fn with_device_credentials(mut self, device: DeviceCredential) -> Self {
+        self.device = Some(device);
+        self
     }
 
     /// 连接 server、PSK 认证、加入房间，返回会话。
@@ -148,6 +168,8 @@ impl SignalClient {
             room_id: self.room_id.clone(),
             peer_role: self.role.clone(),
             stream_id: None,
+            device_id: self.device.as_ref().map(|d| d.device_id.clone()),
+            device_secret: self.device.as_ref().map(|d| d.device_secret.clone()),
         };
         let (join_json, unwrap) = match &self.gateway_src {
             Some(src) => (

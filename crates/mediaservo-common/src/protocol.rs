@@ -22,6 +22,12 @@ pub enum SignalingMessage {
         peer_role: PeerRole,
         #[serde(skip_serializing_if = "Option::is_none")]
         stream_id: Option<String>,
+        /// G4 设备凭证（additive，D-H11）：携带时 server 走设备认证（G2 起校验）；
+        /// 缺省 = PSK 认证路径。旧 server 忽略未知字段、旧 client 不带字段 —— 双向兼容。
+        #[serde(skip_serializing_if = "Option::is_none")]
+        device_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        device_secret: Option<String>,
     },
 
     /// Room join acknowledged by Server.
@@ -338,13 +344,16 @@ mod tests {
             room_id: "room-1".into(),
             peer_role: PeerRole::Host,
             stream_id: None,
+            device_id: None,
+            device_secret: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"room_join""#));
         assert!(json.contains(r#""room_id":"room-1""#));
         assert!(json.contains(r#""peer_role":"host""#));
-        // stream_id: None is absent from JSON (serde skips None by default)
+        // stream_id/device 字段 None 时不出现在 JSON（additive 契约：旧 server 无感知）
         assert!(!json.contains("stream_id"));
+        assert!(!json.contains("device_"));
     }
 
     #[test]
@@ -353,18 +362,24 @@ mod tests {
             room_id: "room-1".into(),
             peer_role: PeerRole::Consumer,
             stream_id: Some("stream-42".into()),
+            device_id: Some("ms-001122334455".into()),
+            device_secret: Some("s3cr3t".into()),
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"room_join""#));
         assert!(json.contains(r#""peer_role":"consumer""#));
         assert!(json.contains(r#""stream_id":"stream-42""#));
+        assert!(json.contains(r#""device_id":"ms-001122334455""#));
+        assert!(json.contains(r#""device_secret":"s3cr3t""#));
 
         let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
         match parsed {
-            SignalingMessage::RoomJoin { room_id, peer_role, stream_id } => {
+            SignalingMessage::RoomJoin { room_id, peer_role, stream_id, device_id, device_secret, .. } => {
                 assert_eq!(room_id, "room-1");
                 assert_eq!(peer_role, PeerRole::Consumer);
                 assert_eq!(stream_id.as_deref(), Some("stream-42"));
+                assert_eq!(device_id.as_deref(), Some("ms-001122334455"));
+                assert_eq!(device_secret.as_deref(), Some("s3cr3t"));
             }
             _ => panic!("expected RoomJoin"),
         }

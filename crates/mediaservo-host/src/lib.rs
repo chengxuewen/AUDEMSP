@@ -16,6 +16,8 @@ pub fn init_logging(role: &str) {
 }
 /// host-agent 信令网关（Task D1）。
 pub mod gateway;
+/// 设备身份 identity.json 生成/加载（Task G4，D-H13）。
+pub mod identity;
 
 /// 拓扑监控（Task E1: 声明式期望 vs 发现式实际）。
 pub mod monitor;

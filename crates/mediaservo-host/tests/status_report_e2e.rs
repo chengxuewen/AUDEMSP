@@ -111,6 +111,7 @@ async fn status_report_reaches_mock_server_with_expected_content() {
         local_port: 0,
         remote_url: format!("ws://{addr}/ws"),
         psk: "test-psk".into(),
+        device: None,
         room: VEHICLE_ROOM.into(),
         retry: RetryConfig {
             max_retries: 3,

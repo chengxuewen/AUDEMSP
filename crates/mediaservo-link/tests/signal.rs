@@ -210,6 +210,68 @@ async fn auth_denied_returns_error() {
     server.await.unwrap();
 }
 
+// ---- G4: 设备凭证（D-H11）——RoomJoin 携带（additive；缺省 = PSK 路径）----
+
+#[tokio::test]
+async fn room_join_carries_device_credentials() {
+    // mock server：PSK 确认后，断言 RoomJoin 携带 device_id/device_secret
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let _psk = ws.next().await.unwrap().unwrap();
+        let ack = SignalingMessage::Error { code: 0, message: String::new() };
+        ws.send(Message::Text(serde_json::to_string(&ack).unwrap().into())).await.unwrap();
+        let join_msg = ws.next().await.unwrap().unwrap();
+        let join: SignalingMessage = serde_json::from_str(join_msg.to_text().unwrap()).unwrap();
+        match join {
+            SignalingMessage::RoomJoin { device_id, device_secret, .. } => {
+                assert_eq!(device_id.as_deref(), Some("ms-001122334455"), "RoomJoin 应携带 device_id");
+                assert_eq!(device_secret.as_deref(), Some("s3cr3t"), "RoomJoin 应携带 device_secret");
+            }
+            other => panic!("expected RoomJoin, got {other:?}"),
+        }
+        let joined = SignalingMessage::RoomJoined { room_id: "r".into(), peer_id: "peer-1".into() };
+        ws.send(Message::Text(serde_json::to_string(&joined).unwrap().into())).await.unwrap();
+    });
+    let client = SignalClient::new(&format!("ws://{addr}/ws"), "test-psk", "r", PeerRole::Host)
+        .with_device_credentials(mediaservo_link::DeviceCredential {
+            device_id: "ms-001122334455".into(),
+            device_secret: "s3cr3t".into(),
+        });
+    let session = client.connect().await.expect("connect with device credentials");
+    assert_eq!(session.peer_id(), "peer-1");
+    session.close().await.expect("close");
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn room_join_denied_surfaces_device_auth_error() {
+    // 凭证被 server 拒绝（G2 起：Error 4010 设备认证失败）→ 客户端必须明确报错（C15/C16）
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let _psk = ws.next().await.unwrap().unwrap();
+        let ack = SignalingMessage::Error { code: 0, message: String::new() };
+        ws.send(Message::Text(serde_json::to_string(&ack).unwrap().into())).await.unwrap();
+        let _join = ws.next().await.unwrap().unwrap();
+        let deny = SignalingMessage::Error { code: 4010, message: "device authentication failed".to_string() };
+        ws.send(Message::Text(serde_json::to_string(&deny).unwrap().into())).await.unwrap();
+    });
+    let client = SignalClient::new(&format!("ws://{addr}/ws"), "test-psk", "r", PeerRole::Host)
+        .with_device_credentials(mediaservo_link::DeviceCredential {
+            device_id: "ms-bad".into(),
+            device_secret: "wrong".into(),
+        });
+    let err = client.connect().await.unwrap_err();
+    assert!(err.to_string().contains("4010") && err.to_string().contains("device authentication failed"),
+        "应明确报设备认证失败，got: {err}");
+    server.await.unwrap();
+}
+
 // ---- Phase B (B1): 重连（指数退避 + jitter）与断线通知 ----
 
 /// mock server：前 `refuse` 次连接 TCP 立断（WS 握手失败），之后完整认证+入房；

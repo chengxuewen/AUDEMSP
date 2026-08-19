@@ -54,13 +54,31 @@ fn parse_args() -> Result<(GatewayConfig, Option<String>, Option<String>), Strin
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging("agent");
-    let (cfg, config_path, token_path) = match parse_args() {
+    let (mut cfg, config_path, token_path) = match parse_args() {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e}");
             std::process::exit(2);
         }
     };
+    // G4: 实例目录（--config <dir>/etc/host.toml → <dir>；oxfile/备份/身份基准）
+    let config_dir = config_path.as_deref().map(PathBuf::from).and_then(|p| {
+        p.parent().and_then(|etc| etc.parent().map(Path::to_path_buf))
+    });
+    // G4: 设备身份 — identity.json 存在则远端 Join 携带（additive；缺失/损坏 →
+    // warn 回落 PSK，G2 起 server 校验设备凭证）
+    if let Some(dir) = &config_dir {
+        match mediaservo_host::identity::load_identity(dir) {
+            Ok(Some(cred)) => {
+                cfg.device = Some(cred.clone());
+                tracing::info!(device_id = %cred.device_id, "已加载设备身份");
+            }
+            Ok(None) => tracing::warn!(path = %dir.join(mediaservo_host::identity::IDENTITY_FILE).display(), "设备身份缺失 — 远端连接走 PSK 认证（G2 起需设备凭证）"),
+            Err(e) => tracing::warn!("{e} — 远端连接走 PSK 认证"),
+        }
+    } else {
+        tracing::warn!("未提供 --config（实例目录不可推导）— 设备身份未加载，远端连接走 PSK 认证");
+    }
     // E1 拓扑监控: host.toml 期望态（缺省空 → 仅固定进程期望 + 告警）
     let host_toml = match &config_path {
         Some(p) => match std::fs::read_to_string(p) {
@@ -103,10 +121,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // E4: 配置版本（成功应用后 = 最近 ConfigPush.version；StatusReport 关联）
     // F1: 启动时从 etc/host.toml.bak-<version> 备份恢复——agent 被 oxfile watch
     // 重启后版本不归零（磁盘上已应用版本与上报关联契约）。
-    let config_dir = config_path.as_deref().map(PathBuf::from).and_then(|p| {
-        // --config <dir>/etc/host.toml → <dir>（oxfile/备份路径基准）
-        p.parent().and_then(|etc| etc.parent().map(Path::to_path_buf))
-    });
     let config_version = Arc::new(AtomicU64::new(
         config_dir
             .as_deref()

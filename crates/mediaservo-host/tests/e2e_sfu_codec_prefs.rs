@@ -125,6 +125,8 @@ async fn negotiate_with_prefs(
     assert!(ack.to_text().unwrap().contains("authenticated"));
 
     let join = serde_json::to_string(&SignalingMessage::RoomJoin {
+        device_id: None,
+        device_secret: None,
         room_id: format!("codec-prefs-room-{tag}").into(),
         peer_role: PeerRole::Host,
         stream_id: None,
