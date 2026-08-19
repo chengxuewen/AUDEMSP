@@ -276,16 +276,16 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 - **Files**: `crates/mediaservo-host/src/bin/host-recorder.rs`：订阅 camera/* → deck Recorder（复用——deck 已实证 FrameBus→Recorder 闭环）
 - **测试**: 闭环 e2e（capturer → FrameBus → recorder 落盘 → ffprobe 验证 h264/moov）
 
-### Task C5: 崩溃重启故障注入 e2e（Momus MEDIUM-3——架构核心价值验证）
-- **Files**: `crates/mediaservo-host/tests/crash_recovery.rs`
-- **测试**: 杀 capturer 进程 → OxMgr 拉起（restart_policy=always）→ **同 topic 重发布成功**（max_publishers(1) + iceoryx2 残留 service 不阻塞——若失败需生产级 SHM 残留清理机制，不能靠人工 rm，C25）→ 订阅端（streamer/recorder）恢复收帧 + monitor 无持续告警
-- **验证**: `cargo test -p mediaservo-host --test crash_recovery` + 手动冒烟
-
 ### Task C4: e2e 适配
 - **Files**: `scripts/`（host 9/9 E2E 脚本：`host start` 起多进程对替代单进程 host）
 - **验证**: 全量回归（e2e_sfu 4/4 + codec_prefs 6/6 + 新多进程闭环）
 
 ---
+
+### Task C5: 崩溃重启故障注入 e2e（Momus MEDIUM-3——架构核心价值验证）
+- **Files**: `crates/mediaservo-host/tests/crash_recovery.rs`
+- **测试**: 杀 capturer 进程 → OxMgr 拉起（restart_policy=always）→ **同 topic 重发布成功**（max_publishers(1) + iceoryx2 残留 service 不阻塞——若失败需生产级 SHM 残留清理机制，不能靠人工 rm，C25）→ 订阅端（streamer/recorder）恢复收帧 + monitor 无持续告警
+- **验证**: `cargo test -p mediaservo-host --test crash_recovery` + 手动冒烟
 
 ## Phase D: 信令总线（阶段级任务清单）
 
