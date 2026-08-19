@@ -106,3 +106,5 @@ bindings/python/mediaservo/examples/recorded.mp4/bindings/python/mediaservo/medi
 # host multi-process runtime artifacts (host init/start at repo root)
 /etc/
 /run/
+/recordings/
+/identity.json
