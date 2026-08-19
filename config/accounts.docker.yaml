@@ -1,0 +1,22 @@
+# G3 舱端账号注册表 — 操作员账号（D-H11 双类身份之操作员侧）。
+# 存储决策同 devices.yaml: 仅单向哈希 sha256(username + ":" + password)，
+# username 充当盐（与 G2 设备一致）; 未知用户与错误密码 wire 响应逐字一致（防枚举）。
+# 配发流程:
+#   1. 生成哈希: echo -n "carol:s3cret" | sha256sum  → 64 hex
+#   2. 填入 password_hash: "sha256:<64 hex>"
+#   3. role: viewer|operator|admin|dispatcher（未知角色 → 账号不可用）
+#   4. vehicles: 车×舱白名单 device_id（viewer/operator 生效; admin/dispatcher 任意车可省略）
+#   5. 重启 server（`./mediaservo.sh restart server`）— 注册表启动时加载
+# 登录: POST /api/auth/login {username, password} → JWT {sub, role, vehicles, iat, exp}
+#       （HS256, 与 admin_jwt_secret 同 secret; 12h 会话）
+# 急停: operator/admin 可发（强审计: 谁/何时/哪个车/什么命令）; viewer/dispatcher 无。
+# 示例（占位 — 请删除或替换）:
+# accounts:
+#   carol:
+#     password_hash: "sha256:<64 hex>"
+#     role: operator
+#     vehicles: ["ms-0a1b2c3d4e5f"]
+#   admin:
+#     password_hash: "sha256:<64 hex>"
+#     role: admin
+accounts: {}

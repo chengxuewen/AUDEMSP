@@ -1,5 +1,6 @@
 use crate::audit::{self, AuditEvent};
 use crate::devices::{self, DeviceRegistry};
+use crate::roles::{AccountIdentity, CockpitRole, SessionIdentity};
 use crate::status::StatusRegistry;
 use crate::room::RoomManager;
 use crate::health::{HealthChecker, HealthStatus};
@@ -14,7 +15,7 @@ use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use mediaservo_common::auth::{JwtAuth, SimplePskAuth};
 use mediaservo_common::error::CoreError;
-use mediaservo_common::protocol::SignalingMessage;
+use mediaservo_common::protocol::{PeerRole, SignalingMessage};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::broadcast;
@@ -53,6 +54,11 @@ pub struct SignalingServer {
     pub device_registry: Arc<DeviceRegistry>,
     /// G2 连接级身份绑定（D-H11）: peer_id → device_id（设备认证成功时建立，断开时清除）。
     device_bindings: Arc<dashmap::DashMap<String, String>>,
+    /// G3 房间主车登记（room_id → device_id; device 会话 join 成功时记录，
+    /// 房间空时清除）— 舱端 RoomJoin/急停按主车做租户隔离 + 白名单授权。
+    room_owners: Arc<dashmap::DashMap<String, String>>,
+    /// G3 producer → 所属车 device_id（produce 时按会话设备绑定记录; consume 授权纵深防御）。
+    producer_owners: Arc<dashmap::DashMap<String, String>>,
 }
 
 impl SignalingServer {
@@ -71,6 +77,8 @@ impl SignalingServer {
             status_registry: Arc::new(StatusRegistry::default()),
             device_registry: Arc::new(DeviceRegistry::empty()),
             device_bindings: Arc::new(dashmap::DashMap::new()),
+            room_owners: Arc::new(dashmap::DashMap::new()),
+            producer_owners: Arc::new(dashmap::DashMap::new()),
         }
     }
 
@@ -88,6 +96,8 @@ impl SignalingServer {
             status_registry: Arc::new(StatusRegistry::default()),
             device_registry: Arc::new(DeviceRegistry::empty()),
             device_bindings: Arc::new(dashmap::DashMap::new()),
+            room_owners: Arc::new(dashmap::DashMap::new()),
+            producer_owners: Arc::new(dashmap::DashMap::new()),
         }
     }
 
@@ -100,6 +110,16 @@ impl SignalingServer {
     /// 当前设备绑定数（运维/测试用 — join 失败零残留的断言依据）。
     pub fn device_binding_count(&self) -> usize {
         self.device_bindings.len()
+    }
+
+    /// G3 房间主车（device_id）; 无主 = 车未上线或非车端房间。
+    pub fn room_owner_of(&self, room_id: &str) -> Option<String> {
+        self.room_owners.get(room_id).map(|v| v.clone())
+    }
+
+    /// G3 已登记主车的房间数（运维/测试用）。
+    pub fn room_owner_count(&self) -> usize {
+        self.room_owners.len()
     }
 
     /// Subscribe to the shutdown signal — cloned receivers are given to each
@@ -122,7 +142,7 @@ impl SignalingServer {
         self.active_connections.load(Ordering::Relaxed)
     }
 
-    fn get_or_create_channel(&self, room_id: &str) -> broadcast::Sender<String> {
+    pub(crate) fn get_or_create_channel(&self, room_id: &str) -> broadcast::Sender<String> {
         self.channels
             .entry(room_id.to_string())
             .or_insert_with(RoomChannel::new)
@@ -241,18 +261,69 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
     let mut authenticated = psk_auth.is_none();
     tracing::info!("Auth: psk_set={}, authenticated={}", psk.is_some(), authenticated);
 
+    // G3 会话身份: JWT 角色 claim 解析结果（RoomJoin 设备认证成功后覆盖为 Device）。
+    let mut account_identity: Option<AccountIdentity> = None;
+
     // ── JWT auth (tried first; PSK is fallback) ───────────────────────
     if !authenticated {
         if let (Some(jwt_auth), Some(token)) = (&server.jwt_auth, &jwt_token) {
             match jwt_auth.verify(token) {
                 Ok(claims) => {
-                    peer_id = claims.sub.clone();
-                    authenticated = true;
-                    tracing::info!("JWT authenticated: peer={}", peer_id);
-                    audit::log_event(AuditEvent::AuthSuccess {
-                        peer_id: peer_id.clone(),
-                        device_id: None,
-                    });
+                    // G3 角色解析（D-H11）: 合法 role → 账号身份（舱端）; 无 role = legacy
+                    // token（保持原行为）; 未知 role → 拒绝连接（4011）。
+                    match claims.role.as_deref() {
+                        Some(role_str) if CockpitRole::parse(role_str).is_none() => {
+                            let reason = format!("token role {role_str:?} not recognized");
+                            tracing::warn!("JWT auth rejected: {reason}");
+                            audit::log_event(AuditEvent::AuthFailure {
+                                peer_id: peer_id.clone(),
+                                reason: reason.clone(),
+                            });
+                            let error = SignalingMessage::Error {
+                                code: 4011,
+                                message: reason,
+                            };
+                            let _ = ws_sender
+                                .lock()
+                                .await
+                                .send(Message::Text(send_msg(&error).unwrap()))
+                                .await;
+                            return;
+                        }
+                        Some(role_str) => {
+                            // 账号会话: peer_id 用 username + 短随机后缀（同账号多舱端并发不冲突）。
+                            let role = CockpitRole::parse(role_str).expect("checked above");
+                            account_identity = Some(AccountIdentity {
+                                username: claims.sub.clone(),
+                                role,
+                                vehicles: claims.vehicles.clone().unwrap_or_default(),
+                            });
+                            peer_id = format!(
+                                "{}-{}",
+                                claims.sub,
+                                &uuid::Uuid::new_v4().to_string()[..8]
+                            );
+                            authenticated = true;
+                            tracing::info!(
+                                "JWT account authenticated: user={} role={}",
+                                claims.sub,
+                                role_str
+                            );
+                            audit::log_event(AuditEvent::AuthSuccess {
+                                peer_id: peer_id.clone(),
+                                device_id: None,
+                            });
+                        }
+                        None => {
+                            peer_id = claims.sub.clone();
+                            authenticated = true;
+                            tracing::info!("JWT authenticated: peer={}", peer_id);
+                            audit::log_event(AuditEvent::AuthSuccess {
+                                peer_id: peer_id.clone(),
+                                device_id: None,
+                            });
+                        }
+                    }
                 }
                 Err(e) => {
                     tracing::warn!("JWT verification failed: {}, falling back to PSK", e);
@@ -326,7 +397,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
     tracing::info!("Auth ack sent, entering RoomJoin phase");
 
     // Phase 2: RoomJoin
-    let (room_id, role, device_id) = loop {
+    let (room_id, role, device_id, session_identity) = loop {
         // Check for shutdown during RoomJoin
         if *shutdown_rx.borrow() {
             tracing::info!("Shutdown requested during RoomJoin for peer {}", peer_id);
@@ -353,7 +424,11 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                         device_secret.as_deref(),
                     ) {
                         None => {
-                            break (room_id, peer_role, None);
+                            // G3: 无设备凭证 → PSK 路径; 身份 = 账号（JWT）或 legacy。
+                            let identity = account_identity
+                                .map(SessionIdentity::Account)
+                                .unwrap_or(SessionIdentity::Legacy);
+                            break (room_id, peer_role, None, identity);
                         }
                         Some(Err(auth_err)) => {
                             // review #1: wire 消息统一（防枚举），但日志/审计保留内部区分
@@ -394,7 +469,12 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                                 peer_id,
                                 device
                             );
-                            break (room_id, peer_role, Some(device));
+                            break (
+                                room_id,
+                                peer_role,
+                                Some(device.clone()),
+                                SessionIdentity::Device(device),
+                            );
                         }
                     }
                 }
@@ -403,6 +483,52 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
             _ => continue,
         }
     };
+
+    // ── G3 RoomJoin 门（D-H11 矩阵 + 租户隔离）──────────────────────────
+    // ① 账号会话禁止以 Host 角色入房（Host = 车端位，防账号抢占房间使车无法上线）。
+    if role == PeerRole::Host
+        && let Some(reason) = session_identity.host_join_denied()
+    {
+        let detail = format!("{reason} (peer={peer_id})");
+        tracing::warn!("RoomJoin denied: {detail}");
+        audit::log_event(AuditEvent::AuthorizationDenied {
+            action: "room_join".into(),
+            peer_id: peer_id.clone(),
+            detail: detail.clone(),
+        });
+        let error = SignalingMessage::Error {
+            code: 4031,
+            message: detail,
+        };
+        let _ = ws_sender
+            .lock()
+            .await
+            .send(Message::Text(send_msg(&error).unwrap()))
+            .await;
+        return;
+    }
+    // ② 按房间主车做矩阵 + 白名单校验（车 A 不可见车 B; 账号仅授权车）。
+    if let Some(owner) = server.room_owner_of(&room_id) {
+        if let Some(reason) = session_identity.join_vehicle_room(Some(&owner)) {
+            let detail = format!("{reason} (peer={peer_id}, room={room_id})");
+            tracing::warn!("RoomJoin denied: {detail}");
+            audit::log_event(AuditEvent::AuthorizationDenied {
+                action: "room_join".into(),
+                peer_id: peer_id.clone(),
+                detail: detail.clone(),
+            });
+            let error = SignalingMessage::Error {
+                code: 4031,
+                message: detail,
+            };
+            let _ = ws_sender
+                .lock()
+                .await
+                .send(Message::Text(send_msg(&error).unwrap()))
+                .await;
+            return;
+        }
+    }
 
     // Join the room
     match server.room_manager.join_room(&room_id, &peer_id, &role) {
@@ -414,6 +540,10 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                 server
                     .device_bindings
                     .insert(peer_id.clone(), device.clone());
+                // G3: 车端 join 成功即登记房间主车（租户隔离/授权的裁决依据）。
+                server
+                    .room_owners
+                    .insert(room_id.clone(), device.clone());
             }
             audit::log_event(AuditEvent::PeerJoin {
                 peer_id: peer_id.clone(),
@@ -476,8 +606,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
     let relay_peer_id = peer_id.clone();
     let relay_room = room_id.clone();
 
-    // Clone ws_sender for SFU direct responses and relay
-    #[cfg(feature = "sfu-mediasoup")]
+    // Clone ws_sender for direct responses (SFU + G3 授权拒绝回复) and relay
     let direct_sender = Arc::clone(&ws_sender);
     let relay_sender = ws_sender;
 
@@ -569,6 +698,78 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     }
                 }
 
+                // ── G3 急停命令（强审计转发）: operator/admin + 该车访问权 → 审计 + 转发车端 ──
+                if let Ok(sig) = serde_json::from_str::<SignalingMessage>(&text_str) {
+                    if let SignalingMessage::EmergencyCommand { command, .. } = &sig {
+                        let owner = server.room_owner_of(&relay_room);
+                        match session_identity.can_emergency(owner.as_deref()) {
+                            Ok(()) => {
+                                // 强审计: 谁/何时(tracing 时间戳)/哪个车/什么命令
+                                let (username, role) = match &session_identity {
+                                    SessionIdentity::Account(a) => (
+                                        a.username.clone(),
+                                        a.role.as_str().to_string(),
+                                    ),
+                                    _ => (relay_peer_id.clone(), "legacy".into()),
+                                };
+                                audit::log_event(AuditEvent::EmergencyCommand {
+                                    username,
+                                    role,
+                                    vehicle: owner.clone().unwrap_or_default(),
+                                    command: command.clone(),
+                                });
+                                tracing::info!(
+                                    "G3: emergency command relayed to room {relay_room}"
+                                );
+                                let _ = tx.send(text_str.clone());
+                            }
+                            Err(reason) => {
+                                let detail = format!(
+                                    "{reason} (peer={relay_peer_id}, room={relay_room})"
+                                );
+                                tracing::warn!("Emergency denied: {detail}");
+                                audit::log_event(AuditEvent::AuthorizationDenied {
+                                    action: "emergency".into(),
+                                    peer_id: relay_peer_id.clone(),
+                                    detail: detail.clone(),
+                                });
+                                let error = SignalingMessage::Error {
+                                    code: 4031,
+                                    message: detail,
+                                };
+                                let _ = direct_sender
+                                    .lock()
+                                    .await
+                                    .send(Message::Text(send_msg(&error).unwrap()))
+                                    .await;
+                            }
+                        }
+                        continue;
+                    }
+                    // ── G3 ConfigPush: server 单向下发（admin REST）; 客户端入站一律拒绝 ──
+                    if let SignalingMessage::ConfigPush { .. } = &sig {
+                        let detail = format!(
+                            "config push is server-initiated only (peer={relay_peer_id})"
+                        );
+                        tracing::warn!("ConfigPush inbound rejected: {detail}");
+                        audit::log_event(AuditEvent::AuthorizationDenied {
+                            action: "config_push".into(),
+                            peer_id: relay_peer_id.clone(),
+                            detail,
+                        });
+                        let error = SignalingMessage::Error {
+                            code: 4031,
+                            message: "config push is server-initiated only".into(),
+                        };
+                        let _ = direct_sender
+                            .lock()
+                            .await
+                            .send(Message::Text(send_msg(&error).unwrap()))
+                            .await;
+                        continue;
+                    }
+                }
+
                 // Check for SFU transport messages (server-side handling)
                 #[cfg(feature = "sfu-mediasoup")]
                 {
@@ -577,9 +778,10 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                         tracing::debug!("SFU check: parsed OK, calling handle_sfu_message");
                         if let Some(response) = handle_sfu_message(
                             &sig_msg,
-                            &server.sfu_manager,
+                            &server,
                             &tx,
                             &relay_peer_id,
+                            &session_identity,
                         )
                         .await
                         {
@@ -739,6 +941,8 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
     // E3: 空房无状态可报 — 清理状态注册表，避免陈旧数据悬挂
     if room_removed {
         server.status_registry.remove(&relay_room);
+        // G3: 房间空 = 主车登记失效（车端离开且无消费方）。
+        server.room_owners.remove(&relay_room);
     }
 
     let leave_msg = SignalingMessage::RoomLeave {
@@ -760,10 +964,12 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
 #[cfg(feature = "sfu-mediasoup")]
     pub(crate) async fn handle_sfu_message(
     msg: &SignalingMessage,
-    sfu: &crate::sfu::SfuManager,
+    server: &SignalingServer,
     broadcast_tx: &tokio::sync::broadcast::Sender<String>,
     peer_id: &str,
+    identity: &SessionIdentity,
 ) -> Option<SignalingMessage> {
+    let sfu = &server.sfu_manager;
     match msg {
         SignalingMessage::CreateWebRtcTransport {
             room_id,
@@ -852,11 +1058,31 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     message: "Produce requires send transport".into(),
                 });
             }
+            // G3 门: 车端自动允许（自己的流）; 账号禁止 produce（舱端只消费）; legacy 放行。
+            if let Err(reason) = identity.can_produce() {
+                let detail = format!("{reason} (peer={peer_id}, room={room_id})");
+                tracing::warn!("Produce denied: {detail}");
+                audit::log_event(AuditEvent::AuthorizationDenied {
+                    action: "produce".into(),
+                    peer_id: peer_id.to_string(),
+                    detail: detail.clone(),
+                });
+                return Some(SignalingMessage::Error {
+                    code: 4031,
+                    message: detail,
+                });
+            }
             match sfu
                 .create_producer(room_id, sfu_peer_id, kind, rtp_parameters.clone())
                 .await
             {
                 Ok(result) => {
+                    // G3: 车端 producer 登记所属设备（consume 授权纵深防御）。
+                    if let Some(device) = server.device_id_of(peer_id) {
+                        server
+                            .producer_owners
+                            .insert(result.producer_id.clone(), device);
+                    }
                     // Broadcast NewProducer to all peers in room
                     let broadcast = SignalingMessage::NewProducer {
                         room_id: room_id.clone(),
@@ -892,6 +1118,22 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
             // PIT-65: 用消息 peer_id (每网页唯一 sfuPeerId), 非 session relay_peer_id —
             // 否则多网页共享 admin → recv_transport 互相覆盖 → consumer 挂错 transport → 黑屏
             let sfu_peer_id = msg_peer_id.as_str();
+            // G3 门: 账号只能 consume 有权车的 producer（RoomJoin 已按房间主车过滤 —
+            // 此处对具体 producer 纵深防御，防房间内混入他车流）。
+            let producer_owner = server.producer_owners.get(producer_id).map(|v| v.clone());
+            if let Err(reason) = identity.can_consume(producer_owner.as_deref()) {
+                let detail = format!("{reason} (peer={peer_id}, room={room_id})");
+                tracing::warn!("Consume denied: {detail}");
+                audit::log_event(AuditEvent::AuthorizationDenied {
+                    action: "consume".into(),
+                    peer_id: peer_id.to_string(),
+                    detail: detail.clone(),
+                });
+                return Some(SignalingMessage::Error {
+                    code: 4031,
+                    message: detail,
+                });
+            }
             match sfu
                 .create_consumer(room_id, sfu_peer_id, producer_id, rtp_capabilities.clone())
                 .await

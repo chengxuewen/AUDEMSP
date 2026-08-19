@@ -26,6 +26,7 @@ services:
     volumes:
       - ./config/server.docker.yaml:/opt/mediaservo/etc/server.yaml:ro
       - ./config/devices.docker.yaml:/opt/mediaservo/etc/devices.yaml:ro
+      - ./config/accounts.docker.yaml:/opt/mediaservo/etc/accounts.yaml:ro
 
   proxy:
     image: caddy:2

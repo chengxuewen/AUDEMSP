@@ -2,6 +2,7 @@ use futures_util::{SinkExt, StreamExt};
 use mediaservo_common::protocol::{PeerRole, SignalingMessage};
 use mediaservo_server::signaling::{signaling_router, SignalingServer};
 use tokio::net::TcpListener;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as WsMsg;
 
 const PSK: &str = "test-psk";
@@ -657,4 +658,388 @@ async fn g2_join_failure_leaves_no_binding() {
         "join 失败不得残留绑定（review #2）"
     );
     drop(ws1);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// G3: 舱端分级授权（D-H11 矩阵 + 租户隔离 + 急停强审计 + 配置单向）
+// ═══════════════════════════════════════════════════════════════════════════
+
+const JWT_SECRET: &str = "g3-test-jwt-secret-32-bytes-min!!";
+
+fn account_token(username: &str, role: &str, vehicles: &[&str]) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as usize;
+    let claims = mediaservo_common::auth::JwtClaims {
+        sub: username.into(),
+        iat: now,
+        exp: now + 3600,
+        role: Some(role.into()),
+        vehicles: Some(vehicles.iter().map(|s| s.to_string()).collect()),
+    };
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret(JWT_SECRET.as_bytes()),
+    )
+    .unwrap()
+}
+
+/// 双车注册表（ms-car1 / ms-car2）— 租户隔离测试用。
+fn two_devices_yaml() -> String {
+    let h1 = mediaservo_server::devices::hash_secret("ms-car1", "car1-secret");
+    let h2 = mediaservo_server::devices::hash_secret("ms-car2", "car2-secret");
+    format!("  ms-car1:\n    secret_hash: \"{h1}\"\n  ms-car2:\n    secret_hash: \"{h2}\"\n")
+}
+
+/// G3 测试 server: JWT 认证（JWT_SECRET）+ 设备注册表。
+async fn spawn_server_g3(devices_yaml: &str) -> (SignalingServer, String) {
+    unsafe { std::env::set_var("MEDIASERVO_PSK", PSK) };
+    let registry = mediaservo_server::devices::DeviceRegistry::from_yaml(&format!(
+        "devices:\n{devices_yaml}\n"
+    ))
+    .unwrap();
+    #[cfg(feature = "sfu-mediasoup")]
+    let mut server = {
+        let sfu = std::sync::Arc::new(
+            mediaservo_server::sfu::SfuManager::new_with_port(
+                mediaservo_server::sfu::random_udp_port(),
+            )
+            .await
+            .unwrap(),
+        );
+        SignalingServer::new(
+            sfu,
+            65536,
+            Some(mediaservo_common::auth::JwtAuth::new(JWT_SECRET)),
+        )
+    };
+    #[cfg(not(feature = "sfu-mediasoup"))]
+    let mut server = SignalingServer::new(
+        65536,
+        Some(mediaservo_common::auth::JwtAuth::new(JWT_SECRET)),
+    );
+    server.device_registry = std::sync::Arc::new(registry);
+    let app = signaling_router(server.clone());
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    (server, format!("ws://{}/ws", addr))
+}
+
+fn device_join_room(room: &str, device_id: &str, secret: &str) -> SignalingMessage {
+    SignalingMessage::RoomJoin {
+        room_id: room.into(),
+        peer_role: PeerRole::Host,
+        stream_id: None,
+        device_id: Some(device_id.into()),
+        device_secret: Some(secret.into()),
+    }
+}
+
+fn legacy_join(room: &str, role: PeerRole) -> SignalingMessage {
+    SignalingMessage::RoomJoin {
+        room_id: room.into(),
+        peer_role: role,
+        stream_id: None,
+        device_id: None,
+        device_secret: None,
+    }
+}
+
+/// 账号 JWT 认证 + RoomJoin（sec-websocket-protocol 传 token — 与生产浏览器一致）。
+/// 返回 (ws, 响应文本)；调用方持有 ws 保持会话存活。
+async fn account_join(
+    ws_url: &str,
+    token: &str,
+    room: &str,
+    role: PeerRole,
+) -> (KeepAliveWs, String) {
+    let mut req = ws_url
+        .into_client_request()
+        .expect("valid ws url");
+    req.headers_mut().insert(
+        "Sec-WebSocket-Protocol",
+        token.parse().expect("token is a valid header value"),
+    );
+    let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+    let ack = ws.next().await.unwrap().unwrap();
+    assert!(
+        ack.to_text().unwrap().contains("authenticated"),
+        "auth ack: {}",
+        ack.to_text().unwrap()
+    );
+    let join = SignalingMessage::RoomJoin {
+        room_id: room.into(),
+        peer_role: role,
+        stream_id: None,
+        device_id: None,
+        device_secret: None,
+    };
+    ws.send(WsMsg::Text(serde_json::to_string(&join).unwrap().into()))
+        .await
+        .unwrap();
+    let resp = ws.next().await.unwrap().unwrap();
+    (ws, resp.to_text().unwrap().to_string())
+}
+
+fn has_denial(audit: &[mediaservo_server::audit::AuditEvent], action: &str) -> bool {
+    audit.iter().any(|e| {
+        matches!(
+            e,
+            mediaservo_server::audit::AuditEvent::AuthorizationDenied {
+                action: a,
+                ..
+            } if a == action
+        )
+    })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g3_room_join_matrix_and_tenant_isolation() {
+    let (_server, ws_url) = spawn_server_g3(&two_devices_yaml()).await;
+    mediaservo_server::audit::clear_recent();
+
+    // 车 A / 车 B 上线（各自房间登记主车）。
+    let (_veh_a, resp) =
+        connect_join_keepalive(&ws_url, &device_join_room("car1-room", "ms-car1", "car1-secret"))
+            .await;
+    assert!(resp.contains("room_joined"), "车 A 上线: {resp}");
+    let (_veh_b, resp) =
+        connect_join_keepalive(&ws_url, &device_join_room("car2-room", "ms-car2", "car2-secret"))
+            .await;
+    assert!(resp.contains("room_joined"), "车 B 上线: {resp}");
+
+    // operator carol（白名单 [ms-car1]）: 授权车放行 ✅
+    let (mut ws, resp) = account_join(
+        &ws_url,
+        &account_token("carol", "operator", &["ms-car1"]),
+        "car1-room",
+        PeerRole::Consumer,
+    )
+    .await;
+    assert!(resp.contains("room_joined"), "operator 授权车必须放行: {resp}");
+    drop(ws);
+
+    // 租户隔离: carol → 车 B 房间 ❌ 4031
+    let (_ws, resp) = account_join(
+        &ws_url,
+        &account_token("carol", "operator", &["ms-car1"]),
+        "car2-room",
+        PeerRole::Consumer,
+    )
+    .await;
+    assert!(
+        resp.contains(r#""code":4031"#),
+        "operator 非授权车必须拒绝: {resp}"
+    );
+
+    // viewer 空白名单: 授权车也看不了 ❌
+    let (_ws, resp) = account_join(
+        &ws_url,
+        &account_token("vic", "viewer", &[]),
+        "car1-room",
+        PeerRole::Consumer,
+    )
+    .await;
+    assert!(resp.contains(r#""code":4031"#), "viewer 空白名单必须拒绝: {resp}");
+
+    // dispatcher: 任意车 ✅（拉流+状态）
+    let (mut ws, resp) = account_join(
+        &ws_url,
+        &account_token("d1", "dispatcher", &[]),
+        "car2-room",
+        PeerRole::Consumer,
+    )
+    .await;
+    assert!(resp.contains("room_joined"), "dispatcher 任意车必须放行: {resp}");
+    drop(ws);
+
+    // 车 A 不可见车 B: ms-car2 加入 car1-room（车 B 主车房间）❌
+    let (_ws, resp) =
+        connect_join_keepalive(&ws_url, &device_join_room("car1-room", "ms-car2", "car2-secret"))
+            .await;
+    assert!(
+        resp.contains(r#""code":4031"#),
+        "车 A 不可见车 B（租户隔离）: {resp}"
+    );
+
+    // legacy PSK 不受矩阵限制（additive 回归: 未配置账号的部署行为不变）。
+    let resp = psk_join_and_recv(&ws_url, &legacy_join("car1-room", PeerRole::Consumer)).await;
+    assert!(resp.contains("room_joined"), "legacy PSK 路径回归: {resp}");
+
+    // C15: 全部 denial 已审计。
+    let audit = mediaservo_server::audit::recent();
+    assert!(
+        has_denial(&audit, "room_join"),
+        "room_join denials 必须审计: {audit:?}"
+    );
+    assert!(
+        has_denial(&audit, "room_join"),
+        "tenant-isolation denials 必须审计"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g3_emergency_audit_and_matrix() {
+    let (_server, ws_url) = spawn_server_g3(&two_devices_yaml()).await;
+    let (_veh_a, _) =
+        connect_join_keepalive(&ws_url, &device_join_room("car1-room", "ms-car1", "car1-secret"))
+            .await;
+    let (_veh_b, _) =
+        connect_join_keepalive(&ws_url, &device_join_room("car2-room", "ms-car2", "car2-secret"))
+            .await;
+
+    // operator carol 授权车急停 → 转发 + 强审计（who/when/vehicle/command）。
+    let (mut ws, resp) = account_join(
+        &ws_url,
+        &account_token("carol", "operator", &["ms-car1"]),
+        "car1-room",
+        PeerRole::Consumer,
+    )
+    .await;
+    assert!(resp.contains("room_joined"));
+    mediaservo_server::audit::clear_recent();
+    let emergency = SignalingMessage::EmergencyCommand {
+        room_id: "car1-room".into(),
+        command: "e-stop".into(),
+    };
+    ws.send(WsMsg::Text(serde_json::to_string(&emergency).unwrap().into()))
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let events = mediaservo_server::audit::recent();
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            mediaservo_server::audit::AuditEvent::EmergencyCommand {
+                username,
+                role,
+                vehicle,
+                command
+            } if username == "carol"
+                && role == "operator"
+                && vehicle == "ms-car1"
+                && command == "e-stop"
+        )),
+        "急停强审计必须含 谁/何时/哪个车/什么命令: {events:?}"
+    );
+    drop(ws);
+
+    // dispatcher 可拉流任意车但急停被拒（矩阵: dispatcher 无急停）❌ 4031 + 审计。
+    let (mut ws, resp) = account_join(
+        &ws_url,
+        &account_token("d1", "dispatcher", &[]),
+        "car2-room",
+        PeerRole::Consumer,
+    )
+    .await;
+    assert!(resp.contains("room_joined"));
+    mediaservo_server::audit::clear_recent();
+    ws.send(WsMsg::Text(serde_json::to_string(&emergency).unwrap().into()))
+        .await
+        .unwrap();
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(3), ws.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(
+        resp.to_text().unwrap().contains(r#""code":4031"#),
+        "dispatcher 急停必须拒绝: {}",
+        resp.to_text().unwrap()
+    );
+    assert!(
+        has_denial(&mediaservo_server::audit::recent(), "emergency"),
+        "急停拒绝必须审计"
+    );
+    drop(ws);
+
+    // viewer 可拉流但急停被拒 ❌。
+    let (mut ws, resp) = account_join(
+        &ws_url,
+        &account_token("vic", "viewer", &["ms-car1"]),
+        "car1-room",
+        PeerRole::Consumer,
+    )
+    .await;
+    assert!(resp.contains("room_joined"));
+    mediaservo_server::audit::clear_recent();
+    ws.send(WsMsg::Text(serde_json::to_string(&emergency).unwrap().into()))
+        .await
+        .unwrap();
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(3), ws.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(
+        resp.to_text().unwrap().contains(r#""code":4031"#),
+        "viewer 急停必须拒绝: {}",
+        resp.to_text().unwrap()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g3_config_push_inbound_rejected() {
+    let (_server, ws_url) = spawn_server_g3(&two_devices_yaml()).await;
+    let (mut veh_ws, resp) =
+        connect_join_keepalive(&ws_url, &device_join_room("car1-room", "ms-car1", "car1-secret"))
+            .await;
+    assert!(resp.contains("room_joined"));
+    mediaservo_server::audit::clear_recent();
+
+    // 客户端入站 ConfigPush（即使来自车端）→ 拒绝 + 审计（server 单向下发）。
+    let cfg = SignalingMessage::ConfigPush {
+        room_id: "car1-room".into(),
+        target: "self".into(),
+        config: "[[cameras]]\nid = \"cam0\"\n".into(),
+        version: 1,
+    };
+    veh_ws
+        .send(WsMsg::Text(serde_json::to_string(&cfg).unwrap().into()))
+        .await
+        .unwrap();
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(3), veh_ws.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(
+        resp.to_text().unwrap().contains(r#""code":4031"#),
+        "ConfigPush 入站必须拒绝: {}",
+        resp.to_text().unwrap()
+    );
+    assert!(
+        has_denial(&mediaservo_server::audit::recent(), "config_push"),
+        "ConfigPush 拒绝必须审计"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g3_jwt_unknown_role_rejected_at_handshake() {
+    let (_server, ws_url) = spawn_server_g3(&two_devices_yaml()).await;
+    let token = account_token("evil", "superuser", &[]);
+    let mut req = ws_url
+        .into_client_request()
+        .expect("valid ws url");
+    req.headers_mut().insert(
+        "Sec-WebSocket-Protocol",
+        token.parse().expect("token is a valid header value"),
+    );
+    let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(3), ws.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(
+        resp.to_text().unwrap().contains(r#""code":4011"#),
+        "未知角色必须在握手期拒绝: {}",
+        resp.to_text().unwrap()
+    );
 }
