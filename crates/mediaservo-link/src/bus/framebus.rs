@@ -170,11 +170,44 @@ impl FrameBus {
         // 后台线程：receive() → 解析 meta+payload → deliver latest-slot（流丢弃即退出）
         // PortFactory(service) 移入线程，使 subscriber 的借用在线程内有效
         std::thread::spawn(move || {
-            let _service = service;
+            // C5 崩溃恢复: iceoryx2 0.9.3 在发布端重启时能自动重建连接（实证：重启点
+            // seq 归零且后续帧连续）；但发布端列表只变一次/重启，若那次连接创建被
+            // degradation handler 吞掉（瞬态失败）则永不重试 → 订阅端永久 stale。
+            // 此处兜底：长于 REBUILD_IDLE 无帧 → 重建 subscriber（FrameStream 句柄不变，
+            // D241）；重建失败保留旧句柄，冷却后重试。
+            const REBUILD_IDLE: std::time::Duration = std::time::Duration::from_secs(5);
+            const REBUILD_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);
+            let mut subscriber = subscriber;
+            let mut last_frame = std::time::Instant::now();
+            let mut last_rebuild = std::time::Instant::now() - REBUILD_COOLDOWN;
+            // 重建成功返回 true。失败保留旧 subscriber（可能只是瞬态），冷却后重试。
+            let try_rebuild = |sub: &mut iceoryx2::port::subscriber::Subscriber<
+                ipc_threadsafe::Service,
+                [u8],
+                (),
+            >,
+                                      last_frame: &mut std::time::Instant,
+                                      last_rebuild: &mut std::time::Instant|
+             -> bool {
+                match service.subscriber_builder().buffer_size(1).create() {
+                    Ok(new_sub) => {
+                        *sub = new_sub;
+                        *last_rebuild = std::time::Instant::now();
+                        *last_frame = std::time::Instant::now();
+                        tracing::warn!(topic = %topic_for_thread.as_str(), "subscriber 重建完成（发布端重启/瞬态连接失败自愈）");
+                        true
+                    }
+                    Err(e) => {
+                        tracing::warn!(topic = %topic_for_thread.as_str(), "subscriber 重建失败，保留旧句柄冷却后重试: {e:?}");
+                        false
+                    }
+                }
+            };
             loop {
                 let Some(inner) = weak.upgrade() else { break };
                 match subscriber.receive() {
                     Ok(Some(sample)) => {
+                        last_frame = std::time::Instant::now();
                         let data: &[u8] = &*sample;
                         if data.len() >= FrameMeta::WIRE_LEN {
                             if let Ok(meta) = FrameMeta::decode(&data[..FrameMeta::WIRE_LEN]) {
@@ -184,10 +217,21 @@ impl FrameBus {
                             }
                         }
                     }
-                    Ok(None) => std::thread::sleep(std::time::Duration::from_millis(1)),
+                    Ok(None) => {
+                        // 发布端长时间无帧：连接可能已死但重建未触发（见上）→ 重建
+                        if last_frame.elapsed() > REBUILD_IDLE
+                            && last_rebuild.elapsed() > REBUILD_COOLDOWN
+                        {
+                            try_rebuild(&mut subscriber, &mut last_frame, &mut last_rebuild);
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
                     Err(e) => {
                         tracing::warn!(topic = %topic_for_thread.as_str(), "subscribe receive error: {e:?}");
-                        break;
+                        // 连接层错误：重建一次；失败则终止（旧行为，流停投递）
+                        if !try_rebuild(&mut subscriber, &mut last_frame, &mut last_rebuild) {
+                            break;
+                        }
                     }
                 }
             }
