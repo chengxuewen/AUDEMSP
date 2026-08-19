@@ -1,15 +1,15 @@
 //! host CLI: 业务视图运维入口（Phase A）。
 //!
 //! 子命令（`std::env::args` 手工解析，Phase A 不引入 clap）：
-//! - `host init <dir>`        — 生成 `etc/host.toml` 模板 + `etc/link/signing.pem`
+//! - `host init [<dir>]`        — 生成 `etc/host.toml` 模板 + `etc/link/signing.pem`
 //!   （Ed25519 PKCS#8 keypair，0600）+ `etc/link/ros_bridge.yaml`（B3：ROS 节点
 //!   配置单一来源——topic 清单 + 令牌路径，从 host.toml 相机/流清单导出）
-//! - `host start --dir <dir>` — 读 etc/host.toml → translate → 写 run/oxfile.toml
+//! - `host start [<dir>]` — 读 etc/host.toml → translate → 写 run/oxfile.toml
 //!   → `oxmgr apply run/oxfile.toml` 拉起全部 host 进程
-//! - `host stop --dir <dir>`  — `oxmgr stop run/oxfile.toml` + `oxmgr delete run/oxfile.toml`
+//! - `host stop [<dir>]`  — `oxmgr stop run/oxfile.toml` + `oxmgr delete run/oxfile.toml`
 //!   （config 目标解析 oxfile 内全部 app，幂等；动词见 OxMgr docs/CLI.md）
-//! - `host status --dir <dir>`— `oxmgr list --json` 过滤 `namespace == "host"` 输出状态表
-//! - `host doctor --dir <dir>`— 环境诊断（oxmgr 可用 / host.toml 解析 / oxfile 生成），
+//! - `host status [<dir>]`— `oxmgr list --json` 过滤 `namespace == "host"` 输出状态表
+//! - `host doctor [<dir>]`— 环境诊断（oxmgr 可用 / host.toml 解析 / oxfile 生成），
 //!   退出码 = 失败检查数
 //! - `host token issue ...`  — 用 etc/link/signing.pem 签发能力令牌（C4 最小签发，
 //!   G1 全量签发前的 e2e 需用）
@@ -51,7 +51,7 @@ enabled = false
 enabled = false
 "#;
 
-const USAGE: &str = "用法: host <init|start|stop|status|doctor|token|version> [--dir <dir>]";
+const USAGE: &str = "用法: host <init|start|stop|status|doctor|token|version> [<dir>]（目录为位置参数，默认 .host/）";
 
 fn main() {
     let mut args = std::env::args();
@@ -80,24 +80,34 @@ fn main() {
     std::process::exit(code);
 }
 
-/// 从子命令参数解析 `--dir <dir>`；缺省 `.`。
-fn parse_dir(args: &mut impl Iterator<Item = String>) -> Option<PathBuf> {
-    let mut dir = PathBuf::from(".");
-    while let Some(arg) = args.next() {
-        if arg == "--dir" {
-            dir = PathBuf::from(args.next()?);
-        } else {
-            eprintln!("未知参数: {arg}");
-            return None;
-        }
+/// 解析子命令的实例目录参数（**位置参数**，缺省 `.host/`）。
+///
+/// 守卫: 目录是位置参数而非 flag——任何以 `--` 开头的参数直接拒绝。
+/// （`host init --dir` 事故: "--dir" 曾被当作路径创建目录；根因是 flag/位置
+/// 参数不一致，目录统一位置参数后 -- 前缀必为用户笔误。）
+fn parse_dir(args: &mut impl Iterator<Item = String>) -> Result<PathBuf, String> {
+    let Some(arg) = args.next() else {
+        return Ok(PathBuf::from(".host"));
+    };
+    if arg.starts_with("--") {
+        return Err(format!("实例目录参数不能以 -- 开头（目录是位置参数）: {arg}"));
     }
-    Some(dir)
+    if args.next().is_some() {
+        return Err("实例目录仅接受一个位置参数".to_string());
+    }
+    Ok(PathBuf::from(arg))
 }
 
 /// `host init <dir>`: 生成 etc/host.toml 模板 + etc/link/signing.pem（Ed25519，0600）
 /// + etc/link/ros_bridge.yaml（topic 清单 + 令牌路径，从 host.toml 导出）。
 fn cmd_init(args: &mut impl Iterator<Item = String>) -> i32 {
-    let dir = args.next().map(PathBuf::from).unwrap_or_default();
+    let dir = match parse_dir(args) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
+        }
+    };
     let etc = dir.join("etc");
     let link = etc.join("link");
     if let Err(e) = std::fs::create_dir_all(&link) {
@@ -188,10 +198,14 @@ fn write_private_pem(path: &Path, data: &[u8]) -> std::io::Result<()> {
     f.write_all(data)
 }
 
-/// `host start --dir <dir>`: 翻译 host.toml → run/oxfile.toml → `oxmgr apply`。
+/// `host start [<dir>]`: 翻译 host.toml → run/oxfile.toml → `oxmgr apply`。
 fn cmd_start(args: &mut impl Iterator<Item = String>) -> i32 {
-    let Some(dir) = parse_dir(args) else {
-        return 2;
+    let dir = match parse_dir(args) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
+        }
     };
     let cfg_path = dir.join("etc").join("host.toml");
     let cfg = match std::fs::read_to_string(&cfg_path) {
@@ -222,12 +236,16 @@ fn cmd_start(args: &mut impl Iterator<Item = String>) -> i32 {
     run_oxmgr(&["apply", oxfile.to_str().expect("oxfile path utf8")])
 }
 
-/// `host stop --dir <dir>`: `oxmgr stop <oxfile>` + `oxmgr delete <oxfile>`（幂等）。
+/// `host stop [<dir>]`: `oxmgr stop <oxfile>` + `oxmgr delete <oxfile>`（幂等）。
 ///
 /// 无 run/oxfile.toml（从未 apply 或已删除）→ 视为无进程，直接成功。
 fn cmd_stop(args: &mut impl Iterator<Item = String>) -> i32 {
-    let Some(dir) = parse_dir(args) else {
-        return 2;
+    let dir = match parse_dir(args) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
+        }
     };
     let oxfile = dir.join("run").join("oxfile.toml");
     if !oxfile.exists() {
@@ -242,10 +260,14 @@ fn cmd_stop(args: &mut impl Iterator<Item = String>) -> i32 {
     run_oxmgr(&["delete", oxfile])
 }
 
-/// `host status --dir <dir>`: `oxmgr list --json` 过滤 host 命名空间，输出状态表。
+/// `host status [<dir>]`: `oxmgr list --json` 过滤 host 命名空间，输出状态表。
 fn cmd_status(args: &mut impl Iterator<Item = String>) -> i32 {
-    let Some(_dir) = parse_dir(args) else {
-        return 2;
+    let _dir = match parse_dir(args) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
+        }
     };
     let out = match Command::new("oxmgr").args(["list", "--json"]).output() {
         Ok(out) => out,
@@ -274,7 +296,7 @@ fn cmd_status(args: &mut impl Iterator<Item = String>) -> i32 {
         .filter(|p| p.get("namespace").and_then(|n| n.as_str()) == Some("host"))
         .collect();
     if host_procs.is_empty() {
-        println!("host 命名空间无已管理进程（先 host start --dir <dir>）");
+        println!("host 命名空间无已管理进程（先 host start [<dir>]）");
         return 0;
     }
     println!("{:<28} {:<10} PID", "NAME", "STATUS");
@@ -293,7 +315,7 @@ fn cmd_status(args: &mut impl Iterator<Item = String>) -> i32 {
 /// 令牌写为 TokenFile 单文件（内嵌公钥 + JWT，MSTK 格式）——与 translate.rs
 /// oxfile `--token` 引用的 `<cam>.token`/`<stream>.token`/`recorder.token` 同构。
 /// 缺省 TTL 10 年（D-H10 固定令牌策略）。
-const TOKEN_USAGE: &str = "用法: host token issue --role <capture|processor|pusher|puller|recorder|control|perception> --node <id> [--topic <T>]... --out <path> [--dir <dir>]";
+const TOKEN_USAGE: &str = "用法: host token issue --role <capture|processor|pusher|puller|recorder|control|perception> --node <id> [--topic <T>]... --out <path> [<dir>]";
 /// D-H10 固定令牌策略: 令牌长期有效，不随部署轮换。
 const DEFAULT_TOKEN_TTL_SECS: u64 = 10 * 365 * 24 * 3600;
 
@@ -315,7 +337,7 @@ fn cmd_token_issue(args: &mut impl Iterator<Item = String>) -> i32 {
     let mut node: Option<String> = None;
     let mut topics: Vec<String> = Vec::new();
     let mut out: Option<PathBuf> = None;
-    let mut dir = PathBuf::from(".");
+    let mut dir: Option<PathBuf> = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--role" => {
@@ -360,20 +382,22 @@ fn cmd_token_issue(args: &mut impl Iterator<Item = String>) -> i32 {
                 };
                 out = Some(PathBuf::from(v));
             }
-            "--dir" => {
-                let Some(v) = args.next() else {
-                    eprintln!("--dir 缺值");
-                    return 2;
-                };
-                dir = PathBuf::from(v);
-            }
             _ => {
-                eprintln!("未知参数: {arg}");
-                eprintln!("{TOKEN_USAGE}");
-                return 2;
+                if arg.starts_with("--") {
+                    eprintln!("实例目录参数不能以 -- 开头（目录是位置参数）: {arg}");
+                    eprintln!("{TOKEN_USAGE}");
+                    return 2;
+                }
+                if dir.is_some() {
+                    eprintln!("未知参数: {arg}");
+                    eprintln!("{TOKEN_USAGE}");
+                    return 2;
+                }
+                dir = Some(PathBuf::from(arg));
             }
         }
     }
+    let dir = dir.unwrap_or_else(|| PathBuf::from(".host"));
     let (Some(role), Some(node), Some(out)) = (role, node, out) else {
         eprintln!("缺少必填参数: --role/--node/--out");
         eprintln!("{TOKEN_USAGE}");
@@ -462,12 +486,16 @@ fn build_acl(node_id: NodeId, role: Role, topics: Vec<String>) -> Result<NodeAcl
     }
 }
 
-/// `host doctor --dir <dir>`: 环境诊断。三项检查：
+/// `host doctor [<dir>]`: 环境诊断。三项检查：
 /// ① oxmgr 可执行（PATH 内）② etc/host.toml 可解析 ③ host.toml → oxfile 可生成。
 /// 退出码 = 失败检查数（0..=3）。
 fn cmd_doctor(args: &mut impl Iterator<Item = String>) -> i32 {
-    let Some(dir) = parse_dir(args) else {
-        return 2;
+    let dir = match parse_dir(args) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
+        }
     };
     let mut failed = 0;
 

@@ -439,7 +439,7 @@ def _cmd_run_host(legacy: bool = False) -> None:
             continue
         _run_or_exit([str(host), "token", "issue", "--role", "capture",
                       "--node", f"host-capturer-{cam_id}", "--topic", f"camera/{cam_id}",
-                      "--out", str(tok), "--dir", str(ROOT)])
+                      "--out", str(tok), str(ROOT)])
         issued += 1
     for stream_id, cam_id in _toml_id_pairs(text, "streams"):
         tok = link_dir / f"{stream_id}.token"
@@ -447,17 +447,17 @@ def _cmd_run_host(legacy: bool = False) -> None:
             continue
         _run_or_exit([str(host), "token", "issue", "--role", "pusher",
                       "--node", f"host-streamer-{stream_id}", "--topic", f"camera/{cam_id}",
-                      "--out", str(tok), "--dir", str(ROOT)])
+                      "--out", str(tok), str(ROOT)])
         issued += 1
     rec_tok = link_dir / "recorder.token"
     if not rec_tok.exists():
         _run_or_exit([str(host), "token", "issue", "--role", "recorder",
-                      "--node", "host-recorder", "--out", str(rec_tok), "--dir", str(ROOT)])
+                      "--node", "host-recorder", "--out", str(rec_tok), str(ROOT)])
         issued += 1
     if issued:
         print(f"✓ 已签发 {issued} 个链路令牌（etc/link/）")
     # 3) host start（oxmgr apply）
-    _run_or_exit([str(host), "start", "--dir", str(ROOT)])
+    _run_or_exit([str(host), "start", str(ROOT)])
     print("✓ host 多进程已启动（oxmgr 管理; 日志: ~/.local/share/oxmgr/logs 或 `oxmgr logs all`）")
 
 
@@ -517,7 +517,7 @@ def _cmd_stop(target: str) -> None:
         subprocess.run(["pkill", "-x", "host-legacy"], check=False)
         host_cli = next((p for p in (ROOT / "target/debug/host", ROOT / "target/release/host") if p.exists()), None)
         if host_cli is not None:
-            _run_or_exit([str(host_cli), "stop", "--dir", str(ROOT)])
+            _run_or_exit([str(host_cli), "stop", str(ROOT)])
         print("✓ host 已停止")
     else:  # client
         subprocess.run(["pkill", "-x", "mediaservo-client"], check=False)
