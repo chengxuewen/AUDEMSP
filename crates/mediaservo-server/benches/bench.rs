@@ -37,6 +37,9 @@ fn main() {
     println!("=== MediaServo Server Benchmarks ===\n");
 
     // 1. SignalingServer construction
+    // sfu-mediasoup 特征下构造函数需活体 SfuManager（mediasoup worker），bench 无法构造 —
+    // 该 bench 仅在无 mediasoup 特征下运行（G2 顺手修 --tests --benches 编译挂）。
+    #[cfg(not(feature = "sfu-mediasoup"))]
     run_bench("SignalingServer::new(65536)", Duration::from_millis(200), || {
         let _server = SignalingServer::new(65536, None);
     });
@@ -78,7 +81,8 @@ fn main() {
         metrics.encode();
     });
 
-    // 6. Health endpoint request round-trip
+    // 6. Health endpoint request round-trip（同 #1: sfu-mediasoup 特征下跳过）
+    #[cfg(not(feature = "sfu-mediasoup"))]
     run_bench("/health GET round-trip", Duration::from_millis(200), || {
         let signaling = SignalingServer::new(65536, None);
         let app = monitor_router(signaling);

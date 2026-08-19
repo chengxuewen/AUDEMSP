@@ -184,7 +184,17 @@ mod imp {
 
     impl SfuManager {
         /// Create a new SfuManager with a single mediasoup Worker and WebRtcServer.
+        /// SFU 端口取自 `MEDIASERVO_SFU_PORT`（缺省 20000）— 测试用 `new_with_port` 传随机端口。
         pub async fn new() -> Result<Self, String> {
+            let sfu_port = std::env::var("MEDIASERVO_SFU_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(20000);
+            Self::new_with_port(sfu_port).await
+        }
+
+        /// 指定 WebRtcServer 监听端口（测试隔离: 多测试并行各绑独立端口）。
+        pub async fn new_with_port(sfu_port: u16) -> Result<Self, String> {
             let worker_manager = WorkerManager::new();
             let worker = worker_manager
                 .create_worker(WorkerSettings::default())
@@ -204,7 +214,7 @@ mod imp {
                 ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
                 announced_address: announced_ips.first().cloned(),
                 expose_internal_ip: false,
-                port: Some(20000),  // Fixed ICE port
+                port: Some(sfu_port),  // Fixed ICE port
                 port_range: None,
                 flags: None,
                 send_buffer_size: None,
@@ -216,14 +226,14 @@ mod imp {
                     ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
                     announced_address: Some(ip.clone()),
                     expose_internal_ip: false,
-                    port: Some(20000),
+                    port: Some(sfu_port),
                     port_range: None,
                     flags: None,
                     send_buffer_size: None,
                     recv_buffer_size: None,
                 });
             }
-            tracing::info!("WebRtcServer created on port 20000 (announced: {announced_ips:?})");
+            tracing::info!("WebRtcServer created on port {sfu_port} (announced: {announced_ips:?})");
             let webrtc_server = worker
                 .create_webrtc_server(WebRtcServerOptions::new(listen_infos))
                 .await
@@ -725,3 +735,11 @@ mod imp {
 }
 
 pub use imp::{SfuManager, SfuPeer, SfuRoom, TransportCreated, ProduceResult, ConsumeResult};
+
+/// 测试用: 进程内唯一的 SFU 测试端口（原子计数器，每次调用 +1）。
+/// 曾用 bind :0 探空闲端口 — 并行测试 TOCTOU 竞态会拿到同一端口（PIT-103 实证），
+/// 计数器保证单进程内绝不重复；不同测试二进制=不同进程，cargo 串行跑 → 无冲突。
+pub fn random_udp_port() -> u16 {
+    static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(31000);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}

@@ -460,7 +460,12 @@ async fn e2e_monitor_router_health_endpoint() {
 
     #[cfg(feature = "sfu-mediasoup")]
     let signaling = {
-        let sfu = std::sync::Arc::new(mediaservo_server::sfu::SfuManager::new().await.unwrap());
+        let sfu = std::sync::Arc::new(
+            mediaservo_server::sfu::SfuManager::new_with_port(
+                mediaservo_server::sfu::random_udp_port(),
+            )
+            .await
+            .unwrap());
         SignalingServer::new(sfu, 65536, None)
     };
     #[cfg(not(feature = "sfu-mediasoup"))]
@@ -502,7 +507,12 @@ async fn e2e_monitor_router_stats_endpoint() {
 
     #[cfg(feature = "sfu-mediasoup")]
     let signaling = {
-        let sfu = std::sync::Arc::new(mediaservo_server::sfu::SfuManager::new().await.unwrap());
+        let sfu = std::sync::Arc::new(
+            mediaservo_server::sfu::SfuManager::new_with_port(
+                mediaservo_server::sfu::random_udp_port(),
+            )
+            .await
+            .unwrap());
         SignalingServer::new(sfu, 65536, None)
     };
     #[cfg(not(feature = "sfu-mediasoup"))]
@@ -558,7 +568,12 @@ async fn e2e_monitor_router_metrics_endpoint() {
 
     #[cfg(feature = "sfu-mediasoup")]
     let signaling = {
-        let sfu = std::sync::Arc::new(mediaservo_server::sfu::SfuManager::new().await.unwrap());
+        let sfu = std::sync::Arc::new(
+            mediaservo_server::sfu::SfuManager::new_with_port(
+                mediaservo_server::sfu::random_udp_port(),
+            )
+            .await
+            .unwrap());
         SignalingServer::new(sfu, 65536, None)
     };
     #[cfg(not(feature = "sfu-mediasoup"))]

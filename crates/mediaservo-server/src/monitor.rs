@@ -177,7 +177,10 @@ mod tests {
         let signaling = {
             #[cfg(feature = "sfu-mediasoup")]
             {
-                let sfu = std::sync::Arc::new(crate::sfu::SfuManager::new().await.unwrap());
+                let sfu = std::sync::Arc::new(
+                crate::sfu::SfuManager::new_with_port(crate::sfu::random_udp_port())
+                    .await
+                    .unwrap());
                 crate::signaling::SignalingServer::new(sfu, 65536, None)
             }
             #[cfg(not(feature = "sfu-mediasoup"))]
@@ -214,7 +217,10 @@ mod tests {
         let signaling = {
             #[cfg(feature = "sfu-mediasoup")]
             {
-                let sfu = std::sync::Arc::new(crate::sfu::SfuManager::new().await.unwrap());
+                let sfu = std::sync::Arc::new(
+                crate::sfu::SfuManager::new_with_port(crate::sfu::random_udp_port())
+                    .await
+                    .unwrap());
                 crate::signaling::SignalingServer::new(sfu, 65536, None)
             }
             #[cfg(not(feature = "sfu-mediasoup"))]

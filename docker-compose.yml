@@ -25,6 +25,7 @@ services:
       retries: 3
     volumes:
       - ./config/server.docker.yaml:/opt/mediaservo/etc/server.yaml:ro
+      - ./config/devices.docker.yaml:/opt/mediaservo/etc/devices.yaml:ro
 
   proxy:
     image: caddy:2

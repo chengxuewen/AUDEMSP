@@ -75,6 +75,11 @@ pub struct ServerConfig {
     /// TLS configuration (optional). When set, server listens on WSS/HTTPS.
     #[serde(default)]
     pub tls: Option<TlsConfig>,
+
+    /// G2 设备注册表文件（YAML: `devices: {<id>: {secret_hash}}`）。
+    /// 缺省 = `/opt/mediaservo/etc/devices.yaml`；文件缺失 = 空注册表（PSK 路径不受影响）。
+    #[serde(default)]
+    pub devices_file: Option<String>,
 }
 
 /// Config for mediaservo-client (pull + decode + control — cockpit/operator side).

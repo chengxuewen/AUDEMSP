@@ -8,3 +8,4 @@ consumer_limit_per_stream: 50
 psk: "mediaservo-dev"
 jwt_secret: "docker-admin-secret-with-32-plus-bytes!!"  # PIT-49: signaling JWT 认证（与 admin 同 secret）
 admin_jwt_secret: "docker-admin-secret-with-32-plus-bytes!!"
+devices_file: "/opt/mediaservo/etc/devices.yaml"

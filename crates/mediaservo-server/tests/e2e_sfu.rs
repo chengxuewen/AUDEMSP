@@ -24,7 +24,9 @@ async fn e2e_sfu_lifecycle() {
     unsafe { std::env::set_var("MEDIASERVO_PSK", PSK) };
 
     // Create mediasoup SFU manager
-    let sfu = SfuManager::new().await.expect("Failed to create SFU manager");
+    let sfu = SfuManager::new_with_port(mediaservo_server::sfu::random_udp_port())
+        .await
+        .expect("Failed to create SFU manager");
     let sfu = Arc::new(sfu);
     let initial_room_count = sfu.room_count();
 
@@ -162,7 +164,9 @@ async fn e2e_sfu_lifecycle() {
 async fn e2e_sfu_cleanup_on_disconnect() {
     unsafe { std::env::set_var("MEDIASERVO_PSK", PSK) };
 
-    let sfu = SfuManager::new().await.expect("Failed to create SFU manager");
+    let sfu = SfuManager::new_with_port(mediaservo_server::sfu::random_udp_port())
+        .await
+        .expect("Failed to create SFU manager");
     let sfu = Arc::new(sfu);
     let initial_count = sfu.room_count();
 
@@ -235,7 +239,10 @@ async fn e2e_sfu_cleanup_on_disconnect() {
 async fn e2e_sfu_consume_pipeline() {
     unsafe { std::env::set_var("MEDIASERVO_PSK", PSK) };
 
-    let sfu = Arc::new(SfuManager::new().await.expect("Failed to create SFU manager"));
+    let sfu = Arc::new(
+        SfuManager::new_with_port(mediaservo_server::sfu::random_udp_port())
+            .await
+            .expect("Failed to create SFU manager"));
     let server = SignalingServer::new(Arc::clone(&sfu), 65536, None);
     let app = signaling_router(server);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -335,11 +342,24 @@ async fn e2e_sfu_consume_pipeline() {
             direction: mediaservo_common::protocol::TransportDirection::Recv,
         }).unwrap();
         ws.send(WsMsg::Text(create.into())).await.unwrap();
-        let resp = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next()).await.unwrap().unwrap().unwrap();
-        let created: SignalingMessage = serde_json::from_str(resp.to_text().unwrap()).unwrap();
+        // late-joiner 同步会把 pending NewProducer 重放广播 — 先于直接响应到达，
+        // 必须 drain 到目标消息（PIT-103 顺手修: 该测试在 test-server 编译挂期间从未跑过）。
+        let created = loop {
+            let resp = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let parsed: SignalingMessage = serde_json::from_str(resp.to_text().unwrap()).unwrap();
+            match parsed {
+                SignalingMessage::WebRtcTransportCreated { .. } => break parsed,
+                SignalingMessage::NewProducer { .. } => continue,
+                other => panic!("Expected WebRtcTransportCreated, got: {:?}", other),
+            }
+        };
         let (recv_tid, recv_dtls) = match created {
             SignalingMessage::WebRtcTransportCreated { transport_id, dtls_parameters, .. } => (transport_id, dtls_parameters),
-            other => panic!("Expected WebRtcTransportCreated, got: {:?}", other),
+            _ => unreachable!(),
         };
 
         // Connect recv transport

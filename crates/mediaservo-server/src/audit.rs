@@ -29,8 +29,11 @@ pub enum AuditEvent {
         peer_id: String,
         room_id: String,
     },
-    /// PSK authentication succeeded.
-    AuthSuccess { peer_id: String },
+    /// Authentication succeeded (PSK/JWT/device). device_id 仅设备认证路径有值（G2）。
+    AuthSuccess {
+        peer_id: String,
+        device_id: Option<String>,
+    },
     /// PSK authentication failed.
     AuthFailure { peer_id: String, reason: String },
     /// A device came online.
@@ -91,10 +94,11 @@ pub fn log_event(event: AuditEvent) {
                 "Peer left room"
             );
         }
-        AuditEvent::AuthSuccess { peer_id } => {
+        AuditEvent::AuthSuccess { peer_id, device_id } => {
             tracing::info!(
                 audit.event = "auth_success",
                 peer_id = %peer_id,
+                device_id = device_id.as_deref().unwrap_or("-"),
                 "Authentication succeeded"
             );
         }

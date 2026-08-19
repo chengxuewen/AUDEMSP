@@ -8,7 +8,6 @@ use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::middleware::Next;
 use axum::response::{IntoResponse, Json};
 use axum::routing::{delete, get};
 use chrono::Utc;
@@ -102,28 +101,55 @@ pub fn admin_router(state: AdminState) -> Router {
         .route("/api/admin/stats", get(stats))
         .route("/api/admin/config", get(server_config))
         .route("/api/admin/events", get(ws_events))
-        .with_state(state)
+        .with_state(state.clone())
+        // PIT-103 (G2 顺手修): admin API 此前完全无鉴权（check_auth 死代码）—
+        // 客户端（www admin）REST 已带 Bearer、events WS 已带 ?token=，此处补服务端强制。
+        .layer(axum::middleware::from_fn_with_state(state, auth_middleware))
 }
 
 // ── Auth helper ─────────────────────────────────────────────────────────────
+
+/// 从 Authorization: Bearer <jwt> 头或 `?token=<jwt>` 查询参数取 token。
+fn extract_token(req: &axum::http::Request<Body>) -> Option<String> {
+    req.headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|s| s.to_string())
+        .or_else(|| {
+            req.uri().query().and_then(|q| {
+                q.split('&')
+                    .find_map(|kv| kv.strip_prefix("token="))
+                    .map(|v| v.to_string())
+            })
+        })
+        .filter(|s| !s.is_empty())
+}
 
 fn check_auth(req: &axum::http::Request<Body>, state: &AdminState) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
     let secret = state.admin_jwt_secret.as_ref().ok_or_else(|| {
         (StatusCode::SERVICE_UNAVAILABLE, Json(ErrorResponse { error: "admin jwt secret not configured".into() }))
     })?;
-    let token = req.headers().get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or_else(|| {
-            (StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "missing authorization header".into() }))
-        })?;
-    let claims = JwtAuth::new(secret).verify(token).map_err(|_| {
+    let token = extract_token(req).ok_or_else(|| {
+        (StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "missing authorization token".into() }))
+    })?;
+    let claims = JwtAuth::new(secret).verify(&token).map_err(|_| {
         (StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "invalid token".into() }))
     })?;
     if claims.sub != "admin" {
         return Err((StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "admin role required".into() })));
     }
     Ok(())
+}
+
+/// admin API 全路由鉴权中间件（axum 0.7 from_fn 标准形态）。
+async fn auth_middleware(
+    State(state): State<AdminState>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Result<axum::response::Response, (StatusCode, Json<ErrorResponse>)> {
+    check_auth(&req, &state)?;
+    Ok(next.run(req).await)
 }
 
 // ── Handlers ────────────────────────────────────────────────────────────────
@@ -456,7 +482,8 @@ mod tests {
 
     #[cfg(feature = "sfu-mediasoup")]
     async fn make_state() -> AdminState {
-        let sfu = Arc::new(crate::sfu::SfuManager::new().await.unwrap());
+        let sfu = Arc::new(
+            crate::sfu::SfuManager::new_with_port(crate::sfu::random_udp_port()).await.unwrap());
         let signaling = crate::signaling::SignalingServer::new(sfu.clone(), 65536, None);
         let (event_tx, _) = broadcast::channel(256);
         AdminState {

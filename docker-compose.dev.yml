@@ -26,6 +26,7 @@ services:
     volumes:
       - .:/workspace
       - ./config/server.docker.yaml:/opt/mediaservo/etc/server.yaml:ro
+      - ./config/devices.docker.yaml:/opt/mediaservo/etc/devices.yaml:ro
       - cargo-cache:/workspace/target
     command: cargo run --bin mediaservo-server --features sfu-mediasoup,admin-dashboard
     cap_add:

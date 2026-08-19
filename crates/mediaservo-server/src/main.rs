@@ -90,6 +90,26 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     // Build JWT authenticator from config (optional)
     let jwt_auth = config.jwt_secret.as_ref().map(|s| JwtAuth::new(s.as_str()));
 
+    // ── G2 设备注册表加载（devices.yaml; 缺省路径与 server.yaml 同目录）────────
+    // 文件缺失/解析失败 → 空注册表 + 警告（PSK 路径不受影响，不阻断启动）。
+    let devices_path = config
+        .devices_file
+        .clone()
+        .unwrap_or_else(|| "/opt/mediaservo/etc/devices.yaml".to_string());
+    let device_registry = match mediaservo_server::devices::DeviceRegistry::load(&devices_path) {
+        Ok(reg) => {
+            tracing::info!(
+                "Device registry loaded from {devices_path}: {} devices",
+                reg.len()
+            );
+            reg
+        }
+        Err(e) => {
+            tracing::warn!("Device registry {devices_path}: {e}; running with empty registry (PSK path only)");
+            mediaservo_server::devices::DeviceRegistry::empty()
+        }
+    };
+
     // Print admin setup token if configured
     if let Some(ref secret) = config.admin_jwt_secret {
         admin::print_setup_token(secret);
@@ -104,7 +124,13 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         match sfu::SfuManager::new().await {
             Ok(m) => {
                 tracing::info!("SFU manager initialized (mediasoup)");
-                signaling::SignalingServer::new(Arc::new(m), config.ws_max_message_size, jwt_auth.clone())
+                let mut srv = signaling::SignalingServer::new(
+                    Arc::new(m),
+                    config.ws_max_message_size,
+                    jwt_auth.clone(),
+                );
+                srv.device_registry = std::sync::Arc::new(device_registry);
+                srv
             }
             Err(e) => {
                 tracing::info!("SFU manager skipped: {e}");
@@ -113,7 +139,12 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     #[cfg(not(feature = "sfu-mediasoup"))]
-    let signaling_server = signaling::SignalingServer::new(config.ws_max_message_size, jwt_auth);
+    let mut signaling_server = {
+        let mut srv =
+            signaling::SignalingServer::new(config.ws_max_message_size, jwt_auth);
+        srv.device_registry = std::sync::Arc::new(device_registry);
+        srv
+    };
 
     // Build axum router
     let signaling_router = signaling::signaling_router(signaling_server.clone());

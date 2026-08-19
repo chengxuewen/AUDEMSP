@@ -13,7 +13,12 @@ async fn integration_signaling_pipeline() {
 
     #[cfg(feature = "sfu-mediasoup")]
     let server = {
-        let sfu = std::sync::Arc::new(mediaservo_server::sfu::SfuManager::new().await.unwrap());
+        let sfu = std::sync::Arc::new(
+            mediaservo_server::sfu::SfuManager::new_with_port(
+                mediaservo_server::sfu::random_udp_port(),
+            )
+            .await
+            .unwrap());
         SignalingServer::new(sfu, 65536, None)
     };
     #[cfg(not(feature = "sfu-mediasoup"))]
@@ -230,7 +235,12 @@ async fn test_auth_failure_integration() {
 
     #[cfg(feature = "sfu-mediasoup")]
     let server = {
-        let sfu = std::sync::Arc::new(mediaservo_server::sfu::SfuManager::new().await.unwrap());
+        let sfu = std::sync::Arc::new(
+            mediaservo_server::sfu::SfuManager::new_with_port(
+                mediaservo_server::sfu::random_udp_port(),
+            )
+            .await
+            .unwrap());
         SignalingServer::new(sfu, 65536, None)
     };
     #[cfg(not(feature = "sfu-mediasoup"))]
@@ -274,7 +284,12 @@ async fn e2e_video_frame_relay() {
 
     #[cfg(feature = "sfu-mediasoup")]
     let server = {
-        let sfu = std::sync::Arc::new(mediaservo_server::sfu::SfuManager::new().await.unwrap());
+        let sfu = std::sync::Arc::new(
+            mediaservo_server::sfu::SfuManager::new_with_port(
+                mediaservo_server::sfu::random_udp_port(),
+            )
+            .await
+            .unwrap());
         SignalingServer::new(sfu, 65536, None)
     };
     #[cfg(not(feature = "sfu-mediasoup"))]
@@ -375,4 +390,166 @@ async fn e2e_video_frame_relay() {
     assert_eq!(received.len(), 5, "expected 5 frames, got: {:?}", received);
     assert_eq!(received, vec![0, 1, 2, 3, 4], "frames must be in order");
     println!("E2E frame relay: {}/5 frames received in order", received.len());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// G2: 设备认证（D-H11 连接级身份）— 注册表匹配 → 绑定；失败 → Error 4010；
+// 双缺 → PSK 路径不变（回归）。
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 启动带设备注册表的测试 server，返回 (server, ws_url)。
+/// registry_yaml: `devices:` 下的条目文本（None = 空注册表）。
+async fn spawn_server_with_devices(
+    registry_yaml: Option<&str>,
+) -> (SignalingServer, String) {
+    unsafe { std::env::set_var("MEDIASERVO_PSK", PSK) };
+
+    let yaml = match registry_yaml {
+        Some(devices) => format!("devices:\n{devices}\n"),
+        None => "devices: {}\n".into(),
+    };
+    let registry = mediaservo_server::devices::DeviceRegistry::from_yaml(&yaml)
+        .expect("test registry yaml valid");
+
+    #[cfg(feature = "sfu-mediasoup")]
+    let mut server = {
+        let sfu = std::sync::Arc::new(
+            mediaservo_server::sfu::SfuManager::new_with_port(
+                mediaservo_server::sfu::random_udp_port(),
+            )
+            .await
+            .unwrap());
+        SignalingServer::new(sfu, 65536, None)
+    };
+    #[cfg(not(feature = "sfu-mediasoup"))]
+    let mut server = SignalingServer::new(65536, None);
+    server.device_registry = std::sync::Arc::new(registry);
+
+    let app = signaling_router(server.clone());
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    (server, format!("ws://{}/ws", addr))
+}
+
+/// PSK 认证 + 发一条 RoomJoin，返回 server 响应文本。
+async fn psk_join_and_recv(ws_url: &str, join: &SignalingMessage) -> String {
+    let (mut ws, _) = tokio_tungstenite::connect_async(ws_url).await.unwrap();
+    ws.send(WsMsg::Text(PSK.into())).await.unwrap();
+    let ack = ws.next().await.unwrap().unwrap();
+    assert!(ack.to_text().unwrap().contains("authenticated"));
+    let join = serde_json::to_string(join).unwrap();
+    ws.send(WsMsg::Text(join.into())).await.unwrap();
+    let resp = ws.next().await.unwrap().unwrap();
+    resp.to_text().unwrap().to_string()
+}
+
+const TEST_DEVICE: &str = "ms-car1";
+const TEST_DEVICE_SECRET: &str = "car1-secret";
+
+fn test_device_yaml() -> String {
+    // sha256("ms-car1:car1-secret") — 与 mediaservo_server::devices::hash_secret 一致
+    let hash = mediaservo_server::devices::hash_secret(TEST_DEVICE, TEST_DEVICE_SECRET);
+    format!("  {TEST_DEVICE}:\n    secret_hash: \"{hash}\"\n")
+}
+
+fn device_join(device_id: Option<&str>, device_secret: Option<&str>) -> SignalingMessage {
+    SignalingMessage::RoomJoin {
+        room_id: ROOM.into(),
+        peer_role: PeerRole::Host,
+        stream_id: None,
+        device_id: device_id.map(String::from),
+        device_secret: device_secret.map(String::from),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g2_device_auth_success_binds_peer_id() {
+    let (server, ws_url) = spawn_server_with_devices(Some(&test_device_yaml())).await;
+    let resp = psk_join_and_recv(
+        &ws_url,
+        &device_join(Some(TEST_DEVICE), Some(TEST_DEVICE_SECRET)),
+    )
+    .await;
+    let joined: SignalingMessage = serde_json::from_str(&resp).expect("RoomJoined expected");
+    let peer_id = match joined {
+        SignalingMessage::RoomJoined { peer_id, .. } => peer_id,
+        other => panic!("expected RoomJoined, got {other:?}"),
+    };
+    // D-H11: 连接级身份 — 会话绑定 device_id，G3 可经 server.device_id_of(peer) 读取。
+    assert_eq!(
+        server.device_id_of(&peer_id).as_deref(),
+        Some(TEST_DEVICE),
+        "peer_id 必须绑定 device_id"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g2_device_auth_unknown_device_rejected() {
+    let (_server, ws_url) = spawn_server_with_devices(Some(&test_device_yaml())).await;
+    let resp = psk_join_and_recv(&ws_url, &device_join(Some("ms-not-registered"), Some("x")))
+        .await;
+    let msg: SignalingMessage = serde_json::from_str(&resp).unwrap();
+    match msg {
+        SignalingMessage::Error { code, message } => {
+            assert_eq!(code, 4010, "未知设备必须 4010");
+            assert!(message.contains("not registered"), "message: {message}");
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g2_device_auth_wrong_secret_rejected() {
+    let (_server, ws_url) = spawn_server_with_devices(Some(&test_device_yaml())).await;
+    let resp = psk_join_and_recv(&ws_url, &device_join(Some(TEST_DEVICE), Some("wrong-secret")))
+        .await;
+    let msg: SignalingMessage = serde_json::from_str(&resp).unwrap();
+    match msg {
+        SignalingMessage::Error { code, message } => {
+            assert_eq!(code, 4010, "错误 secret 必须 4010");
+            assert!(message.contains("invalid device secret"), "message: {message}");
+        }
+        other => panic!("expected Error, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g2_device_auth_half_present_rejected() {
+    // G4 review Minor 1: 形状检查 — 只带 id 不带 secret 必须拒绝（不留歧义）。
+    let (_server, ws_url) = spawn_server_with_devices(Some(&test_device_yaml())).await;
+    for join in [
+        device_join(Some(TEST_DEVICE), None),
+        device_join(None, Some(TEST_DEVICE_SECRET)),
+    ] {
+        let resp = psk_join_and_recv(&ws_url, &join).await;
+        let msg: SignalingMessage = serde_json::from_str(&resp).unwrap();
+        match msg {
+            SignalingMessage::Error { code, message } => {
+                assert_eq!(code, 4010, "半带凭证必须 4010");
+                assert!(message.contains("both device_id"), "message: {message}");
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g2_psk_path_regression_with_registry_loaded() {
+    // 旧 client / 不带设备字段: 注册表在场也必须走 PSK 路径（additive 双向兼容）。
+    let (server, ws_url) = spawn_server_with_devices(Some(&test_device_yaml())).await;
+    let resp = psk_join_and_recv(&ws_url, &device_join(None, None)).await;
+    let joined: SignalingMessage = serde_json::from_str(&resp).unwrap();
+    let peer_id = match joined {
+        SignalingMessage::RoomJoined { peer_id, .. } => peer_id,
+        other => panic!("expected RoomJoined, got {other:?}"),
+    };
+    assert_eq!(
+        server.device_id_of(&peer_id),
+        None,
+        "PSK 路径不得产生设备绑定"
+    );
 }

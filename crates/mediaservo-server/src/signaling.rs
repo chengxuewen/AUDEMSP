@@ -1,4 +1,5 @@
 use crate::audit::{self, AuditEvent};
+use crate::devices::{self, DeviceRegistry};
 use crate::status::StatusRegistry;
 use crate::room::RoomManager;
 use crate::health::{HealthChecker, HealthStatus};
@@ -48,6 +49,10 @@ pub struct SignalingServer {
     pub jwt_auth: Option<JwtAuth>,
     /// 整车状态上报注册表（E3: 每房间最新 StatusReport; H 阶段 admin API 读取）。
     pub status_registry: Arc<StatusRegistry>,
+    /// G2 设备注册表（启动时从 devices.yaml 加载，只读；空 = PSK 路径）。
+    pub device_registry: Arc<DeviceRegistry>,
+    /// G2 连接级身份绑定（D-H11）: peer_id → device_id（设备认证成功时建立，断开时清除）。
+    device_bindings: Arc<dashmap::DashMap<String, String>>,
 }
 
 impl SignalingServer {
@@ -64,6 +69,8 @@ impl SignalingServer {
             pending_messages: Arc::new(dashmap::DashMap::new()),
             jwt_auth,
             status_registry: Arc::new(StatusRegistry::default()),
+            device_registry: Arc::new(DeviceRegistry::empty()),
+            device_bindings: Arc::new(dashmap::DashMap::new()),
         }
     }
 
@@ -79,7 +86,15 @@ impl SignalingServer {
             pending_messages: Arc::new(dashmap::DashMap::new()),
             jwt_auth,
             status_registry: Arc::new(StatusRegistry::default()),
+            device_registry: Arc::new(DeviceRegistry::empty()),
+            device_bindings: Arc::new(dashmap::DashMap::new()),
         }
+    }
+
+    /// G2 连接级身份（D-H11）: 返回该 peer_id 绑定到的 device_id（设备认证成功的会话）。
+    /// G3 用此做角色授权；无绑定 = PSK/JWT 路径。
+    pub fn device_id_of(&self, peer_id: &str) -> Option<String> {
+        self.device_bindings.get(peer_id).map(|v| v.clone())
     }
 
     /// Subscribe to the shutdown signal — cloned receivers are given to each
@@ -231,6 +246,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     tracing::info!("JWT authenticated: peer={}", peer_id);
                     audit::log_event(AuditEvent::AuthSuccess {
                         peer_id: peer_id.clone(),
+                        device_id: None,
                     });
                 }
                 Err(e) => {
@@ -253,6 +269,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     tracing::info!("Peer {} authenticated via PSK", peer_id);
                     audit::log_event(AuditEvent::AuthSuccess {
                         peer_id: peer_id.clone(),
+                        device_id: None,
                     });
                 }
                 if !authenticated {
@@ -304,7 +321,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
     tracing::info!("Auth ack sent, entering RoomJoin phase");
 
     // Phase 2: RoomJoin
-    let (room_id, role) = loop {
+    let (room_id, role, device_id) = loop {
         // Check for shutdown during RoomJoin
         if *shutdown_rx.borrow() {
             tracing::info!("Shutdown requested during RoomJoin for peer {}", peer_id);
@@ -315,16 +332,75 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
         match receiver.next().await {
             Some(Ok(Message::Text(text))) => {
                 let text_str = text.to_string();
-                if let Ok(SignalingMessage::RoomJoin { room_id, peer_role, .. }) =
-                    serde_json::from_str(&text_str)
+                if let Ok(SignalingMessage::RoomJoin {
+                    room_id,
+                    peer_role,
+                    device_id,
+                    device_secret,
+                    ..
+                }) = serde_json::from_str(&text_str)
                 {
-                    break (room_id, peer_role);
+                    // ── G2 设备认证（D-H11; 错误码 4010 单一家族防设备枚举）──────
+                    // 双缺 = PSK 路径（保持原流程）; 半带/失败 = Error 4010 后断开。
+                    match devices::authenticate(
+                        &server.device_registry,
+                        device_id.as_deref(),
+                        device_secret.as_deref(),
+                    ) {
+                        None => {
+                            break (room_id, peer_role, None);
+                        }
+                        Some(Err(auth_err)) => {
+                            tracing::warn!(
+                                "Peer {} device auth failed: {}",
+                                peer_id,
+                                auth_err.message()
+                            );
+                            audit::log_event(AuditEvent::AuthFailure {
+                                peer_id: peer_id.clone(),
+                                reason: format!(
+                                    "device auth failed (device={:?}): {}",
+                                    device_id, auth_err.message()
+                                ),
+                            });
+                            let error = SignalingMessage::Error {
+                                code: 4010,
+                                message: auth_err.message().into(),
+                            };
+                            let _ = ws_sender
+                                .lock()
+                                .await
+                                .send(Message::Text(send_msg(&error).unwrap()))
+                                .await;
+                            return;
+                        }
+                        Some(Ok(())) => {
+                            // 认证通过: 记审计，连接级身份在 join 成功后绑定。
+                            let device = device_id.unwrap_or_default();
+                            audit::log_event(AuditEvent::AuthSuccess {
+                                peer_id: peer_id.clone(),
+                                device_id: Some(device.clone()),
+                            });
+                            tracing::info!(
+                                "Peer {} device-authenticated as {}",
+                                peer_id,
+                                device
+                            );
+                            break (room_id, peer_role, Some(device));
+                        }
+                    }
                 }
             }
             Some(Ok(Message::Close(_))) | None => return,
             _ => continue,
         }
     };
+
+    // G2: 设备认证成功的会话绑定连接级身份（peer_id → device_id, D-H11）。
+    // join 成功后才绑定 — join 失败路径（4001/4002）不产生绑定，断开无残留。
+    if let Some(device) = device_id {
+        server.device_bindings.insert(peer_id.clone(), device.clone());
+    }
 
     // Join the room
     match server.room_manager.join_room(&room_id, &peer_id, &role) {
@@ -612,6 +688,15 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
 
     #[allow(unused_variables)]
     let room_removed = server.room_manager.leave_room(&relay_room, &relay_peer_id);
+
+    // G2: 断开即解除连接级身份绑定（peer_id → device_id 仅连接存活期间有效）。
+    if let Some(device) = server.device_bindings.remove(&relay_peer_id) {
+        tracing::info!(
+            "Peer {} disconnected, released device binding {}",
+            relay_peer_id,
+            device.1
+        );
+    }
     audit::log_event(AuditEvent::PeerLeave {
         peer_id: relay_peer_id.clone(),
         room_id: relay_room.clone(),
@@ -824,9 +909,26 @@ mod tests {
     use super::*;
     use mediaservo_common::protocol::PeerRole;
 
-    #[test]
-    fn push_config_delivers_to_room_host() {
-        let server = SignalingServer::new(1 << 20, None);
+    /// 测试用 server 构造：sfu-mediasoup 特征下需活体 SfuManager（G2 顺手修
+    /// `--tests --benches` 编译挂 — 两参构造在特征开启时不存在的历史遗留）。
+    async fn new_test_server() -> SignalingServer {
+        #[cfg(feature = "sfu-mediasoup")]
+        {
+            let sfu = std::sync::Arc::new(
+                crate::sfu::SfuManager::new_with_port(crate::sfu::random_udp_port())
+                    .await
+                    .unwrap());
+            SignalingServer::new(sfu, 1 << 20, None)
+        }
+        #[cfg(not(feature = "sfu-mediasoup"))]
+        {
+            SignalingServer::new(1 << 20, None)
+        }
+    }
+
+    #[tokio::test]
+    async fn push_config_delivers_to_room_host() {
+        let server = new_test_server().await;
         server
             .room_manager
             .join_room("vehicle-1", "veh-peer", &PeerRole::Host)
@@ -848,9 +950,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn push_config_errors_when_room_has_no_host() {
-        let server = SignalingServer::new(1 << 20, None);
+    #[tokio::test]
+    async fn push_config_errors_when_room_has_no_host() {
+        let server = new_test_server().await;
         let err = server.push_config("empty-room", "cfg", 1).unwrap_err();
         assert!(err.contains("无 host"), "无 host 房间必须报错: {err}");
     }

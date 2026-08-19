@@ -15,7 +15,12 @@ use tokio::sync::broadcast;
 
 #[cfg(feature = "sfu-mediasoup")]
 async fn make_state() -> AdminState {
-    let sfu = std::sync::Arc::new(mediaservo_server::sfu::SfuManager::new().await.unwrap());
+    let sfu = std::sync::Arc::new(
+        mediaservo_server::sfu::SfuManager::new_with_port(
+            mediaservo_server::sfu::random_udp_port(),
+        )
+        .await
+        .unwrap());
     let signaling = SignalingServer::new(sfu.clone(), 65536, None);
     let (event_tx, _) = broadcast::channel(256);
     AdminState {
