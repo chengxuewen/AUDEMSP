@@ -328,14 +328,14 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 
 ---
 
-## Phase F: 控制/急停（阶段级任务清单）
-
-**目标**: host-controller（DC 多 label）+ host-emergency（独立 PC + 本地兜底）——P2P 模式先行（D-H3/H8）。
-
 ### Task E4: 云端配置闭环（spec §5——Momus HIGH-3 补）
 - **Files**: `crates/mediaservo-host/src/bin/host-agent.rs`（扩展：ConfigPush 接收）+ `crates/mediaservo-host/src/bin/host.rs`（补 `host apply`/`host restart` 子命令）
 - **接口**: 信令扩展消息 `ConfigPush { config: String, version: u64 }`（PSK/JWT 认证 + 审计日志——C15/C16 纪律）→ 校验 → 写 host.toml（备份旧版）→ 调 `host apply` → 翻译器 → oxfile.toml → OxMgr file-watch 热生效（增删路 = 增量 apply）
 - **测试**: mock Server 下发 ConfigPush → host.toml 更新 + oxfile 重新生成 + 进程重启生效；非法配置拒绝 + 审计日志断言
+
+## Phase F: 控制/急停（阶段级任务清单）
+
+**目标**: host-controller（DC 多 label）+ host-emergency（独立 PC + 本地兜底）——P2P 模式先行（D-H3/H8）。
 
 ### Task F1: controller 进程
 - **Files**: `crates/mediaservo-host/src/bin/host-controller.rs`：纯 DC PC（create_data_channel × 3 label: chassis/gimbal/light）→ 舱端 client 直连（P2P）→ DC 消息路由到执行器接口（Phase A 先 stub 执行器：日志 + 回执）
