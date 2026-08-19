@@ -407,6 +407,11 @@ git commit -m "feat(host): host doctor 环境诊断（oxmgr/配置/翻译三检�
 
 ---
 
+## Load-bearing 不变量（F3 审查 — 防未来重构静默破坏）
+
+- **transport A（视频推流）无 Sdp wire 消息**：field PushSession 用 answerer 协商（build_remote_sdp + create_answer，本地构造 offer），全链路不向网关发 SignalingMessage::Sdp → 不触碰 p2p_owner 单槽。**若未来 PushSession 重构为 offerer 协商，vision/controller/emergency 的 P2P 协商会被 transport A 抢占归属而静默串线**——改动前必须重审 D1 的 p2p_owner 机制。
+- **同车最多 4 个 P2P 会话共享网关单槽**（controller/emergency/vision 3 offerer + 1 answerer）：顺序协商（OxMgr 顺序启动）成立；并发协商是已知缺口（G 阶段评估）。
+
 ## 风险登记
 
 | 风险 | 缓解 |
