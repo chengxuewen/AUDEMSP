@@ -6,7 +6,7 @@
 //! 实例（command 参数化）。Phase A 输出占位进程骨架；C1 起 capturer 实例追加
 //! `--config`/`--token` 绝对路径（`to_oxfile_in_dir`），真实命令逐 Phase 替换。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -17,6 +17,8 @@ struct HostConfig {
     cameras: Vec<Camera>,
     #[serde(default)]
     streams: Vec<Stream>,
+    #[serde(default)]
+    record: Option<RecordSection>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,6 +41,14 @@ struct Stream {
     /// 编码格式（缺省 vp8；对齐 field PublishOptions 默认）。
     #[serde(default)]
     codec: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RecordSection {
+    #[serde(default)]
+    enabled: Option<bool>,
+    #[serde(default)]
+    out_dir: Option<String>,
 }
 
 /// 固定 5 类进程（无参数实例）。
@@ -75,7 +85,17 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
     let mut out = String::from("version = 1\n\n[defaults]\nnamespace = \"host\"\nrestart_policy = \"always\"\n\n");
 
     for name in FIXED_APPS {
-        push_app(&mut out, name, &exe_cmd(name));
+        let mut cmd = exe_cmd(name);
+        // C3: recorder 固定 app 与 capturer/streamer 同形追加 --config/--token
+        // （订阅 camera/* 录制; 令牌文件 recorder.token）。
+        if name == "host-recorder" && !config_path.as_os_str().is_empty() {
+            cmd.push_str(&format!(
+                " --config {} --token {}/recorder.token",
+                config_path.display(),
+                token_dir.display()
+            ));
+        }
+        push_app(&mut out, name, &cmd);
     }
     for cam in &cameras {
         let name = instance_name("host-capturer", cam, cameras.len() > 1);
@@ -141,6 +161,26 @@ pub fn camera_configs(cfg: &str) -> Result<Vec<CameraConfig>, String> {
     }
     Ok(out)
 }
+/// 录制配置（recorder 进程消费；[record] 段缺省 disabled + 默认输出目录）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordConfig {
+    pub enabled: bool,
+    pub out_dir: PathBuf,
+}
+
+/// 默认录制输出目录（host.toml [record] out_dir 可覆盖；开发缺省在 /tmp）。
+const DEFAULT_RECORD_DIR: &str = "/tmp/mediaservo-recordings";
+
+/// 解析录制配置（C3 recorder 用）。缺省: disabled + /tmp/mediaservo-recordings。
+pub fn record_config(cfg: &str) -> Result<RecordConfig, String> {
+    let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
+    let rec = cfg.record.unwrap_or(RecordSection { enabled: None, out_dir: None });
+    Ok(RecordConfig {
+        enabled: rec.enabled.unwrap_or(false),
+        out_dir: PathBuf::from(rec.out_dir.unwrap_or_else(|| DEFAULT_RECORD_DIR.to_string())),
+    })
+}
+
 
 /// 按 id 查单个相机配置（不存在 → Ok(None)）。
 pub fn camera_config(cfg: &str, id: &str) -> Result<Option<CameraConfig>, String> {

@@ -55,6 +55,9 @@ mediaservo-link = { path = "../mediaservo-link" }
 mediaservo-media = { path = "../mediaservo-media" }
 # 推流会话门面（C2: host-streamer 复用 PushSession 信令+SFU 协商+track 发布）
 mediaservo-field = { path = "../mediaservo-field" }
+# 录制（C3: host-recorder 复用 deck Recorder; backend-ffmpeg = FFmpeg H264/MP4 mux）
+mediaservo-deck = { path = "../mediaservo-deck", features = ["backend-ffmpeg"] }
+mediaservo-codec = { path = "../mediaservo-codec" }
 # GStreamer (optional — requires system GStreamer on Linux/Jetson)
 gstreamer = { version = "0.23", optional = true }
 gstreamer-app = { version = "0.23", optional = true }

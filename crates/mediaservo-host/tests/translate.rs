@@ -89,3 +89,40 @@ fn stream_config_defaults_and_explicit() {
     // 坏配置 → Err
     assert!(mediaservo_host::translate::stream_configs("not toml [[[").is_err());
 }
+
+#[test]
+fn record_config_defaults_and_explicit() {
+    // 缺省: disabled + 默认输出目录（C3）
+    let cfg = "[[cameras]]\nid = \"cam0\"\n";
+    let rec = mediaservo_host::translate::record_config(cfg).unwrap();
+    assert!(!rec.enabled, "缺省应 disabled");
+    assert_eq!(rec.out_dir, std::path::PathBuf::from("/tmp/mediaservo-recordings"));
+    // 显式值
+    let cfg = "[[cameras]]\nid = \"cam0\"\n[record]\nenabled = true\nout_dir = \"/var/rec\"\n";
+    let rec = mediaservo_host::translate::record_config(cfg).unwrap();
+    assert!(rec.enabled, "显式 enabled=true 应生效");
+    assert_eq!(rec.out_dir, std::path::PathBuf::from("/var/rec"));
+    // 缺 out_dir → 默认目录
+    let cfg = "[record]\nenabled = true\n";
+    let rec = mediaservo_host::translate::record_config(cfg).unwrap();
+    assert!(rec.enabled);
+    assert_eq!(rec.out_dir, std::path::PathBuf::from("/tmp/mediaservo-recordings"));
+    // 坏配置 → Err
+    assert!(mediaservo_host::translate::record_config("not toml [[[").is_err());
+}
+
+#[test]
+fn to_oxfile_in_dir_recorder_appends_config_and_token_paths() {
+    // C3: recorder 固定 app 与 capturer/streamer 同形追加 --config/--token
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = "[[cameras]]\nid = \"cam0\"\n[record]\nenabled = true\n";
+    let ox = mediaservo_host::translate::to_oxfile_in_dir(cfg, dir.path()).unwrap();
+    let abs = std::path::absolute(dir.path()).unwrap();
+    assert!(ox.contains("host-recorder --config"));
+    assert!(ox.contains(&format!("--config {}/etc/host.toml", abs.display())));
+    assert!(ox.contains(&format!("--token {}/etc/link/recorder.token", abs.display())));
+    // 无路径变体保持 A2 形态（无参数）
+    let ox = mediaservo_host::translate::to_oxfile(cfg).unwrap();
+    assert!(ox.contains("name = \"host-recorder\""));
+    assert!(!ox.contains("host-recorder --config"));
+}
