@@ -20,6 +20,9 @@ pub struct FrameMeta {
 }
 
 impl FrameMeta {
+    /// JSON 载荷格式标记（E2 stats topic 线格式；非像素数据）。
+    pub const FORMAT_JSON: u8 = 4;
+
     /// 定长编码字节数：
     /// seq(8) + width(4) + height(4) + format(1) + version(1) + keyframe(1) + reserved(1)
     /// + ts_mono_ns(8) + ts_epoch_ns(8) = 36。
