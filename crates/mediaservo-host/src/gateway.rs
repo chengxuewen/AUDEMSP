@@ -328,7 +328,12 @@ fn rewrite_room(msg: &mut SignalingMessage, room: &str) {
         | NewProducer { room_id, .. }
         | EncoderStatus { room_id, .. }
         | Consume { room_id, .. }
-        | Consumed { room_id, .. } => *room_id = room.to_string(),
+        | Consumed { room_id, .. }
+        | CreateDataProducer { room_id, .. }
+        | DataProducerCreated { room_id, .. }
+        | NewDataProducer { room_id, .. }
+        | ConsumeData { room_id, .. }
+        | DataConsumed { room_id, .. } => *room_id = room.to_string(),
         Error { .. } => {}
         StatusReport { .. } => {}
         ConfigPush { .. } => {} // E4: agent 专属，不入子进程路由，无需房间改写
