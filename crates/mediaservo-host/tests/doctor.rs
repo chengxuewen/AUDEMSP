@@ -20,7 +20,7 @@ fn tmp_dir(name: &str) -> PathBuf {
 
 fn run_doctor(dir: &PathBuf) -> std::process::Output {
     Command::new(host_bin())
-        .args(["doctor", "--dir"])
+        .arg("doctor")
         .arg(dir)
         .output()
         .unwrap()

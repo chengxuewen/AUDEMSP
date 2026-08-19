@@ -1,7 +1,7 @@
 //! Task C4: `host token issue` CLI 测试 — 最小令牌签发（G1 前置，C 阶段 e2e 需用）。
 //!
 //! 流程: `host init <dir>`（生成 etc/link/signing.pem PKCS#8）→
-//! `host token issue --role <R> --node <id> [--topic <T>...] --out <path> --dir <dir>`
+//! `host token issue --role <R> --node <id> [--topic <T>...] --out <path> [<dir>]
 //! → TokenFile::decode 验签 + claims 断言（角色/节点/ACL 正确）。
 //!
 //! 负例: 未知角色 exit 2、缺 signing.pem exit 1、缺必填参数 exit 2。
@@ -31,7 +31,7 @@ fn issue(dir: &Path, args: &[&str]) -> Output {
     for a in args {
         cmd.arg(a);
     }
-    cmd.arg("--dir").arg(dir);
+    cmd.arg(dir);
     cmd.output().expect("spawn host token issue")
 }
 
