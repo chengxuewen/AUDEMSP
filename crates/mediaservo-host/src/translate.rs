@@ -1,9 +1,12 @@
-//! host.toml → oxfile.toml 翻译器（Task A2）。
+//! host.toml → oxfile.toml 翻译器（Task A2 + C1）。
 //!
 //! 输入 host.toml 文本，输出 OxMgr oxfile.toml 文本（`version = 1` + `[defaults]` +
 //! `[[apps]]`，字段对齐官方 [OXFILE.md](https://github.com/Vladimir-Urik/OxMgr)）。
 //! apps 含 7 类 host 进程 + 每 camera 一个 capturer 实例 + 每 stream 一个 streamer
-//! 实例（command 参数化）。Phase A 输出占位进程骨架，真实命令在后续 Phase 替换。
+//! 实例（command 参数化）。Phase A 输出占位进程骨架；C1 起 capturer 实例追加
+//! `--config`/`--token` 绝对路径（`to_oxfile_in_dir`），真实命令逐 Phase 替换。
+
+use std::path::Path;
 
 use serde::Deserialize;
 
@@ -19,6 +22,12 @@ struct HostConfig {
 #[derive(Debug, Deserialize)]
 struct Camera {
     id: String,
+    /// 采集源（缺省 "stub"；v4l2/mipi 后接）。
+    #[serde(default)]
+    source: Option<String>,
+    /// 帧率（缺省 30）。
+    #[serde(default)]
+    fps: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,7 +48,22 @@ const FIXED_APPS: [&str; 5] = [
 ///
 /// 单实例用类型名（如 `host-capturer`），多实例追加实例 id（如 `host-capturer-cam1`）
 /// ——OxMgr validate 拒绝重复 app 名（CLI.md "duplicate app name" 硬错误）。
+/// 无路径变体：capturer 实例仅 `--camera <id>`（A2 形态，doctor/测试用）。
 pub fn to_oxfile(cfg: &str) -> Result<String, String> {
+    to_oxfile_with_paths(cfg, Path::new(""), Path::new(""))
+}
+
+/// host.toml → oxfile.toml，capturer 实例追加 `--config <dir>/etc/host.toml`
+/// 与 `--token <dir>/etc/link/<cam>.token` 绝对路径（Task C1）。
+pub fn to_oxfile_in_dir(cfg: &str, dir: &Path) -> Result<String, String> {
+    let config_path = std::path::absolute(dir.join("etc").join("host.toml"))
+        .unwrap_or_else(|_| dir.join("etc").join("host.toml"));
+    let token_dir = std::path::absolute(dir.join("etc").join("link"))
+        .unwrap_or_else(|_| dir.join("etc").join("link"));
+    to_oxfile_with_paths(cfg, &config_path, &token_dir)
+}
+
+fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Result<String, String> {
     let (cameras, streams) = camera_and_stream_ids(cfg)?;
 
     let mut out = String::from("version = 1\n\n[defaults]\nnamespace = \"host\"\nrestart_policy = \"always\"\n\n");
@@ -49,7 +73,16 @@ pub fn to_oxfile(cfg: &str) -> Result<String, String> {
     }
     for cam in &cameras {
         let name = instance_name("host-capturer", cam, cameras.len() > 1);
-        push_app(&mut out, &name, &format!("{} --camera {}", exe_cmd("host-capturer"), cam));
+        let mut cmd = format!("{} --camera {}", exe_cmd("host-capturer"), cam);
+        if !config_path.as_os_str().is_empty() {
+            cmd.push_str(&format!(
+                " --config {} --token {}/{}.token",
+                config_path.display(),
+                token_dir.display(),
+                cam
+            ));
+        }
+        push_app(&mut out, &name, &cmd);
     }
     for stream in &streams {
         let name = instance_name("host-streamer", stream, streams.len() > 1);
@@ -65,6 +98,33 @@ pub fn camera_and_stream_ids(cfg: &str) -> Result<(Vec<String>, Vec<String>), St
         cfg.cameras.into_iter().map(|c| c.id).collect(),
         cfg.streams.into_iter().map(|s| s.id).collect(),
     ))
+}
+
+/// 相机配置（capturer 消费；source/fps 缺省 stub/30）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CameraConfig {
+    pub id: String,
+    pub source: String,
+    pub fps: u32,
+}
+
+/// 解析全部相机配置（C1 capturer 用；`camera_and_stream_ids` 保持 A2/B3 消费面）。
+pub fn camera_configs(cfg: &str) -> Result<Vec<CameraConfig>, String> {
+    let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
+    Ok(cfg
+        .cameras
+        .into_iter()
+        .map(|c| CameraConfig {
+            id: c.id,
+            source: c.source.unwrap_or_else(|| "stub".into()),
+            fps: c.fps.unwrap_or(30),
+        })
+        .collect())
+}
+
+/// 按 id 查单个相机配置（不存在 → Ok(None)）。
+pub fn camera_config(cfg: &str, id: &str) -> Result<Option<CameraConfig>, String> {
+    Ok(camera_configs(cfg)?.into_iter().find(|c| c.id == id))
 }
 
 /// 单实例用类型名，多实例追加实例 id 保证名字唯一。

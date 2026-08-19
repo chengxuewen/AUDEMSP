@@ -192,7 +192,7 @@ fn cmd_start(args: &mut impl Iterator<Item = String>) -> i32 {
             return 1;
         }
     };
-    let ox = match mediaservo_host::translate::to_oxfile(&cfg) {
+    let ox = match mediaservo_host::translate::to_oxfile_in_dir(&cfg, &dir) {
         Ok(ox) => ox,
         Err(e) => {
             eprintln!("start: {e}");

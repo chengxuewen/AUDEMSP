@@ -402,15 +402,19 @@ conda 交叉编译器（会 PIT-85 复发）。
 
 **来源**: PIT-87 诊断轮实证（2026-08-13: 编码耗时功能在 9800 不生效 = dist 旧构建）
 
-## C25: iceoryx2 测试残留清理 — 跑 mediaservo-link 测试前必须清 SHM (2026-08-14)
+## C25: iceoryx2 测试残留清理 — 跑 link/涉及 FrameBus 的测试前必须清运行时目录 (2026-08-14, 修订 2026-08-19)
 
-**约束**: 运行 mediaservo-link 测试/示例前**必须**执行 `rm -f /dev/shm/iox2_*`（iceoryx2 SystemInFlux 服务跨进程全局，
-上次运行残留的 service 状态会导致 subscribe/open 失败）。测试内部已用唯一 topic（含 `std::process::id()`）隔离并发，但
-**跨 run 残留**仍需外部清理。
+**约束**: 运行 mediaservo-link / host-capturer 等涉及 FrameBus 的测试/示例前**必须**执行
+`rm -rf /tmp/iceoryx2 /dev/shm/iox2_*`（iceoryx2 0.9.3 Linux 运行时根 = `/tmp/iceoryx2`（nodes/services），
+`/dev/shm/iox2_*` 仅 node global_mgmt——**只清 /dev/shm 不够**）。上次运行残留的 service 状态
+会导致 subscribe/open 持久 SystemInFlux（重试也无效，C1 实证 2026-08-19：固定 topic `camera/cam0`
+跨 run 二次打开必失败，全量清后恢复）。测试内部已用唯一 topic（含 `std::process::id()`）隔离并发，
+但**跨 run 残留**（固定 topic / 被 SIGTERM 的发布端）仍需外部清理；生产级清理机制归 C2 计划。
 
-**检查**: `ls /dev/shm/iox2_* 2>/dev/null | wc -l` 应为 0（跑测试前）；link 测试失败先清残留再重跑。
+**检查**: `ls /tmp/iceoryx2 /dev/shm/iox2_* 2>/dev/null | wc -l` 应为 0（跑测试前）；
+涉及 FrameBus 的测试失败先全量清残留再重跑。
 
-**来源**: PIT 2026-08-14 Phase 1 测试轮（残留 service 导致 multi-proc 测试间歇失败）。
+**来源**: PIT 2026-08-14 Phase 1 测试轮 + C1 实证（2026-08-19: /tmp/iceoryx2 残留 service → SystemInFlux）。
 
 ## C26: reasoning 分层 — thinking 不摊进 content，按模型级裁剪 (2026-08-17)
 
