@@ -205,6 +205,51 @@ pub enum SignalingMessage {
         command: String,
     },
 
+    /// H1 (SFU data 域): 对端在 send transport 上创建 DataProducer（SCTP DataChannel）。
+    /// sctp_stream_parameters 为必填（SCTP producer 需要 stream_id; Option 仅为 wire 容错，
+    /// 服务端缺失时明确报错）。label/protocol 用于区分 control/vision 等 DataChannel。
+    CreateDataProducer {
+        room_id: String,
+        peer_id: String,
+        transport_direction: TransportDirection,
+        /// DataChannel label（如 "control" / "vision"）。
+        label: String,
+        /// DataChannel 子协议名（如 "mediaservo.control"）。
+        protocol: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sctp_stream_parameters: Option<SctpStreamParameters>,
+    },
+
+    /// Server confirms data producer created.
+    DataProducerCreated {
+        room_id: String,
+        data_producer_id: String,
+    },
+
+    /// Server broadcasts a new data producer to all peers in the room (late-joiner sync).
+    NewDataProducer {
+        room_id: String,
+        data_producer_id: String,
+        peer_id: String,
+        label: String,
+        protocol: String,
+    },
+
+    /// Peer asks to consume a data producer on its recv transport.
+    ConsumeData {
+        room_id: String,
+        peer_id: String,
+        transport_direction: TransportDirection,
+        data_producer_id: String,
+    },
+
+    /// Server confirms data consumer created.
+    DataConsumed {
+        room_id: String,
+        data_consumer_id: String,
+        data_producer_id: String,
+    },
+
     // ponytail: add frame ack/retransmit when reliability matters
 }
 
@@ -340,6 +385,22 @@ pub enum PeerRole {
 pub enum MediaKind {
     Audio,
     Video,
+}
+
+/// H1 (SFU data 域): SCTP stream parameters for a DataChannel (wire 版，
+/// 镜像 mediasoup SctpStreamParameters — 官方文档 sctp-parameters 节)。
+/// camelCase 序列化（JS/mediasoup 惯例: streamId/ordered/maxPacketLifeTime/maxRetransmits）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SctpStreamParameters {
+    /// SCTP stream id（端点 DataChannel 的 negotiated id）。
+    pub stream_id: u16,
+    /// 有序可靠传输（true = ordered; false 时可选 maxPacketLifeTime/maxRetransmits）。
+    pub ordered: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_packet_life_time: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_retransmits: Option<u16>,
 }
 
 #[cfg(test)]
@@ -785,6 +846,117 @@ mod tests {
             }
             _ => panic!("expected StatusReport"),
         }
+    }
+
+    // ── H1 SFU data 域 ────────────────────────────────────────────────
+
+    #[test]
+    fn roundtrip_sctp_stream_parameters() {
+        let sp = SctpStreamParameters {
+            stream_id: 7,
+            ordered: true,
+            max_packet_life_time: None,
+            max_retransmits: None,
+        };
+        let json = serde_json::to_string(&sp).unwrap();
+        assert!(json.contains(r#"streamId":7"#), "camelCase wire: {json}");
+        let parsed: SctpStreamParameters = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.stream_id, 7);
+        assert!(parsed.ordered);
+
+        let sp2 = SctpStreamParameters {
+            stream_id: 3,
+            ordered: false,
+            max_packet_life_time: Some(100),
+            max_retransmits: Some(5),
+        };
+        let parsed2: SctpStreamParameters = serde_json::from_str(&serde_json::to_string(&sp2).unwrap()).unwrap();
+        assert_eq!(parsed2.max_packet_life_time, Some(100));
+        assert_eq!(parsed2.max_retransmits, Some(5));
+    }
+
+    #[test]
+    fn roundtrip_create_data_producer() {
+        let msg = SignalingMessage::CreateDataProducer {
+            room_id: "room-1".into(),
+            peer_id: "peer-1".into(),
+            transport_direction: TransportDirection::Send,
+            label: "control".into(),
+            protocol: "mediaservo.control".into(),
+            sctp_stream_parameters: Some(SctpStreamParameters {
+                stream_id: 1,
+                ordered: true,
+                max_packet_life_time: None,
+                max_retransmits: None,
+            }),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#"type":"create_data_producer"#));
+        assert!(json.contains(r#"label":"control"#));
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            SignalingMessage::CreateDataProducer { room_id, label, protocol, sctp_stream_parameters, .. } => {
+                assert_eq!(room_id, "room-1");
+                assert_eq!(label, "control");
+                assert_eq!(protocol, "mediaservo.control");
+                assert_eq!(sctp_stream_parameters.unwrap().stream_id, 1);
+            }
+            other => panic!("expected CreateDataProducer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn roundtrip_data_producer_created() {
+        let msg = SignalingMessage::DataProducerCreated {
+            room_id: "room-1".into(),
+            data_producer_id: "dp-1".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#"type":"data_producer_created"#));
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, SignalingMessage::DataProducerCreated { .. }));
+    }
+
+    #[test]
+    fn roundtrip_new_data_producer() {
+        let msg = SignalingMessage::NewDataProducer {
+            room_id: "room-1".into(),
+            data_producer_id: "dp-1".into(),
+            peer_id: "peer-a".into(),
+            label: "vision".into(),
+            protocol: "mediaservo.vision".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#"type":"new_data_producer"#));
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, SignalingMessage::NewDataProducer { .. }));
+    }
+
+    #[test]
+    fn roundtrip_consume_data() {
+        let msg = SignalingMessage::ConsumeData {
+            room_id: "room-1".into(),
+            peer_id: "peer-1".into(),
+            transport_direction: TransportDirection::Recv,
+            data_producer_id: "dp-1".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#"type":"consume_data"#));
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, SignalingMessage::ConsumeData { .. }));
+    }
+
+    #[test]
+    fn roundtrip_data_consumed() {
+        let msg = SignalingMessage::DataConsumed {
+            room_id: "room-1".into(),
+            data_consumer_id: "dc-1".into(),
+            data_producer_id: "dp-1".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#"type":"data_consumed"#));
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(parsed, SignalingMessage::DataConsumed { .. }));
     }
 
 }
