@@ -409,7 +409,7 @@ def _run_host_foreground(bin_path: Path) -> None:
 
 
 def _cmd_run_host(legacy: bool = False) -> None:
-    """启动多进程 host — init（缺省）→ token issue ×N → host start（oxmgr 拉起全部进程）。
+    """启动多进程 host — init（缺省）→ token issue --all → host start（oxmgr 拉起全部进程）。
     --legacy: 回退旧单进程 host-legacy（pkill + 后台 Popen，日志 /tmp/mediaservo-host.log）。"""
     if sys.platform == "win32":
         print("run-host: Windows 暂不支持", file=sys.stderr)
@@ -427,35 +427,9 @@ def _cmd_run_host(legacy: bool = False) -> None:
     # 1) init（幂等）— host.toml / signing.pem 已存在则跳过
     if not (ROOT / "etc" / "host.toml").exists():
         _run_or_exit([str(host), "init", str(ROOT)])
-    # 2) token issue ×N（幂等 — 已存在不覆盖，D-H10 固定令牌）
-    #    文件名对齐 translate.rs to_oxfile_in_dir: <cam>.token / <stream>.token / recorder.token
-    text = (ROOT / "etc" / "host.toml").read_text()
-    link_dir = ROOT / "etc" / "link"
-    link_dir.mkdir(parents=True, exist_ok=True)
-    issued = 0
-    for cam_id, _ in _toml_id_pairs(text, "cameras"):
-        tok = link_dir / f"{cam_id}.token"
-        if tok.exists():
-            continue
-        _run_or_exit([str(host), "token", "issue", "--role", "capture",
-                      "--node", f"host-capturer-{cam_id}", "--topic", f"camera/{cam_id}",
-                      "--out", str(tok), str(ROOT)])
-        issued += 1
-    for stream_id, cam_id in _toml_id_pairs(text, "streams"):
-        tok = link_dir / f"{stream_id}.token"
-        if tok.exists():
-            continue
-        _run_or_exit([str(host), "token", "issue", "--role", "pusher",
-                      "--node", f"host-streamer-{stream_id}", "--topic", f"camera/{cam_id}",
-                      "--out", str(tok), str(ROOT)])
-        issued += 1
-    rec_tok = link_dir / "recorder.token"
-    if not rec_tok.exists():
-        _run_or_exit([str(host), "token", "issue", "--role", "recorder",
-                      "--node", "host-recorder", "--out", str(rec_tok), str(ROOT)])
-        issued += 1
-    if issued:
-        print(f"✓ 已签发 {issued} 个链路令牌（etc/link/）")
+    # 2) token issue --all（幂等 — 已存在不覆盖，D-H10 固定令牌；host init 已签发时即 no-op）
+    #    标准集从 host.toml 推导: <cam>.token/<stream>.token/recorder.token/agent.token
+    _run_or_exit([str(host), "token", "issue", "--all", str(ROOT)])
     # 3) host start（oxmgr apply）
     _run_or_exit([str(host), "start", str(ROOT)])
     print("✓ host 多进程已启动（oxmgr 管理; 日志: ~/.local/share/oxmgr/logs 或 `oxmgr logs all`）")
@@ -488,24 +462,6 @@ def _run_host_legacy() -> None:
     else:
         print(f"✗ host 启动失败 (exit {proc.returncode}) — 日志: {log_path}", file=sys.stderr)
         sys.exit(1)
-
-
-def _toml_id_pairs(text: str, section: str) -> list[tuple[str, str]]:
-    """提取 `[[section]]` 块内 (id, camera) 对（流 camera 缺省 = 自身 id）。
-
-    Python 3.10 无 tomllib；host.toml 由 host init 生成（机器可写），按节正则提取
-    （Phase D 升级 tomllib 或 host CLI 清单命令时移除）。"""
-    import re
-    out: list[tuple[str, str]] = []
-    for block in re.split(r"(?m)(?=\[\[)", text):
-        if f"[[{section}]]" not in block:
-            continue
-        m = re.search(r'^id\s*=\s*"([^"]+)"', block, re.M)
-        if not m:
-            continue
-        cam = re.search(r'^camera\s*=\s*"([^"]+)"', block, re.M)
-        out.append((m.group(1), cam.group(1) if cam else m.group(1)))
-    return out
 
 def _cmd_stop(target: str) -> None:
     """stop <target> — server: compose stop（保留容器，秒级再启）; host/client: 杀进程。"""

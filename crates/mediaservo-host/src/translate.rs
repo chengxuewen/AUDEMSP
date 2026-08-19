@@ -350,12 +350,14 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
         }
         // D1: agent 网关本地端口（[signaling] local_port 配置；缺省 agent 内置 17980）
         // E1: agent 追加 --config（拓扑监控期望态数据源，与 recorder 同形）。
+        // G1: agent 追加 --token agent.token（Monitor ACL）——数据流监控不再 tokenless。
         if name == "host-agent" {
             if let Some(port) = signaling_local_port(cfg)? {
                 cmd.push_str(&format!(" --port {port}"));
             }
             if !config_path.as_os_str().is_empty() {
                 cmd.push_str(&format!(" --config {}", config_path.display()));
+                cmd.push_str(&format!(" --token {}/agent.token", token_dir.display()));
             }
         }
         // C4: recorder [record] enabled=false 时按设计 exit 0 — 在 oxmgr
@@ -587,6 +589,21 @@ camera = "cam0"
         assert!(ox.contains("cwd = \""), "watch 前置要求 cwd: {ox}");
         // 无路径变体（doctor 用）不带 watch
         assert!(!to_oxfile(CFG_V0).unwrap().contains("watch"), "to_oxfile 无路径变体不应 watch");
+    }
+
+    /// G1: host-agent 与 recorder 同形携带 --token（agent.token，Monitor ACL）——
+    /// oxfile 全进程凭据完备，agent 数据流监控不再 tokenless。
+    #[test]
+    fn oxfile_wires_agent_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let ox = to_oxfile_in_dir(CFG_V0, dir.path()).expect("to_oxfile_in_dir");
+        let agent_line = ox.lines()
+            .find(|l| l.contains("command") && l.contains("host-agent"))
+            .expect("agent 命令行: {ox}");
+        assert!(
+            agent_line.contains("--token") && agent_line.contains("agent.token"),
+            "host-agent 应带 --token agent.token: {agent_line}"
+        );
     }
 
     #[test]

@@ -188,3 +188,187 @@ fn issue_rejects_empty_node_and_topic() {
         assert!(!stderr.is_empty(), "空值应报错");
     }
 }
+
+// ── G1: --all 标准集 / --for-ros / --ttl / 校验 / 审计 ──
+
+/// G1: `host token issue --all` 从 host.toml 签发标准车辆令牌集（跳过已存在，
+/// D-H10 固定令牌）。模板配置 = cam0 + cam0-stream。
+#[test]
+fn issue_all_standard_set_with_correct_claims() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init(dir.path());
+    let out = issue(dir.path(), &["--all"]);
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+
+    // etc/link/<cam>.token: Capture 仅发布 camera/<cam>
+    let cam = decode_claims(&dir.path().join("etc/link/cam0.token"));
+    assert_eq!(cam.role, Role::Capture);
+    assert_eq!(cam.node_id, "host-capturer-cam0");
+    assert_eq!(cam.acl.publish_allow, vec!["camera/cam0"]);
+    assert!(cam.acl.subscribe_allow.is_empty());
+
+    // etc/link/<stream>.token: Pusher 订阅 camera/<cam> + vision/<cam>（F3 视觉 DC）
+    let stream = decode_claims(&dir.path().join("etc/link/cam0-stream.token"));
+    assert_eq!(stream.role, Role::Pusher);
+    assert_eq!(stream.node_id, "host-streamer-cam0-stream");
+    assert_eq!(stream.acl.subscribe_allow, vec!["camera/cam0", "vision/cam0"]);
+    assert!(stream.acl.publish_allow.is_empty());
+
+    // etc/link/recorder.token: Recorder 矩阵缺省（订阅 camera/video/vision + 发布 stats）
+    let rec = decode_claims(&dir.path().join("etc/link/recorder.token"));
+    assert_eq!(rec.role, Role::Recorder);
+    assert_eq!(rec.node_id, "host-recorder");
+    assert_eq!(rec.acl.subscribe_allow, vec!["camera/*", "video/*", "vision/*"]);
+    assert_eq!(rec.acl.publish_allow, vec!["stats/*"]);
+
+    // etc/link/agent.token: Monitor 矩阵缺省（订阅 camera/* + stats/*，无发布）
+    let agent = decode_claims(&dir.path().join("etc/link/agent.token"));
+    assert_eq!(agent.role, Role::Monitor);
+    assert_eq!(agent.node_id, "host-agent");
+    assert_eq!(agent.acl.subscribe_allow, vec!["camera/*", "stats/*"]);
+    assert!(agent.acl.publish_allow.is_empty());
+
+    // ROS 令牌非自动签发（--for-ros 显式）
+    assert!(!dir.path().join("etc/link/ros-vision.token").exists());
+}
+
+#[test]
+fn issue_all_skips_existing_tokens() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init(dir.path());
+    // 预先签发 cam0.token（自定义 node）→ --all 不得覆盖（D-H10 固定令牌）
+    let tok = dir.path().join("etc/link/cam0.token");
+    let out = issue(
+        dir.path(),
+        &[
+            "--role", "capture", "--node", "custom-node",
+            "--topic", "camera/cam0", "--out", tok.to_str().expect("utf8"),
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let out = issue(dir.path(), &["--all"]);
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let cam = decode_claims(&tok);
+    assert_eq!(cam.node_id, "custom-node", "--all 不得覆盖已存在令牌");
+}
+
+#[test]
+fn issue_all_missing_host_toml_exits_1() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // 无 host init → 无 host.toml/signing.pem
+    let out = issue(dir.path(), &["--all"]);
+    assert_eq!(out.status.code(), Some(1), "缺 host.toml 应 exit 1");
+}
+
+#[test]
+fn issue_for_ros_preset_issues_perception_token() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init(dir.path());
+    let out = issue(dir.path(), &["--for-ros"]);
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    // 路径与 ros_bridge.yaml token_path 一致
+    let tok = dir.path().join("etc/link/ros-vision.token");
+    assert!(tok.exists(), "ros-vision.token 应已写出");
+    let claims = decode_claims(&tok);
+    assert_eq!(claims.role, Role::Perception);
+    assert_eq!(claims.node_id, "ros-vision");
+    assert_eq!(claims.acl.publish_allow, vec!["perception/*", "vision/*"]);
+    assert_eq!(claims.acl.subscribe_allow, vec!["camera/*"]);
+}
+
+#[test]
+fn issue_for_ros_conflicts_with_explicit_args() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init(dir.path());
+    let out = issue(
+        dir.path(),
+        &["--for-ros", "--role", "capture", "--node", "n", "--out", "x.token"],
+    );
+    assert_eq!(out.status.code(), Some(2), "--for-ros 与显式 --role/--node/--out 冲突");
+}
+
+/// G1 加固: 显式 --topic 必须落在角色 ACL 矩阵允许范围内（越权拒绝）。
+#[test]
+fn issue_rejects_topic_outside_role_matrix() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init(dir.path());
+    // capture 仅 camera/* — vision/cam0 越权
+    let out = issue(
+        dir.path(),
+        &["--role", "capture", "--node", "n", "--topic", "vision/cam0", "--out", "x.token"],
+    );
+    assert_eq!(out.status.code(), Some(2), "capture 发布 vision/* 应拒绝");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("vision/cam0"), "stderr 应指明越权 topic, got: {stderr}");
+    // pusher 仅订阅 camera/video/vision — stats/x 越权
+    let out = issue(
+        dir.path(),
+        &["--role", "pusher", "--node", "n", "--topic", "stats/x", "--out", "y.token"],
+    );
+    assert_eq!(out.status.code(), Some(2), "pusher 订阅 stats/* 应拒绝");
+    assert!(!dir.path().join("x.token").exists(), "失败时不应写文件");
+}
+
+/// G1: --node 字符集守卫（与 host.toml id 同规则 [A-Za-z0-9_-]+，防路径穿越/畸形 claims）。
+#[test]
+fn issue_rejects_node_with_invalid_chars() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init(dir.path());
+    let out = issue(dir.path(), &["--role", "capture", "--node", "bad/node", "--out", "x.token"]);
+    assert_eq!(out.status.code(), Some(2), "node 含 / 应拒绝");
+    let out = issue(dir.path(), &["--role", "capture", "--node", "sp ace", "--out", "x.token"]);
+    assert_eq!(out.status.code(), Some(2), "node 含空格应拒绝");
+}
+
+/// G1: --ttl <secs> 覆盖缺省 10 年（测试用）。
+#[test]
+fn issue_ttl_override_respected() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init(dir.path());
+    let tok = dir.path().join("ttl.token");
+    let out = issue(
+        dir.path(),
+        &[
+            "--role", "capture", "--node", "n", "--topic", "camera/cam0",
+            "--out", tok.to_str().expect("utf8"), "--ttl", "3600",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let claims = decode_claims(&tok);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock");
+    let now = now.as_secs();
+    assert!(claims.exp > now && claims.exp <= now + 3600 + 60, "ttl=3600 应生效, exp={}", claims.exp);
+}
+
+#[test]
+fn issue_ttl_rejects_zero() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init(dir.path());
+    let out = issue(dir.path(), &["--role", "capture", "--node", "n", "--out", "x.token", "--ttl", "0"]);
+    assert_eq!(out.status.code(), Some(2), "ttl=0 应拒绝");
+}
+
+/// G1: 每次签发写审计（etc/link/issuance.jsonl JSONL，D-H10 审计纪律）。
+#[test]
+fn issue_writes_audit_entry() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    init(dir.path());
+    let tok = dir.path().join("audit.token");
+    let out = issue(
+        dir.path(),
+        &["--role", "pusher", "--node", "audit-1", "--topic", "camera/cam0", "--out", tok.to_str().expect("utf8")],
+    );
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let log = std::fs::read_to_string(dir.path().join("etc/link/issuance.jsonl")).expect("issuance.jsonl 应存在");
+    let line = log.lines().last().expect("至少一条审计");
+    let v: serde_json::Value = serde_json::from_str(line).expect("审计行应可解析");
+    assert_eq!(v["role"], "pusher");
+    assert_eq!(v["node"], "audit-1");
+    assert_eq!(v["topics"], serde_json::json!(["camera/cam0"]));
+    assert_eq!(v["out"], serde_json::json!(tok.to_string_lossy()));
+    assert!(v["ts"].as_u64().unwrap() > 0, "ts 应填充");
+    assert_eq!(v["ttl"], serde_json::json!(10 * 365 * 24 * 3600), "缺省 ttl = 10 年");
+}
+

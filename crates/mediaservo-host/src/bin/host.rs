@@ -4,6 +4,7 @@
 //! - `host init [<dir>]`        — 生成 `etc/host.toml` 模板 + `etc/link/signing.pem`
 //!   （Ed25519 PKCS#8 keypair，0600）+ `etc/link/ros_bridge.yaml`（B3：ROS 节点
 //!   配置单一来源——topic 清单 + 令牌路径，从 host.toml 相机/流清单导出）
+//!   + 标准车辆令牌集自动签发（G1：`host token issue --all`，幂等）
 //! - `host start [<dir>]` — 读 etc/host.toml → 校验 → 翻译 → 写 run/oxfile.toml
 //!   → `oxmgr apply run/oxfile.toml` 拉起全部 host 进程
 //! - `host apply [<dir>]`  — 同上（E4 云端配置闭环本地等价物；增量: 新增 Start/
@@ -19,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use mediaservo_link::{
-    CapabilityToken, Ed25519SigningKey, Ed25519VerifyingKey, NodeAcl, NodeId, Role, TokenFile,
+    CapabilityToken, Ed25519SigningKey, Ed25519VerifyingKey, FrameTopic, NodeAcl, NodeId, Role, TokenFile,
 };
 use ed25519_dalek::pkcs8::{DecodePrivateKey, EncodePublicKey};
 use pkcs8::LineEnding;
@@ -169,6 +170,10 @@ fn cmd_init(args: &mut impl Iterator<Item = String>) -> i32 {
         return 1;
     }
     println!("已生成 {}", ros_path.display());
+    // G1: 签发标准车辆令牌集（幂等——D-H10 固定令牌，已存在跳过）
+    if issue_all(&dir, DEFAULT_TOKEN_TTL_SECS) != 0 {
+        return 1;
+    }
     0
 }
 
@@ -344,14 +349,19 @@ fn cmd_status(args: &mut impl Iterator<Item = String>) -> i32 {
 }
 
 /// `host token issue`: 用 `etc/link/signing.pem`（host init 生成，PKCS#8 Ed25519）签发
-/// 能力令牌（C4 最小签发；G1 全量签发前 e2e 需用）。
+/// 能力令牌（C4 最小签发 → G1 全量签发：--all/--for-ros/--ttl/校验/审计）。
 ///
 /// 令牌写为 TokenFile 单文件（内嵌公钥 + JWT，MSTK 格式）——与 translate.rs
-/// oxfile `--token` 引用的 `<cam>.token`/`<stream>.token`/`recorder.token` 同构。
-/// 缺省 TTL 10 年（D-H10 固定令牌策略）。
-const TOKEN_USAGE: &str = "用法: host token issue --role <capture|processor|pusher|puller|recorder|control|perception> --node <id> [--topic <T>]... --out <path> [<dir>]";
+/// oxfile `--token` 引用的 `<cam>.token`/`<stream>.token`/`recorder.token`/`agent.token`
+/// 同构。缺省 TTL 10 年（D-H10 固定令牌策略）。
+///
+/// 每次签发写审计（etc/link/issuance.jsonl JSONL，D-H10 审计纪律）。
+const TOKEN_USAGE: &str = "用法:\n  host token issue --role <capture|processor|pusher|puller|recorder|control|perception|monitor> --node <id> [--topic <T>]... --out <path> [--ttl <secs>] [<dir>]\n  host token issue --all [--ttl <secs>] [<dir>]      # 从 host.toml 签发标准车辆令牌集（幂等，跳过已存在）\n  host token issue --for-ros [--ttl <secs>] [<dir>]  # Perception 预设（node=ros-vision, out=etc/link/ros-vision.token，与 ros_bridge.yaml 一致）\nROS 令牌示例: host token issue --role perception --node ros-vision --out etc/link/ros-vision.token <dir>";
 /// D-H10 固定令牌策略: 令牌长期有效，不随部署轮换。
 const DEFAULT_TOKEN_TTL_SECS: u64 = 10 * 365 * 24 * 3600;
+/// --for-ros 预设: ROS 视觉节点身份（与 ros_bridge.yaml token_path 同文件）。
+const ROS_TOKEN_NODE: &str = "ros-vision";
+const ROS_TOKEN_FILE: &str = "ros-vision.token";
 
 fn cmd_token(args: &mut impl Iterator<Item = String>) -> i32 {
     let Some(sub) = args.next() else {
@@ -371,6 +381,9 @@ fn cmd_token_issue(args: &mut impl Iterator<Item = String>) -> i32 {
     let mut node: Option<String> = None;
     let mut topics: Vec<String> = Vec::new();
     let mut out: Option<PathBuf> = None;
+    let mut ttl: u64 = DEFAULT_TOKEN_TTL_SECS;
+    let mut all = false;
+    let mut for_ros = false;
     let mut dir: Option<PathBuf> = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -392,8 +405,8 @@ fn cmd_token_issue(args: &mut impl Iterator<Item = String>) -> i32 {
                     eprintln!("--node 缺值");
                     return 2;
                 };
-                if v.is_empty() {
-                    eprintln!("--node 不能为空");
+                if let Err(e) = check_node_id(&v) {
+                    eprintln!("{e}");
                     return 2;
                 }
                 node = Some(v);
@@ -416,6 +429,21 @@ fn cmd_token_issue(args: &mut impl Iterator<Item = String>) -> i32 {
                 };
                 out = Some(PathBuf::from(v));
             }
+            "--ttl" => {
+                let Some(v) = args.next() else {
+                    eprintln!("--ttl 缺值");
+                    return 2;
+                };
+                match v.parse::<u64>() {
+                    Ok(t) if t > 0 => ttl = t,
+                    _ => {
+                        eprintln!("--ttl 必须为正整数秒: {v}");
+                        return 2;
+                    }
+                }
+            }
+            "--all" => all = true,
+            "--for-ros" => for_ros = true,
             _ => {
                 if arg.starts_with("--") {
                     eprintln!("实例目录参数不能以 -- 开头（目录是位置参数）: {arg}");
@@ -432,62 +460,276 @@ fn cmd_token_issue(args: &mut impl Iterator<Item = String>) -> i32 {
         }
     }
     let dir = dir.unwrap_or_else(|| PathBuf::from(".host"));
+    if all && for_ros {
+        eprintln!("--all 与 --for-ros 互斥");
+        return 2;
+    }
+    if (all || for_ros) && (role.is_some() || node.is_some() || !topics.is_empty() || out.is_some()) {
+        let preset = if all { "--all" } else { "--for-ros" };
+        eprintln!("{preset} 不能与 --role/--node/--topic/--out 同用（参数从 host.toml/预设推导）");
+        return 2;
+    }
+    if all {
+        return issue_all(&dir, ttl);
+    }
+    if for_ros {
+        let out = std::path::absolute(dir.join("etc").join("link").join(ROS_TOKEN_FILE))
+            .unwrap_or_else(|_| dir.join("etc").join("link").join(ROS_TOKEN_FILE));
+        return match issue_one(&dir, Role::Perception, ROS_TOKEN_NODE.to_string(), Vec::new(), &out, ttl) {
+            Ok(()) => {
+                println!("已签发 Perception 令牌 → {}（node={} ttl={}s）", out.display(), ROS_TOKEN_NODE, ttl);
+                0
+            }
+            Err(e) => {
+                eprintln!("token: {e}");
+                1
+            }
+        };
+    }
     let (Some(role), Some(node), Some(out)) = (role, node, out) else {
         eprintln!("缺少必填参数: --role/--node/--out");
         eprintln!("{TOKEN_USAGE}");
         return 2;
     };
-
-    let pem_path = dir.join("etc").join("link").join("signing.pem");
-    let pem = match std::fs::read(&pem_path) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("token: 读取 {} 失败: {e} — 先运行 host init <dir>", pem_path.display());
-            return 1;
+    // G1 加固: 显式 --topic 必须落在角色 ACL 矩阵允许方向/范围内（越权拒绝）。
+    if let Err(e) = validate_topics(role, &topics) {
+        eprintln!("{e}");
+        return 2;
+    }
+    match issue_one(&dir, role, node.clone(), topics, &out, ttl) {
+        Ok(()) => {
+            println!("已签发 {:?} 令牌 → {}（node={} ttl={}s）", role, out.display(), node, ttl);
+            0
         }
-    };
-    let signing = match ed25519_dalek::SigningKey::from_pkcs8_pem(&String::from_utf8_lossy(&pem)) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("token: {} 不是有效 PKCS#8 Ed25519 私钥: {e}", pem_path.display());
-            return 1;
-        }
-    };
-    let acl = match build_acl(NodeId::new(node), role, topics) {
-        Ok(a) => a,
         Err(e) => {
             eprintln!("token: {e}");
-            return 2;
+            1
         }
-    };
-    let sk = Ed25519SigningKey::from_pem(&pem);
-    let token = match CapabilityToken::sign(&acl, DEFAULT_TOKEN_TTL_SECS, &sk) {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("token: 签名失败: {e}");
-            return 1;
-        }
-    };
-    // TokenFile 内嵌 verifying key PEM（派生自私钥，同一密钥对）
-    let vk_pem = match signing.verifying_key().to_public_key_pem(LineEnding::LF) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("token: 导出公钥失败: {e}");
-            return 1;
-        }
-    };
-    let vk = Ed25519VerifyingKey::from_pem(vk_pem.as_bytes());
-    let bytes = TokenFile::encode(&token, &vk);
-    // C4 review: 能力令牌与 signing.pem 同级凭据保护 — 0600 写入（复用 write_private_pem）
-    if let Err(e) = write_private_pem(&out, &bytes) {
-        eprintln!("token: 写入 {} 失败: {e}", out.display());
-        return 1;
     }
-    println!("已签发 {:?} 令牌 → {}（node={} ttl={}s）", role, out.display(), acl.node_id.as_str(), DEFAULT_TOKEN_TTL_SECS);
-    0
 }
 
-/// 角色名 → Role（小写变体名; 未知 → 明确报错）。
+/// G1 加固: 显式 --topic 必须匹配角色 ACL 矩阵对应方向的允许模式。
+/// 单方向角色（capture/pusher/recorder 订阅向/monitor）允许显式收窄；
+/// 双方向/无方向角色（processor/perception/control/puller）显式 --topic 拒绝——
+/// 矩阵缺省是其唯一授权面。
+fn validate_topics(role: Role, topics: &[String]) -> Result<(), String> {
+    if topics.is_empty() {
+        return Ok(()); // 无显式 topic → 矩阵缺省，无需校验
+    }
+    let base = NodeAcl::for_role(NodeId::new(""), role);
+    let allowed: &[String] = match (base.publish_allow.is_empty(), base.subscribe_allow.is_empty()) {
+        (false, true) => &base.publish_allow,
+        (true, false) => &base.subscribe_allow,
+        _ => {
+            return Err(format!(
+                "角色 {:?} 为双方向/无方向 ACL — 显式 --topic 仅支持单方向角色（capture/pusher/monitor 及 recorder 订阅向）; 省略 --topic 使用矩阵缺省",
+                role
+            ));
+        }
+    };
+    for t in topics {
+        if !allowed.iter().any(|p| FrameTopic::new(t).matches(p)) {
+            return Err(format!("topic {t:?} 超出角色 {:?} ACL 矩阵（允许模式: {:?}）", role, allowed));
+        }
+    }
+    Ok(())
+}
+
+/// G1 加固: node id 字符集守卫（与 host.toml id 同规则 [A-Za-z0-9_-]+，
+/// 防畸形 claims/路径穿越）。
+fn check_node_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err(format!("--node 非法: {id:?}（仅允许 [A-Za-z0-9_-]+）"));
+    }
+    Ok(())
+}
+
+/// 单次签发流水线：读 signing.pem → build_acl → 签名 → 审计 → 写 TokenFile（0600）。
+/// 审计先行：无审计记录的签发拒绝落盘（D-H10 审计纪律——令牌不脱离审计存在）。
+fn issue_one(
+    dir: &Path,
+    role: Role,
+    node: String,
+    topics: Vec<String>,
+    out: &Path,
+    ttl: u64,
+) -> Result<(), String> {
+    let pem_path = dir.join("etc").join("link").join("signing.pem");
+    let pem = std::fs::read(&pem_path).map_err(|e| {
+        format!("读取 {} 失败: {e} — 先运行 host init <dir>", pem_path.display())
+    })?;
+    let signing = ed25519_dalek::SigningKey::from_pkcs8_pem(&String::from_utf8_lossy(&pem))
+        .map_err(|e| format!("{} 不是有效 PKCS#8 Ed25519 私钥: {e}", pem_path.display()))?;
+    let acl = build_acl(NodeId::new(node.clone()), role, topics.clone())?;
+    let sk = Ed25519SigningKey::from_pem(&pem);
+    let token = CapabilityToken::sign(&acl, ttl, &sk).map_err(|e| format!("签名失败: {e}"))?;
+    // TokenFile 内嵌 verifying key PEM（派生自私钥，同一密钥对）
+    let vk_pem = signing
+        .verifying_key()
+        .to_public_key_pem(LineEnding::LF)
+        .map_err(|e| format!("导出公钥失败: {e}"))?;
+    let vk = Ed25519VerifyingKey::from_pem(vk_pem.as_bytes());
+    let bytes = TokenFile::encode(&token, &vk);
+    append_audit(dir, &role, &node, &topics, out, ttl)?;
+    write_private_pem(out, &bytes).map_err(|e| format!("写入 {} 失败: {e}", out.display()))?;
+    Ok(())
+}
+
+/// 签发审计（D-H10）: JSONL 追加 etc/link/issuance.jsonl，
+/// 每条含 ts/role/node/topics/out/ttl。文件恒 0600（签发凭据登记簿）。
+fn append_audit(
+    dir: &Path,
+    role: &Role,
+    node: &str,
+    topics: &[String],
+    out: &Path,
+    ttl: u64,
+) -> Result<(), String> {
+    use std::io::Write;
+    let log = dir.join("etc").join("link").join("issuance.jsonl");
+    let entry = serde_json::json!({
+        "ts": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+        "role": role_name(role),
+        "node": node,
+        "topics": topics,
+        "out": out.to_string_lossy(),
+        "ttl": ttl,
+    });
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log)
+        .map_err(|e| format!("打开 {} 失败: {e}", log.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| format!("审计 {} 权限设置失败: {e}", log.display()))?;
+    }
+    writeln!(f, "{entry}").map_err(|e| format!("写入 {} 失败: {e}", log.display()))
+}
+
+fn role_name(r: &Role) -> &'static str {
+    match r {
+        Role::Capture => "capture",
+        Role::Processor => "processor",
+        Role::Pusher => "pusher",
+        Role::Puller => "puller",
+        Role::Recorder => "recorder",
+        Role::Control => "control",
+        Role::Perception => "perception",
+        Role::Monitor => "monitor",
+        _ => "unknown",
+    }
+}
+
+/// G1: `host token issue --all` — 从 host.toml 签发标准车辆令牌集（幂等，
+/// 已存在跳过 — D-H10 固定令牌）：
+///   etc/link/<cam>.token     Capture  publish camera/<cam>（host-capturer-<cam>）
+///   etc/link/<stream>.token  Pusher   subscribe camera/<cam> + vision/<cam>（F3 视觉 DC）
+///   etc/link/recorder.token  Recorder 矩阵缺省（subscribe camera/video/vision + publish stats）
+///   etc/link/agent.token     Monitor  矩阵缺省（subscribe camera/* + stats/* — E2 数据流监控）
+/// ROS 令牌（--for-ros）不自动签发——ROS 存在性可选。
+fn issue_all(dir: &Path, ttl: u64) -> i32 {
+    let cfg_path = dir.join("etc").join("host.toml");
+    let cfg = match std::fs::read_to_string(&cfg_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("token: 读取 {} 失败: {e} — 先运行 host init <dir>", cfg_path.display());
+            return 1;
+        }
+    };
+    let cameras = match mediaservo_host::translate::camera_configs(&cfg) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("token: {e}");
+            return 1;
+        }
+    };
+    let streams = match mediaservo_host::translate::stream_configs(&cfg) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("token: {e}");
+            return 1;
+        }
+    };
+    let link = dir.join("etc").join("link");
+    let mut issued = 0usize;
+    let mut first_err: Option<String> = None;
+    'issue: {
+        for cam in &cameras {
+            let out = link.join(format!("{}.token", cam.id));
+            if out.exists() {
+                continue;
+            }
+            match issue_one(
+                dir,
+                Role::Capture,
+                format!("host-capturer-{}", cam.id),
+                vec![format!("camera/{}", cam.id)],
+                &out,
+                ttl,
+            ) {
+                Ok(()) => issued += 1,
+                Err(e) => {
+                    first_err = Some(format!("签发 {} 失败: {e}", out.display()));
+                    break 'issue;
+                }
+            }
+        }
+        for s in &streams {
+            let out = link.join(format!("{}.token", s.id));
+            if out.exists() {
+                continue;
+            }
+            let cam = s.camera.clone();
+            match issue_one(
+                dir,
+                Role::Pusher,
+                format!("host-streamer-{}", s.id),
+                vec![format!("camera/{cam}"), format!("vision/{cam}")],
+                &out,
+                ttl,
+            ) {
+                Ok(()) => issued += 1,
+                Err(e) => {
+                    first_err = Some(format!("签发 {} 失败: {e}", out.display()));
+                    break 'issue;
+                }
+            }
+        }
+        let rec = link.join("recorder.token");
+        if !rec.exists() {
+            match issue_one(dir, Role::Recorder, "host-recorder".to_string(), Vec::new(), &rec, ttl) {
+                Ok(()) => issued += 1,
+                Err(e) => first_err = Some(format!("签发 {} 失败: {e}", rec.display())),
+            }
+        }
+        if first_err.is_none() {
+            let agent = link.join("agent.token");
+            if !agent.exists() {
+                match issue_one(dir, Role::Monitor, "host-agent".to_string(), Vec::new(), &agent, ttl) {
+                    Ok(()) => issued += 1,
+                    Err(e) => first_err = Some(format!("签发 {} 失败: {e}", agent.display())),
+                }
+            }
+        }
+    }
+    match first_err {
+        Some(e) => {
+            eprintln!("token: {e}");
+            1
+        }
+        None => {
+            println!("已签发 {issued} 个链路令牌（{}）", link.display());
+            0
+        }
+    }
+}
+
 fn parse_role(s: &str) -> Result<Role, String> {
     match s.to_ascii_lowercase().as_str() {
         "capture" => Ok(Role::Capture),
