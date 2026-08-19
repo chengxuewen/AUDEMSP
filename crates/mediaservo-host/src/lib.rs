@@ -5,6 +5,8 @@
 //! `src/bin/host-legacy.rs`，Phase C 迁移完成后删除。
 /// host.toml → oxfile.toml 翻译器（Task A2）。
 pub mod translate;
+/// 控制平面（Task F1）：控制信封 + 执行器接口。
+pub mod control;
 /// 初始化日志系统，role 作为首个日志事件的标识字段。
 pub fn init_logging(role: &str) {
     mediaservo_common::logging::init(mediaservo_common::logging::LoggingConfig::default());
@@ -16,7 +18,7 @@ pub mod gateway;
 /// 拓扑监控（Task E1: 声明式期望 vs 发现式实际）。
 pub mod monitor;
 
-/// host.toml → oxfile.toml 翻译器（Task A2）。
+/// 占位运行器：打印 `<role> placeholder ready`，随后阻塞等待
 
 /// 占位运行器：打印 `<role> placeholder ready`，随后阻塞等待
 /// SIGINT（Ctrl-C）或 SIGTERM，收到信号后返回 `Ok(())` 优雅退出。

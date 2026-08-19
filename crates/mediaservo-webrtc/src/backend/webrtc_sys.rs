@@ -943,14 +943,55 @@ impl DcBackend for WebrtcSysDc {
     }
 
     async fn spool(&self) -> RTCDataChannelRx {
-        // ponytail: observer registration for spool needs a DataChannelObserver — deferred
-        RTCDataChannelRx::stub()
+        // Task F1: 经 register_observer 接收 DC 消息（DataChannelObserverWrapper
+        // 由 C++ 侧持有，unregister/destroy 前存活；转发到 mpsc 供 async 消费）
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let observer = std::sync::Arc::new(DcObserver { tx });
+        let wrapper = webrtc_sys::data_channel::DataChannelObserverWrapper::new(observer);
+        self.dc.register_observer(Box::new(wrapper));
+        RTCDataChannelRx::new(Some(rx))
     }
 
     async fn close(&mut self) {
         self.dc.close();
     }
 }
+
+/// libwebrtc DataChannel observer：转发消息/状态到 mpsc（Task F1 接收路径）。
+/// 回调在 libwebrtc 信令线程触发；仅做无锁 send，快速返回。
+struct DcObserver {
+    tx: tokio::sync::mpsc::UnboundedSender<crate::data_channel::RTCDataChannelEvent>
+}
+
+impl webrtc_sys::data_channel::DataChannelObserver for DcObserver {
+    fn on_state_change(&self, state: webrtc_sys::data_channel::ffi::DataState) {
+        let ev = match state {
+            webrtc_sys::data_channel::ffi::DataState::Open => {
+                Some(crate::data_channel::RTCDataChannelEvent::Open)
+            }
+            webrtc_sys::data_channel::ffi::DataState::Closed
+            | webrtc_sys::data_channel::ffi::DataState::Closing => {
+                Some(crate::data_channel::RTCDataChannelEvent::Closed)
+            }
+            webrtc_sys::data_channel::ffi::DataState::Connecting => None,
+            // ponytail: cxx 非穷尽 enum 未知态兜底（同 state() 惯例）
+            _ => None,
+        };
+        if let Some(ev) = ev {
+            let _ = self.tx.send(ev);
+        }
+    }
+
+    fn on_message(&self, data: &[u8], _is_binary: bool) {
+        let _ = self.tx.send(crate::data_channel::RTCDataChannelEvent::Message(
+            crate::data_channel::RTCDataMessage { data: data.to_vec() },
+        ));
+    }
+
+    fn on_buffered_amount_change(&self, _sent_data_size: u64) {}
+}
+
+// ── WebrtcSysTrack ──
 
 // ── WebrtcSysTrack ──
 

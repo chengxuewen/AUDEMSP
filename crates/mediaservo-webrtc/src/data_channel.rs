@@ -103,8 +103,7 @@ pub struct RTCDataChannelRx {
     rx: Option<tokio::sync::mpsc::UnboundedReceiver<RTCDataChannelEvent>>,
 }
 
-    impl RTCDataChannelRx {
-    #[cfg(feature = "backend-webrtc-rs")]
+impl RTCDataChannelRx {
     pub(crate) fn new(rx: Option<tokio::sync::mpsc::UnboundedReceiver<RTCDataChannelEvent>>) -> Self {
         Self { rx }
     }
