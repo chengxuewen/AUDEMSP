@@ -1085,3 +1085,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: H1 范围内不可修（upstream 域）——data_message_roundtrip_direct 标 #[ignore] 文档化；e2e 以实体创建 + worker 侧 stats 指标证明路由；host 侧 SFU-DC 消息接线（H2）依赖上游修复或走 DirectTransport 绕行方案（需用户决策）。
 - **验证**: `cargo test -p mediaservo-server --features sfu-mediasoup --lib sfu::` — 5 过 1 ignore；e2e_sfu 5/5。
 - **教训**: mediasoup-rs 的"通知型"事件（on_message/on_trace/on_close/on_data_producer_close）此前从未在仓库 e2e 中被实际触发（现有测试全走请求-响应）；接入任何依赖通知的事件前，先用官方测试同构复刻验证通知通道可用（本次复刻即暴露部署级失效）。归属: 修复时先对照 mediasoup-rs upstream（github.com/versatica/mediasoup rust-0.24.1 分支 channel.rs 通知分发）。
+
+## PIT-105: webrtc-sys 音频发送链路不产 RTP — AudioTrackSource 收 PCM 但 outbound 零包 (2026-08-19, H2)
+- **症状**: host-audio/e2e 音频参与者完整协商（answer 含 `a=sendonly` + ssrc + opus/48000/2, DTLS/ICE Connected），capture_frame 逐帧成功（tone 10ms 帧推入 AudioTrackSource, queue 模式 sink 交付实证 70 次回调），但 server 侧 producer `rtp_stats` 恒 0（PROD-TRACE 零事件, PROD-DUMP scores 空/初始 10）；host 侧 outbound-rtp bytesSent=0。
+- **根因**: 未定位（vendor libwebrtc 内部）——已排除: ① SDP 协商（answer 正确 sendonly+ssrc）② 传输（DTLS 连接实证）③ 源→轨道 sink 链（FFI 探针: capture_frame→AudioTrack sink 回调 70 次, livekit 快路径/queue 双路径均通）④ external_audio_source.patch 存在性（prebuilt libwebrtc.a 字符串实证 12 处）⑤ 帧节奏/大小（10ms/480 样本校验通过, 无 queue-full 拒绝）。丢失点在 libwebrtc 音频发送通道（LocalAudioSinkAdapter 挂载或 channel StartSend 状态）——需要 C++ 级对照程序（/tmp/opencode/pull_webrtc_test.cpp 半成品同源）或升级 livekit webrtc fork 验证。
+- **解法**: H2 范围内不可修（vendor 域）——音频 RTP 媒体面证据（byte_count>0）挂起；H2 交付完整接线（信令/transport/produce/consume/统计/策略）+ 文档化阻塞；e2e 断言 wiring 证据（kind=Audio + 统计可达）。修复优先级: 对照 livekit-go 官方 publish 流程写 C++ 最小复现（C11），或换 webrtc-rs TrackLocalStaticSample 音频路径（需先验证 webrtc-rs ICE vs mediasoup）。
+- **验证**: e2e_audio_conf 2/2（3 方 produce/consume + 4031 负例）+ host_audio_e2e 2/2（进程全流程+优雅退出）；`docker logs` PROD-TRACE 计数 0 为 PIT-105 复发判据。
+- **教训**: "FFI 存在 + 源侧交付通" ≠ "RTP 出包"——音频发送链有五段（源→轨道→sink 适配器→媒体通道→编码器→RTP），逐段实证才能定位；与 PIT-104 同属 vendor 集成盲区，接入新 FFI 能力前先做端到端最小验证（本轮的 FFI 探针 audio_source_sink_probe 即为该模式）。

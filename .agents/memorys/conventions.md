@@ -439,3 +439,11 @@ conda 交叉编译器（会 PIT-85 复发）。
 **检查**: `grep -rn "build_threadsafe_function" bindings/node/rust/mediaservo-node/src/` — 应为 `build()` 形态（非 build_callback 闭包）；`grep -rn "tokio::spawn" bindings/node/rust/mediaservo-node/src/` — 应仅 event_runtime().spawn。
 
 **来源**: Node 绑定实现实证（2026-08-18，D249）
+
+## C29: 音频会议房间约定 — audio-<vehicle-id> 前缀 + 复用 SFU 机制 (2026-08-19, H2)
+
+**约束**: ① 音频会议房间 = room_id 前缀约定 `audio-<vehicle-id>`（**不新增 RoomType**）——SFU room 由字符串隔离，transport/produce/consume 机制全复用；房间语义（全互连 opus，每参与者 publish 1 路 + subscribe 其他所有）由服务端 produce 门 + 客户端全订阅表达。② **音频房间 produce 门**: room_id 以 `audio-` 开头 → 只允许 `kind=Audio` producer（视频 producer 4031 + audit，signaling.rs Produce 分支）。③ **网关 rewrite_room 对 `audio-` 房间直通**（子进程已用规范名；重写会并入视频房间破坏每车独立音频房语义）。④ 权限 = 既有 RoomJoin 门（`room_owners` 存设备 ID = 车辆 ID，账号 allowlist/dispatcher/admin 任意车天然正确）+ 既有 can_produce（账号禁发 — 舱端只消费；两方发言需 D-H11 修订）。⑤ 音频 track 语义: `TrackSender::write_frame(kind=Audio)` = **PCM i16 10ms 帧**（非编码字节）→ AudioTrackSource.capture_frame → libwebrtc 内部 opus（webrtc-sys 后端；track id 必须为 "audio" — sender_get_parameters 按 libwebrtc 内部 label 匹配）。
+
+**检查**: `grep -n "is_audio_room" crates/mediaservo-server/src/sfu.rs`（前缀判定单测）; `grep -n "audio rooms allow audio producers only" crates/mediaservo-server/src/signaling.rs`; `grep -n "audio-" crates/mediaservo-host/src/gateway.rs`（rewrite 直通）。
+
+**来源**: H2 实现实证 (2026-08-19), PIT-105 阻塞说明见 pitfalls.md

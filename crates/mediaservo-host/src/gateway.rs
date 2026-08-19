@@ -196,7 +196,8 @@ impl State {
             SignalingMessage::WebRtcTransportCreated { .. }
             | SignalingMessage::Produced { .. }
             | SignalingMessage::Consumed { .. }
-            | SignalingMessage::Error { .. } => {
+            | SignalingMessage::Error { .. }
+            | SignalingMessage::SfuStats { .. } => { // H2: SfuStats 响应同 FIFO 路由
                 let Some(conn_id) = self.pending.pop_front() else {
                     tracing::warn!("SFU 响应无对应待决请求，丢弃");
                     return Vec::new();
@@ -208,7 +209,7 @@ impl State {
                         vec![(conn_id, m)]
                     }
                     None => {
-                        tracing::warn!(conn_id, "SFU 响应目标连接已断开");
+                        tracing::warn!("SFU 响应目标连接已断开");
                         Vec::new()
                     }
                 }
@@ -296,6 +297,7 @@ fn is_sfu_request(msg: &SignalingMessage) -> bool {
             | SignalingMessage::ConnectWebRtcTransport { .. }
             | SignalingMessage::Produce { .. }
             | SignalingMessage::Consume { .. }
+            | SignalingMessage::SfuStatsRequest { .. } // H2: SFU 统计查询（FIFO 响应路由）
     )
 }
 
@@ -313,6 +315,11 @@ fn is_relay_msg(msg: &SignalingMessage) -> bool {
 /// room_id 改写（整车房间 ↔ 子进程房间；Error 无房间字段）。
 fn rewrite_room(msg: &mut SignalingMessage, room: &str) {
     use SignalingMessage::*;
+    // H2: 音频房间（audio-<vehicle>）子进程已用规范房间名（网关不重写 —
+    // 重写到整车房间会把音频会议并入视频房间，破坏每车独立音频房语义）。
+    if room.starts_with("audio-") {
+        return;
+    }
     match msg {
         RoomJoin { room_id, .. }
         | RoomJoined { room_id, .. }
@@ -333,9 +340,16 @@ fn rewrite_room(msg: &mut SignalingMessage, room: &str) {
         | DataProducerCreated { room_id, .. }
         | NewDataProducer { room_id, .. }
         | ConsumeData { room_id, .. }
+        | CreateDataProducer { room_id, .. }
+        | DataProducerCreated { room_id, .. }
+        | NewDataProducer { room_id, .. }
+        | ConsumeData { room_id, .. }
         | DataConsumed { room_id, .. } => *room_id = room.to_string(),
         Error { .. } => {}
         StatusReport { .. } => {}
+        // H2: 无房间字段的 SFU 统计消息 — 无需改写（下游按 FIFO 路由）
+        SfuStatsRequest { .. } => {}
+        SfuStats { .. } => {}
         ConfigPush { .. } => {} // E4: agent 专属，不入子进程路由，无需房间改写
         EmergencyCommand { room_id, .. } => *room_id = room.to_string(), // G3: 急停房间级广播
     }

@@ -22,6 +22,9 @@ pub mod identity;
 /// 拓扑监控（Task E1: 声明式期望 vs 发现式实际）。
 pub mod monitor;
 
+/// H2 音频会议共享工具（host-audio 进程 + 音频 e2e）: opus SDP/produce 参数/tone 生成。
+pub mod audio;
+
 /// 占位运行器：打印 `<role> placeholder ready`，随后阻塞等待
 
 /// 占位运行器：打印 `<role> placeholder ready`，随后阻塞等待

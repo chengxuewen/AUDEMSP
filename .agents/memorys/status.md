@@ -1,6 +1,15 @@
 # MediaServo Status
 
-**生成**: 2026-08-18| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP || 373 commits | 22 skills | mediasoup 0.24.1 | PIT-97 | 分支: main (field Push/Pull 协商全通 + SFU 多 IP) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-19| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP + H1 data 域 + H2 音频会议 || 377 commits | 22 skills | mediasoup 0.24.1 | PIT-105 | 分支: main (field Push/Pull 协商全通 + SFU 多 IP) || Crate | Lib Tests | Integration | 备注 |
+|-------|:---------:|:------------:|------|
+| mediaservo-common | 82 | — | +SfuStatsRequest/SfuStats (H2) |
+| mediaservo-media | 107 | — | |
+| mediaservo-webrtc (stub) | 48 | 67+ | track_sink + set_video_encoder_backend |
+| mediaservo-webrtc (webrtc-sys) | 20 | 49+ (4 ICE 预存) | +AudioTrackSource 音频发送 (H2, PIT-105 阻塞 RTP) |
+| mediaservo-webrtc (webrtc-rs) | 11 | 29 (9 SDP/ICE 预存) | |
+| mediaservo-codec (stub) | 0 | 32 | |
+| mediaservo-codec (FFmpeg) | 0 | 35 | |
+| mediaservo-codec (GStreamer) | 0 | 27 | pixi 环境 | 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP || 373 commits | 22 skills | mediasoup 0.24.1 | PIT-97 | 分支: main (field Push/Pull 协商全通 + SFU 多 IP) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | mediaservo-common | 72 | — | EncoderStatus 信令 + codec 字段 |
 | mediaservo-media | 107 | — | |
@@ -45,6 +54,16 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 | OpenCode 配置优化 | ✅ |
 | Doc-Audit 完整审计 | ✅ |
 | OMO 插件版本审计 | ✅ (4.19.2→4.19.3 patch) |
+
+## H2 音频会议房间完成 (2026-08-19, 4 commits)
+
+- **音频房间 = 复用 SFU 机制**: room_id 前缀约定 `audio-<vehicle-id>`（非新 RoomType）——同机 Router 隔离，transport/produce/consume 全复用；房间语义（全互连 opus）由 ① produce 门（音频房间禁视频 producer, 4031+审计）② 客户端全订阅 表达
+- **协议**: +SfuStatsRequest/SfuStats（producer/consumer RTP 统计 — e2e 媒体面证据 + H3 面板数据源）; 网关 rewrite_room 对 audio- 房间直通（子进程已用规范名）
+- **G3 门**: 音频房间 join = 既有 RoomJoin 门（device 自动 / 账号白名单 / dispatcher/admin 任意车 — room_owners 存设备 ID 天然正确）; produce = 既有 can_produce（账号禁发 — 舱端只听，两方发言待 D-H11 修订）
+- **webrtc-sys 音频发送**: TrackKind::Audio 真实后端 — AudioTrackSource + capture_frame(PCM i16) → libwebrtc opus; create_track_sender/audio + factory/peer_connection 接线; write_frame(kind=Audio) = PCM 10ms 帧（非编码字节）
+- **host-audio 进程**: 真实实现（信令→Send transport→协商→Produce→tone 合成源 10ms 推流 + NewProducer→Recv transport→Consume 全订阅 + SfuStats 周期日志 + SIGTERM/--duration 优雅退出 0）; ALSA/MMAPI 麦克风 = Phase I+ 文档化后续
+- **PIT-105（阻塞）**: libwebrtc 音频编码不产 RTP（capture_frame 成功、sink 交付实证，outbound 零包）— 音频媒体面证据 byte_count>0 挂起; e2e 断言 wiring 证据（3 producer + 6 consumer 全 Audio kind + 统计可达）
+- **测试**: server 135（Docker）+ e2e_audio_conf 2/2 + host_audio_e2e 2/2 + e2e_sfu 4/4 + codec_prefs 6/6 全绿
 
 ## 决策状态
 
