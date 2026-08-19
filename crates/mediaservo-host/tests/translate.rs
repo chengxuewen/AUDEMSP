@@ -126,3 +126,15 @@ fn to_oxfile_in_dir_recorder_appends_config_and_token_paths() {
     assert!(ox.contains("name = \"host-recorder\""));
     assert!(!ox.contains("host-recorder --config"));
 }
+#[test]
+fn signaling_local_port_passed_to_host_agent() {
+    // [signaling] local_port 配置 → host-agent 命令追加 --port
+    let cfg = "[[cameras]]\nid = \"cam0\"\n[signaling]\nlocal_port = 17980\n";
+    let ox = mediaservo_host::translate::to_oxfile(cfg).unwrap();
+    assert!(ox.contains("host-agent --port 17980"), "agent 命令应带 --port, got:\n{ox}");
+    // 缺省：不追加（agent 内置默认 17980）
+    let ox = mediaservo_host::translate::to_oxfile("[[cameras]]\nid = \"cam0\"\n").unwrap();
+    assert!(ox.contains("host-agent\"") && !ox.contains("host-agent --port"), "缺省不追加 --port");
+    assert_eq!(mediaservo_host::translate::signaling_local_port(cfg).unwrap(), Some(17980));
+    assert_eq!(mediaservo_host::translate::signaling_local_port("").unwrap(), None);
+}

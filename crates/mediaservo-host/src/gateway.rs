@@ -1,0 +1,526 @@
+//! host-agent 信令网关（Task D1，D-H6「一车一会话」核心）。
+//!
+//! 拓扑：
+//! ```text
+//! 子进程 (host-streamer 等) ──WS {src, msg}──▶ host-agent ◀──WS 纯 SignalingMessage── Server
+//! ```
+//!
+//! 协议语义（Momus HIGH-1，实证于 signaling.rs）：
+//! - (a) **RoomJoin 拦截**：各子进程的 RoomJoin 由 agent 拦截（server 只在建连阶段
+//!   处理 RoomJoin，relay 循环内再收会被静默丢弃）；agent 以整车身份单次 join，
+//!   子进程本地合成 `RoomJoined`（携带整车 peer_id）。
+//! - (b) **响应路由**：SFU 消息（CreateWebRtcTransport/ConnectWebRtcTransport/
+//!   Produce/Consume）每请求恰好一响应，server 单 WS 严格顺序处理（forward 循环
+//!   await `handle_sfu_message` 后才读下一条）→ agent 维护**待决请求 FIFO**
+//!   （conn id），响应到达即弹出匹配发起者。并发协商正确（与"按序复用"拒绝项不同
+//!   ——不串行化协商，只按序配对在途请求）。P2P relay 的 Sdp/RTCIceCandidate 无
+//!   transport 标识 → 按**协商归属**追踪（最后一个上行 relay 消息的本地连接），
+//!   单协商串行语义。
+//! - (c) 拒绝项均未实现："远端 from 前缀"（破坏 Server 零改动）/"按序复用"（并发
+//!   协商必错乱）。
+//!
+//! 额外语义：
+//! - **房间重写**：子进程消息 room_id → 整车房间上行；下行按目标子进程自己声明
+//!   的房间改写。多 streamer（各自 `stream-<id>` 房间）聚合进同一整车会话。
+//! - **回显去重**：server 将 relay 白名单消息（Sdp/ICE/Frame/EncoderStatus）广播给
+//!   房间全员（含发送者自身）→ agent 按文本匹配丢弃自己转发的回显。
+//! - **子进程 RoomLeave 拦截**：单进程 leave 若上行会让 server 断开整车会话。
+//! - **断线**：远端断开 → 清空待决 FIFO/协商归属/回显缓存（server 已回收全部
+//!   transport），本地连接保持，B1 重连后转发恢复。
+
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
+
+use futures_util::{SinkExt, StreamExt};
+use mediaservo_common::protocol::{PeerRole, SignalingMessage};
+use mediaservo_link::{RetryConfig, SignalClient, SignalEvent, SignalSession};
+use serde::{Deserialize, Serialize};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::WebSocketStream;
+
+/// 本地协议信封：`{src, msg}` — 仅本地 wire；远端为纯 SignalingMessage（零改动）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalEnvelope {
+    /// 子进程标识（如 "host-streamer-cam0"）；下发方向固定为 "server"。
+    pub src: String,
+    pub msg: SignalingMessage,
+}
+
+/// 网关配置。
+#[derive(Debug, Clone)]
+pub struct GatewayConfig {
+    /// 本地监听端口（0 = 临时端口，测试用）。
+    pub local_port: u16,
+    /// 远端 Server WS 地址（SignalClient 直连）。
+    pub remote_url: String,
+    /// PSK（每连接重认证，B1 语义）。
+    pub psk: String,
+    /// 整车房间（agent 单次 join 的房间）。
+    pub room: String,
+    /// 远端连接重试配置（断线重连复用）。
+    pub retry: RetryConfig,
+}
+
+impl Default for GatewayConfig {
+    fn default() -> Self {
+        Self {
+            local_port: DEFAULT_LOCAL_PORT,
+            remote_url: "ws://127.0.0.1:9800/ws".into(),
+            psk: "mediaservo-dev".into(),
+            // TODO(D3): 整车房间由 host.toml 配置（[host] device_id 或 [signaling] room）接入
+            room: "vehicle".into(),
+            retry: RetryConfig::default(),
+        }
+    }
+}
+
+/// 默认本地端口（host.toml [signaling] local_port 可覆盖，translate 传 --port）。
+pub const DEFAULT_LOCAL_PORT: u16 = 17980;
+/// 网关未连上远端 server 时对子进程的应答码（子进程可重试）。
+const ERR_GATEWAY_DISCONNECTED: u16 = 5001;
+/// 回显缓存容量（最近转发的 relay 消息文本，FIFO）。
+const ECHO_CACHE_CAP: usize = 256;
+
+/// 单个本地子进程连接。
+#[derive(Clone)]
+struct Conn {
+    id: u64,
+    /// 子进程 RoomJoin 声明（拦截时记录；下行响应房间改写目标）。
+    room: String,
+    tx: mpsc::UnboundedSender<LocalEnvelope>,
+}
+
+/// 路由状态（两个后台任务共享，短临界区 std Mutex 足够）。
+struct State {
+    conns: HashMap<u64, Conn>,
+    next_id: u64,
+    /// 待决 SFU 请求 FIFO（conn id；响应按序弹出匹配）。
+    pending: VecDeque<u64>,
+    /// 当前 P2P 协商归属（最后一个上行 relay 消息的本地连接）。
+    p2p_owner: Option<u64>,
+    /// 最近转发的 relay 消息文本（回显去重）。
+    echo_cache: VecDeque<String>,
+    /// 整车 peer_id（真实 RoomJoined 取得，子进程合成应答使用）。
+    vehicle_peer_id: String,
+    /// 远端会话是否在途。
+    joined: bool,
+    /// 整车房间（不可变）。
+    vehicle_room: String,
+}
+
+impl State {
+    /// 子进程上行消息 → 动作（转发 / 本地应答 / 丢弃）。
+    fn upstream(&mut self, conn_id: u64, msg: SignalingMessage) -> UpstreamAction {
+        match msg {
+            SignalingMessage::RoomJoin { room_id, .. } => {
+                // (a) 拦截：整车 join 由 agent 完成；子进程本地合成 RoomJoined
+                if let Some(c) = self.conns.get_mut(&conn_id) {
+                    c.room = room_id.clone();
+                }
+                if self.joined {
+                    UpstreamAction::Reply(SignalingMessage::RoomJoined {
+                        room_id,
+                        peer_id: self.vehicle_peer_id.clone(),
+                    })
+                } else {
+                    tracing::warn!(conn_id, "RoomJoin 拦截时网关尚未连上 server");
+                    UpstreamAction::Reply(SignalingMessage::Error {
+                        code: ERR_GATEWAY_DISCONNECTED,
+                        message: "gateway not connected to server".into(),
+                    })
+                }
+            }
+            SignalingMessage::RoomLeave { .. } => {
+                // 单进程 leave 上行会让 server 断开整车会话 — 拦截丢弃
+                tracing::warn!(conn_id, "子进程 RoomLeave 被网关拦截（整车会话不因单进程离开而断）");
+                UpstreamAction::Drop
+            }
+            mut m => {
+                rewrite_room(&mut m, &self.vehicle_room);
+                if is_sfu_request(&m) {
+                    self.pending.push_back(conn_id);
+                }
+                if is_relay_msg(&m) {
+                    self.p2p_owner = Some(conn_id);
+                    let text = serde_json::to_string(&m).unwrap_or_default();
+                    self.echo_cache.push_back(text);
+                    if self.echo_cache.len() > ECHO_CACHE_CAP {
+                        self.echo_cache.pop_front();
+                    }
+                }
+                UpstreamAction::Forward(m)
+            }
+        }
+    }
+
+    /// server 下行消息 → 目标子进程列表（房间已按各目标改写）。
+    fn downstream(&mut self, msg: SignalingMessage) -> Vec<(u64, SignalingMessage)> {
+        // 回显去重：自己上行转发的 relay 消息被 server 房间广播回整车，文本一致即丢弃
+        if is_relay_msg(&msg) {
+            let text = serde_json::to_string(&msg).unwrap_or_default();
+            if self.echo_cache.contains(&text) {
+                return Vec::new();
+            }
+        }
+        match msg {
+            // SFU 响应：按 FIFO 匹配发起者（server 单 WS 顺序处理）
+            SignalingMessage::WebRtcTransportCreated { .. }
+            | SignalingMessage::Produced { .. }
+            | SignalingMessage::Consumed { .. }
+            | SignalingMessage::Error { .. } => {
+                let Some(conn_id) = self.pending.pop_front() else {
+                    tracing::warn!("SFU 响应无对应待决请求，丢弃");
+                    return Vec::new();
+                };
+                match self.conns.get(&conn_id) {
+                    Some(conn) => {
+                        let mut m = msg;
+                        rewrite_room(&mut m, &conn.room);
+                        vec![(conn_id, m)]
+                    }
+                    None => {
+                        tracing::warn!(conn_id, "SFU 响应目标连接已断开");
+                        Vec::new()
+                    }
+                }
+            }
+            // P2P relay：路由给当前协商归属
+            SignalingMessage::Sdp { .. } | SignalingMessage::RTCIceCandidate { .. } => {
+                match self.p2p_owner.and_then(|id| self.conns.get(&id)) {
+                    Some(conn) => {
+                        let mut m = msg;
+                        rewrite_room(&mut m, &conn.room);
+                        vec![(conn.id, m)]
+                    }
+                    None => {
+                        tracing::warn!("P2P relay 消息无协商归属，丢弃");
+                        Vec::new()
+                    }
+                }
+            }
+            // 房间级广播（NewProducer/RoomLeave/RoomJoined 等）→ 全员
+            other => {
+                let targets: Vec<(u64, SignalingMessage)> = self
+                    .conns
+                    .iter()
+                    .map(|(id, conn)| {
+                        let mut m = other.clone();
+                        rewrite_room(&mut m, &conn.room);
+                        (*id, m)
+                    })
+                    .collect();
+                targets
+            }
+        }
+    }
+
+    fn remove_conn(&mut self, conn_id: u64) {
+        self.conns.remove(&conn_id);
+        self.pending.retain(|id| *id != conn_id);
+        if self.p2p_owner == Some(conn_id) {
+            self.p2p_owner = None;
+        }
+    }
+
+    /// 远端断线：清空一切与远端会话绑定的状态（server 已回收全部 transport）。
+    fn reset_remote(&mut self) {
+        self.joined = false;
+        self.pending.clear();
+        self.p2p_owner = None;
+        self.echo_cache.clear();
+        self.vehicle_peer_id.clear();
+    }
+}
+
+enum UpstreamAction {
+    /// 转发到远端（调用方负责 joined 检查与发送）。
+    Forward(SignalingMessage),
+    /// 直接回给该子进程。
+    Reply(SignalingMessage),
+    Drop,
+}
+
+fn is_sfu_request(msg: &SignalingMessage) -> bool {
+    matches!(
+        msg,
+        SignalingMessage::CreateWebRtcTransport { .. }
+            | SignalingMessage::ConnectWebRtcTransport { .. }
+            | SignalingMessage::Produce { .. }
+            | SignalingMessage::Consume { .. }
+    )
+}
+
+/// server relay 白名单消息（signaling.rs 实证）——回显去重与 P2P 归属跟踪范围。
+fn is_relay_msg(msg: &SignalingMessage) -> bool {
+    matches!(
+        msg,
+        SignalingMessage::Sdp { .. }
+            | SignalingMessage::RTCIceCandidate { .. }
+            | SignalingMessage::Frame { .. }
+            | SignalingMessage::EncoderStatus { .. }
+    )
+}
+
+/// room_id 改写（整车房间 ↔ 子进程房间；Error 无房间字段）。
+fn rewrite_room(msg: &mut SignalingMessage, room: &str) {
+    use SignalingMessage::*;
+    match msg {
+        RoomJoin { room_id, .. }
+        | RoomJoined { room_id, .. }
+        | RoomLeave { room_id, .. }
+        | Sdp { room_id, .. }
+        | RTCIceCandidate { room_id, .. }
+        | CreateWebRtcTransport { room_id, .. }
+        | WebRtcTransportCreated { room_id, .. }
+        | ConnectWebRtcTransport { room_id, .. }
+        | Frame { room_id, .. }
+        | Produce { room_id, .. }
+        | Produced { room_id, .. }
+        | NewProducer { room_id, .. }
+        | EncoderStatus { room_id, .. }
+        | Consume { room_id, .. }
+        | Consumed { room_id, .. } => *room_id = room.to_string(),
+        Error { .. } => {}
+    }
+}
+
+fn lock_state(state: &Arc<Mutex<State>>) -> MutexGuard<'_, State> {
+    state.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// 信封 JSON 序列化（理论不可失败：SignalingMessage 全部字段可序列化；失败即丢弃并告警）。
+fn env_json(env: &LocalEnvelope) -> Option<String> {
+    match serde_json::to_string(env) {
+        Ok(t) => Some(t),
+        Err(e) => {
+            tracing::error!("信封序列化失败: {e}");
+            None
+        }
+    }
+}
+
+fn gateway_disconnected_error() -> SignalingMessage {
+    SignalingMessage::Error {
+        code: ERR_GATEWAY_DISCONNECTED,
+        message: "gateway not connected to server".into(),
+    }
+}
+
+/// 启动网关：绑定本地端口 + 常驻后台任务（本地 accept / 远端连接+重连）。
+///
+/// 返回实际绑定端口（`local_port = 0` 时为临时端口）。调用方持有运行期
+/// （bin 等待信号；测试直接随 runtime 结束）。
+pub async fn run_gateway(config: GatewayConfig) -> Result<u16, String> {
+    let listener = TcpListener::bind(("127.0.0.1", config.local_port))
+        .await
+        .map_err(|e| format!("bind local gateway :{}: {e}", config.local_port))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("local_addr: {e}"))?
+        .port();
+
+    let state = Arc::new(Mutex::new(State {
+        conns: HashMap::new(),
+        next_id: 1,
+        pending: VecDeque::new(),
+        p2p_owner: None,
+        echo_cache: VecDeque::new(),
+        vehicle_peer_id: String::new(),
+        joined: false,
+        vehicle_room: config.room.clone(),
+    }));
+    let (remote_tx, remote_rx) = mpsc::unbounded_channel::<SignalingMessage>();
+
+    // 本地 accept 循环
+    let accept_state = Arc::clone(&state);
+    let accept_tx = remote_tx.clone();
+    tokio::spawn(async move {
+        loop {
+            let (stream, peer) = match listener.accept().await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!("本地 accept 失败: {e}");
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
+            };
+            let ws = match tokio_tungstenite::accept_async(stream).await {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::warn!("本地 WS 握手失败 {peer}: {e}");
+                    continue;
+                }
+            };
+            let (conn_id, out_rx) = {
+                let mut st = lock_state(&accept_state);
+                let (tx, rx) = mpsc::unbounded_channel();
+                let id = st.next_id;
+                st.next_id += 1;
+                st.conns.insert(id, Conn { id, room: String::new(), tx });
+                (id, rx)
+            };
+            tracing::info!(conn_id, peer = %peer, "本地子进程接入");
+            let st = Arc::clone(&accept_state);
+            let rtx = accept_tx.clone();
+            tokio::spawn(conn_task(conn_id, ws, out_rx, st, rtx));
+        }
+    });
+
+    // 远端连接 + 重连循环
+    tokio::spawn(remote_loop(config, state, remote_rx));
+
+    Ok(port)
+}
+
+/// 单本地连接任务：读信封 → 路由 → 转发/应答；写下发信封。
+async fn conn_task(
+    conn_id: u64,
+    ws: WebSocketStream<TcpStream>,
+    mut out_rx: mpsc::UnboundedReceiver<LocalEnvelope>,
+    state: Arc<Mutex<State>>,
+    remote_tx: mpsc::UnboundedSender<SignalingMessage>,
+) {
+    let (mut ws_tx, mut ws_rx) = ws.split();
+    loop {
+        tokio::select! {
+            incoming = ws_rx.next() => {
+                match incoming {
+                    Some(Ok(Message::Text(text))) => {
+                        let env: LocalEnvelope = match serde_json::from_str(&text) {
+                            Ok(e) => e,
+                            Err(e) => {
+                                tracing::warn!(conn_id, "本地信封解析失败: {e}");
+                                continue;
+                            }
+                        };
+                        let action = lock_state(&state).upstream(conn_id, env.msg);
+                        match action {
+                            UpstreamAction::Forward(msg) => {
+                                let joined = lock_state(&state).joined;
+                                if joined {
+                                    if remote_tx.send(msg).is_err() {
+                                        tracing::warn!(conn_id, "远端任务已退出");
+                                        break;
+                                    }
+                                } else if let Some(t) = env_json(&LocalEnvelope {
+                                    src: "server".into(),
+                                    msg: gateway_disconnected_error(),
+                                }) {
+                                    if ws_tx.send(Message::Text(t.into())).await.is_err() {
+                                        break;
+                                    }
+                                }
+                            }
+                            UpstreamAction::Reply(msg) => {
+                                if let Some(t) = env_json(&LocalEnvelope { src: "server".into(), msg }) {
+                                    if ws_tx.send(Message::Text(t.into())).await.is_err() {
+                                        break;
+                                    }
+                                }
+                            }
+                            UpstreamAction::Drop => {}
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(_)) => {}
+                    Some(Err(e)) => {
+                        tracing::warn!(conn_id, "本地 WS 读错误: {e}");
+                        break;
+                    }
+                }
+            }
+            outgoing = out_rx.recv() => {
+                match outgoing {
+                    Some(env) => {
+                        let Some(text) = env_json(&env) else { continue };
+                        if ws_tx.send(Message::Text(text.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    None => break,
+                }
+            }
+        }
+    }
+    lock_state(&state).remove_conn(conn_id);
+    tracing::info!(conn_id, "本地子进程断开");
+}
+
+/// 远端单 WS 循环：connect（B1 重连）→ 双向转发 → 断线清理 → 重连。
+async fn remote_loop(
+    config: GatewayConfig,
+    state: Arc<Mutex<State>>,
+    mut remote_rx: mpsc::UnboundedReceiver<SignalingMessage>,
+) {
+    let client = SignalClient::new(&config.remote_url, &config.psk, &config.room, PeerRole::Host);
+    loop {
+        let session = match client.connect_with_retry(config.retry).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("远端信令连接失败: {e}，10s 后重试");
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                continue;
+            }
+        };
+        tracing::info!(room = %config.room, "agent 已加入整车房间");
+        {
+            let mut st = lock_state(&state);
+            st.joined = true;
+            st.vehicle_peer_id = session.peer_id().to_string();
+        }
+        run_session(session, &state, &mut remote_rx).await;
+        // 断线：清空与远端会话绑定的状态 + 丢弃在途上行（重连后按新会话处理）
+        lock_state(&state).reset_remote();
+        while remote_rx.try_recv().is_ok() {}
+        tracing::info!("远端断开，重新连接…");
+    }
+}
+
+/// 单次远端会话：events → 下行路由；上行通道 → session.send。
+async fn run_session(
+    session: SignalSession,
+    state: &Arc<Mutex<State>>,
+    remote_rx: &mut mpsc::UnboundedReceiver<SignalingMessage>,
+) {
+    let mut events = session.events();
+    loop {
+        tokio::select! {
+            ev = events.recv() => match ev {
+                Ok(SignalEvent::Message(msg)) => {
+                    let targets = lock_state(state).downstream(msg);
+                    for (conn_id, m) in targets {
+                        let tx = lock_state(state).conns.get(&conn_id).map(|c| c.tx.clone());
+                        if let Some(tx) = tx {
+                            let env = LocalEnvelope { src: "server".into(), msg: m };
+                            if tx.send(env).is_err() {
+                                tracing::warn!(conn_id, "下发目标连接已断开");
+                            }
+                        }
+                    }
+                }
+                Ok(SignalEvent::Disconnected { reason }) => {
+                    tracing::warn!("远端断开: {reason}");
+                    break;
+                }
+                Ok(SignalEvent::Error(e)) => tracing::warn!("远端信令错误: {e}"),
+                Ok(_) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!("远端事件滞后 {n} 条");
+                }
+                Err(_) => break, // 会话通道关闭 = 断开
+            },
+            msg = remote_rx.recv() => match msg {
+                Some(m) => {
+                    if let Err(e) = session.send(m).await {
+                        tracing::warn!("远端发送失败: {e}");
+                        break;
+                    }
+                }
+                None => return, // 网关关闭
+            },
+        }
+    }
+}

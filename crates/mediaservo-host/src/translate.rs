@@ -19,6 +19,8 @@ struct HostConfig {
     streams: Vec<Stream>,
     #[serde(default)]
     record: Option<RecordSection>,
+    #[serde(default)]
+    signaling: Option<SignalingSection>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +51,19 @@ struct RecordSection {
     enabled: Option<bool>,
     #[serde(default)]
     out_dir: Option<String>,
+}
+
+/// `[signaling]` 段（D1: agent 网关本地端口）。
+#[derive(Debug, Deserialize)]
+struct SignalingSection {
+    #[serde(default)]
+    local_port: Option<u16>,
+}
+
+/// 网关本地端口（[signaling] local_port；缺省 None → agent 内置 17980）。
+pub fn signaling_local_port(cfg: &str) -> Result<Option<u16>, String> {
+    let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
+    Ok(cfg.signaling.and_then(|s| s.local_port))
 }
 
 /// 固定 5 类进程（无参数实例）。
@@ -94,6 +109,12 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
                 config_path.display(),
                 token_dir.display()
             ));
+        }
+        // D1: agent 网关本地端口（[signaling] local_port 配置；缺省 agent 内置 17980）
+        if name == "host-agent" {
+            if let Some(port) = signaling_local_port(cfg)? {
+                cmd.push_str(&format!(" --port {port}"));
+            }
         }
         // C4: recorder [record] enabled=false 时按设计 exit 0 — 在 oxmgr
         // restart_policy=always 下会重启风暴; 改 on_failure（崩溃重启，干净退出不重启）。

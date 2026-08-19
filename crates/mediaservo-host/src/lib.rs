@@ -10,6 +10,10 @@ pub fn init_logging(role: &str) {
     mediaservo_common::logging::init(mediaservo_common::logging::LoggingConfig::default());
     tracing::info!(role, "host process starting");
 }
+/// host-agent 信令网关（Task D1）。
+pub mod gateway;
+
+/// host.toml → oxfile.toml 翻译器（Task A2）。
 
 /// 占位运行器：打印 `<role> placeholder ready`，随后阻塞等待
 /// SIGINT（Ctrl-C）或 SIGTERM，收到信号后返回 `Ok(())` 优雅退出。

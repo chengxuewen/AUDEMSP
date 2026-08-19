@@ -54,6 +54,8 @@ async fn connect_auth_join_and_roundtrip() {
     );
     let session = client.connect().await.expect("connect");
     assert_eq!(session.room_id(), "test-room");
+    assert_eq!(session.peer_id(), "peer-1", "RoomJoined 的 peer_id 应可访问");
+    assert_eq!(session.room_id(), "test-room");
     let mut events = session.events();
 
     // 发一条 Sdp，期待 server echo 回来

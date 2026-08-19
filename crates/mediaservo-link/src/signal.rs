@@ -134,7 +134,7 @@ impl SignalClient {
             _ => return Err(LinkError::Signal("unexpected RoomJoined response".into())),
         };
         match joined {
-            SignalingMessage::RoomJoined { room_id, .. } => {
+            SignalingMessage::RoomJoined { room_id, peer_id } => {
                 let (events_tx, _) = broadcast::channel(64);
                 let (send_tx, send_rx) = mpsc::unbounded_channel();
                 let on_disconnect = DisconnectSlot::default();
@@ -148,6 +148,7 @@ impl SignalClient {
                 let _ = events_tx.send(SignalEvent::Connected { room_id: room_id.clone() });
                 Ok(SignalSession {
                     room_id,
+                    peer_id,
                     send_tx,
                     events_tx,
                     task,
@@ -199,6 +200,8 @@ impl SignalClient {
 /// 信令会话：send 发送消息，events 接收事件。
 pub struct SignalSession {
     room_id: String,
+    /// RoomJoined 返回的 peer_id（D1 网关合成子进程应答使用）。
+    peer_id: String,
     send_tx: mpsc::UnboundedSender<SignalingMessage>,
     events_tx: broadcast::Sender<SignalEvent>,
     task: tokio::task::JoinHandle<()>,
@@ -209,6 +212,7 @@ impl std::fmt::Debug for SignalSession {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SignalSession")
             .field("room_id", &self.room_id)
+            .field("peer_id", &self.peer_id)
             .finish()
     }
 }
@@ -237,6 +241,11 @@ impl SignalSession {
     /// 当前房间 ID。
     pub fn room_id(&self) -> &str {
         &self.room_id
+    }
+
+    /// 当前会话的 peer_id（RoomJoined 时 server 分配；D1 网关合成子进程应答）。
+    pub fn peer_id(&self) -> &str {
+        &self.peer_id
     }
 
     /// 关闭会话：停止发送通道并等待后台任务退出。
