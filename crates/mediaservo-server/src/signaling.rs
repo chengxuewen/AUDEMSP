@@ -507,7 +507,31 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
             .await;
         return;
     }
-    // ② 按房间主车做矩阵 + 白名单校验（车 A 不可见车 B; 账号仅授权车）。
+    // ② Remote 角色 = P2P 控制协商位（I1 review）: 无控制能力者禁止 —
+    // viewer/dispatcher 可拉流（SFU）但不得占控制位（同时防 DoS: 占单 Remote 槽
+    // 使合法 operator 无法协商控制）。
+    if role == PeerRole::Remote && !session_identity.can_control() {
+        let detail = format!(
+            "role lacks control capability for remote/P2P negotiation (peer={peer_id}, room={room_id})"
+        );
+        tracing::warn!("RoomJoin denied: {detail}");
+        audit::log_event(AuditEvent::AuthorizationDenied {
+            action: "room_join".into(),
+            peer_id: peer_id.clone(),
+            detail: detail.clone(),
+        });
+        let error = SignalingMessage::Error {
+            code: 4031,
+            message: detail,
+        };
+        let _ = ws_sender
+            .lock()
+            .await
+            .send(Message::Text(send_msg(&error).unwrap()))
+            .await;
+        return;
+    }
+    // ③ 按房间主车做矩阵 + 白名单校验（车 A 不可见车 B; 账号仅授权车）。
     if let Some(owner) = server.room_owner_of(&room_id) {
         if let Some(reason) = session_identity.join_vehicle_room(Some(&owner)) {
             let detail = format!("{reason} (peer={peer_id}, room={room_id})");
@@ -823,11 +847,35 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     }
                 };
                 if should_relay {
-                    // ── DeviceStream filter: only relay Frame, skip SDP/ICE from consumers
-                    if server
+                    // ── DeviceStream filter: only relay Frame, skip SDP/ICE from consumers ──
+                    // I1 review: P2P 房间（非 DeviceStream）的 SDP/ICE = 控制协商载体 —
+                    // 无控制能力账号（viewer/dispatcher）即使以 Consumer 入房也拦截其中继
+                    // （Consumer 只走 SFU 媒体，协商是消息驱动，不需要 SDP 中继）。
+                    let is_device_room = server
                         .room_manager
-                        .is_device_stream(&relay_room)
-                    {
+                        .is_device_stream(&relay_room);
+                    if !is_device_room && !session_identity.can_control() {
+                        let is_negotiation = serde_json::from_str::<SignalingMessage>(&text_str)
+                            .map(|m| matches!(
+                                m,
+                                SignalingMessage::Sdp { .. }
+                                    | SignalingMessage::RTCIceCandidate { .. }
+                            ))
+                            .unwrap_or(false);
+                        if is_negotiation {
+                            let detail = format!(
+                                "control negotiation (SDP/ICE) requires control capability (peer={relay_peer_id}, room={relay_room})"
+                            );
+                            tracing::warn!("SDP relay denied: {detail}");
+                            audit::log_event(AuditEvent::AuthorizationDenied {
+                                action: "control_negotiation".into(),
+                                peer_id: relay_peer_id.clone(),
+                                detail,
+                            });
+                            continue;
+                        }
+                    }
+                    if is_device_room {
                         let is_frame = if let Ok(sig_msg) =
                             serde_json::from_str::<SignalingMessage>(&text_str)
                         {

@@ -76,11 +76,24 @@ impl AccountRegistry {
         Self::default()
     }
 
-    /// 从 YAML 文件加载；文件缺失视为空注册表。
+    /// 从 YAML 文件加载。
+    ///
+    /// 文件**缺失** → 空注册表（`Ok` — PSK/设备路径不受影响，I4 review 维持）；
+    /// 文件**存在但损坏** → `Err`（fail-fast: 启动方必须拒绝继续——损坏的注册表
+    /// 静默降级 = 授权强制被静默禁用，与 identity.json 损坏显式报错同纪律）。
     pub fn load(path: impl AsRef<Path>) -> Result<Self, CoreError> {
-        let content = std::fs::read_to_string(path.as_ref()).map_err(|e| {
-            CoreError::ConfigParse(format!("accounts file {}: {e}", path.as_ref().display()))
-        })?;
+        let content = match std::fs::read_to_string(path.as_ref()) {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self::empty());
+            }
+            Err(e) => {
+                return Err(CoreError::ConfigParse(format!(
+                    "accounts file {}: {e}",
+                    path.as_ref().display()
+                )));
+            }
+        };
         Self::from_yaml(&content).map_err(|e| {
             CoreError::ConfigParse(format!("accounts file {}: {e}", path.as_ref().display()))
         })
@@ -196,6 +209,26 @@ pub fn issue_account_token(
     .map_err(|e| format!("JWT encode error: {e}"))
 }
 
+/// 启动期密钥配对校验（I2 review — fail-open 修复）:
+/// 账号 token 由 login 用 `admin_jwt_secret` 签发，但 /ws 握手用 `jwt_secret` 验签 —
+/// 两者不一致时账号 token 验签失败 → 静默回退 PSK/Legacy → 矩阵强制被绕过。
+/// 有账号配置时必须一致（不相等 → Err，启动方 fail-fast）。
+pub fn validate_secret_pairing(
+    accounts_configured: bool,
+    jwt_secret: Option<&str>,
+    admin_jwt_secret: Option<&str>,
+) -> Result<(), String> {
+    if !accounts_configured {
+        return Ok(()); // 无账号 → 无矩阵可绕过（PSK/设备路径不受影响）
+    }
+    match (jwt_secret, admin_jwt_secret) {
+        (Some(a), Some(b)) if a != b => Err(format!(
+            "jwt_secret 与 admin_jwt_secret 不一致: 账号 token 经 admin_jwt_secret 签发、             /ws 握手经 jwt_secret 验签，不一致会使账号认证静默失败并回退 PSK（矩阵绕过）。             请配置为同一 secret"
+        )),
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,6 +308,46 @@ mod tests {
         assert_eq!(claims.role.as_deref(), Some("operator"));
         assert_eq!(claims.vehicles.as_deref(), Some(&["ms-car1".to_string()][..]));
         assert!(claims.exp > claims.iat);
+    }
+
+    #[test]
+    fn secret_pairing_validation() {
+        // I2 review: 账号配置 + 密钥分歧 → Err（fail-fast）; 一致/无账号 → Ok
+        assert!(
+            validate_secret_pairing(true, Some("aaa"), Some("bbb")).is_err(),
+            "有账号 + 密钥分歧必须报错"
+        );
+        let err = validate_secret_pairing(true, Some("aaa"), Some("bbb")).unwrap_err();
+        assert!(err.contains("jwt_secret") && err.contains("admin_jwt_secret"), "{err}");
+        assert_eq!(validate_secret_pairing(true, Some("aaa"), Some("aaa")), Ok(()));
+        // 无账号 → 分歧无害（无矩阵可绕过）; 单边缺失 → 无法分歧
+        assert_eq!(validate_secret_pairing(false, Some("aaa"), Some("bbb")), Ok(()));
+        assert_eq!(validate_secret_pairing(true, None, Some("bbb")), Ok(()));
+        assert_eq!(validate_secret_pairing(true, Some("aaa"), None), Ok(()));
+        assert_eq!(validate_secret_pairing(true, None, None), Ok(()));
+    }
+
+    #[test]
+    fn load_missing_file_ok_empty_and_malformed_err() {
+        // I4 review: 缺失 → 空（不阻断）; 损坏 → Err（fail-fast，禁静默降级）
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("nope.yaml");
+        assert!(AccountRegistry::load(&missing).unwrap().is_empty(), "缺失=空注册表");
+
+        let bad = dir.path().join("bad.yaml");
+        std::fs::write(&bad, "accounts: [not-a-map").unwrap();
+        let err = AccountRegistry::load(&bad).unwrap_err();
+        assert!(err.to_string().contains("accounts file"), "{err}");
+        assert!(err.to_string().contains("bad.yaml"), "{err}");
+
+        let good = dir.path().join("good.yaml");
+        let hash = hash_password("carol", "s3cret");
+        std::fs::write(
+            &good,
+            format!("accounts:\n  carol:\n    password_hash: \"{hash}\"\n    role: viewer\n"),
+        )
+        .unwrap();
+        assert_eq!(AccountRegistry::load(&good).unwrap().len(), 1);
     }
 
     #[test]

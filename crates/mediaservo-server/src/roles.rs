@@ -154,6 +154,16 @@ impl SessionIdentity {
         }
     }
 
+    /// 控制能力（I1 review — P2P 路径控制列强制）: Remote 角色 join 与 P2P 房间
+    /// SDP/ICE 中继的裁决依据。operator/admin 有控制; viewer/dispatcher 无;
+    /// 设备（控制接收方）与 legacy（无管理身份）放行。
+    pub fn can_control(&self) -> bool {
+        match self {
+            Self::Account(a) => a.role.can_control(),
+            Self::Device(_) | Self::Legacy => true,
+        }
+    }
+
     /// Produce 门: 车端自动允许（自己的流）; 账号禁止（舱端只消费）; Legacy 允许（dev 路径）。
     pub fn can_produce(&self) -> Result<(), String> {
         match self {
@@ -328,6 +338,17 @@ mod tests {
         assert!(account(CockpitRole::Admin, vec![]).host_join_denied().is_some());
         assert_eq!(SessionIdentity::Device("d".into()).host_join_denied(), None);
         assert_eq!(SessionIdentity::Legacy.host_join_denied(), None);
+    }
+
+    #[test]
+    fn control_capability_matrix() {
+        // I1 review: P2P 路径控制门 — 矩阵 + 身份
+        assert!(!account(CockpitRole::Viewer, vec![]).can_control());
+        assert!(!account(CockpitRole::Dispatcher, vec![]).can_control());
+        assert!(account(CockpitRole::Operator, vec![]).can_control());
+        assert!(account(CockpitRole::Admin, vec![]).can_control());
+        assert!(SessionIdentity::Device("d".into()).can_control(), "设备是控制接收方");
+        assert!(SessionIdentity::Legacy.can_control(), "legacy 不受矩阵限制");
     }
 
     #[test]

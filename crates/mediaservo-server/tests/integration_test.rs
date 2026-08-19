@@ -666,6 +666,10 @@ async fn g2_join_failure_leaves_no_binding() {
 
 const JWT_SECRET: &str = "g3-test-jwt-secret-32-bytes-min!!";
 
+/// 审计环形缓冲是进程全局 — 并行测试的 clear_recent() 会互相清掉对方的事件。
+/// 凡 clear/断言 audit::recent() 的 WS 测试必须持此锁串行（其余测试不受影响）。
+static AUDIT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn account_token(username: &str, role: &str, vehicles: &[&str]) -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -803,6 +807,8 @@ fn has_denial(audit: &[mediaservo_server::audit::AuditEvent], action: &str) -> b
 async fn g3_room_join_matrix_and_tenant_isolation() {
     let (_server, ws_url) = spawn_server_g3(&two_devices_yaml()).await;
     mediaservo_server::audit::clear_recent();
+    let _ring_guard = AUDIT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
 
     // 车 A / 车 B 上线（各自房间登记主车）。
     let (_veh_a, resp) =
@@ -890,6 +896,8 @@ async fn g3_emergency_audit_and_matrix() {
     let (_veh_a, _) =
         connect_join_keepalive(&ws_url, &device_join_room("car1-room", "ms-car1", "car1-secret"))
             .await;
+    let _ring_guard = AUDIT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     let (_veh_b, _) =
         connect_join_keepalive(&ws_url, &device_join_room("car2-room", "ms-car2", "car2-secret"))
             .await;
@@ -990,6 +998,8 @@ async fn g3_config_push_inbound_rejected() {
     let (mut veh_ws, resp) =
         connect_join_keepalive(&ws_url, &device_join_room("car1-room", "ms-car1", "car1-secret"))
             .await;
+    let _ring_guard = AUDIT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     assert!(resp.contains("room_joined"));
     mediaservo_server::audit::clear_recent();
 
@@ -1041,5 +1051,164 @@ async fn g3_jwt_unknown_role_rejected_at_handshake() {
         resp.to_text().unwrap().contains(r#""code":4011"#),
         "未知角色必须在握手期拒绝: {}",
         resp.to_text().unwrap()
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// G3 review I1: P2P 路径控制列强制 — Remote 角色 join 门（can_control）+
+// P2P 房间 SDP/ICE 中继门（防 viewer/dispatcher 经 SDP 协商控制）。
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g3_review_i1_remote_role_join_requires_control() {
+    let (_server, ws_url) = spawn_server_g3(&two_devices_yaml()).await;
+    let (_veh_a, resp) =
+        connect_join_keepalive(&ws_url, &device_join_room("car1-room", "ms-car1", "car1-secret"))
+            .await;
+    assert!(resp.contains("room_joined"), "车 A 上线: {resp}");
+
+    // viewer（可拉流但无控制）: Remote join ❌ 4031（Remote = P2P 控制位）
+    let (_ws, resp) = account_join(
+        &ws_url,
+        &account_token("vic", "viewer", &["ms-car1"]),
+        "car1-room",
+        PeerRole::Remote,
+    )
+    .await;
+    assert!(
+        resp.contains(r#""code":4031"#),
+        "viewer Remote join 必须拒绝（无控制）: {resp}"
+    );
+
+    // dispatcher（任意车拉流但无控制）: Remote join ❌ 4031
+    let (_ws, resp) = account_join(
+        &ws_url,
+        &account_token("d1", "dispatcher", &[]),
+        "car1-room",
+        PeerRole::Remote,
+    )
+    .await;
+    assert!(
+        resp.contains(r#""code":4031"#),
+        "dispatcher Remote join 必须拒绝（矩阵无控制）: {resp}"
+    );
+
+    // operator（授权车 + 控制）: Remote join ✅（P2P 控制协商位）
+    let (mut ws, resp) = account_join(
+        &ws_url,
+        &account_token("carol", "operator", &["ms-car1"]),
+        "car1-room",
+        PeerRole::Remote,
+    )
+    .await;
+    assert!(
+        resp.contains("room_joined"),
+        "operator Remote join 必须放行: {resp}"
+    );
+    drop(ws);
+
+    // viewer 以 Consumer join 仍可（SFU 媒体拉流不受影响）
+    let (mut ws, resp) = account_join(
+        &ws_url,
+        &account_token("vic", "viewer", &["ms-car1"]),
+        "car1-room",
+        PeerRole::Consumer,
+    )
+    .await;
+    assert!(resp.contains("room_joined"), "viewer Consumer 拉流不受影响: {resp}");
+    drop(ws);
+
+    // legacy PSK Remote 不受矩阵限制（additive 回归）
+    let resp = psk_join_and_recv(&ws_url, &legacy_join("car1-room", PeerRole::Remote)).await;
+    assert!(resp.contains("room_joined"), "legacy Remote 回归: {resp}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn g3_review_i1_sdp_relay_gated_by_control_in_p2p_room() {
+    let (_server, ws_url) = spawn_server_g3(&two_devices_yaml()).await;
+    // 车端 host 会话：收房间广播，观察 SDP 是否被中继。
+    let _ring_guard = AUDIT_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+    let (mut veh_ws, resp) =
+        connect_join_keepalive(&ws_url, &device_join_room("car1-room", "ms-car1", "car1-secret"))
+            .await;
+    assert!(resp.contains("room_joined"));
+
+    // viewer Consumer 加入（拉流可）但发 SDP → 不得中继到车端。
+    let (mut vic_ws, resp) = account_join(
+        &ws_url,
+        &account_token("vic", "viewer", &["ms-car1"]),
+        "car1-room",
+        PeerRole::Consumer,
+    )
+    .await;
+    assert!(resp.contains("room_joined"));
+    let viewer_sdp = SignalingMessage::Sdp {
+        room_id: "car1-room".into(),
+        target: None,
+        sdp: "g3-review-i1-viewer-sdp".into(),
+    };
+    vic_ws
+        .send(WsMsg::Text(serde_json::to_string(&viewer_sdp).unwrap().into()))
+        .await
+        .unwrap();
+
+    // 车端在 500ms 内不应收到任何 SDP（viewer 的控制协商被服务端拦截）。
+    let mut blocked = true;
+    if let Ok(Some(Ok(msg))) = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        veh_ws.next(),
+    )
+    .await
+    {
+        let text = msg.to_text().unwrap().to_string();
+        if text.contains("g3-review-i1-viewer-sdp") {
+            blocked = false;
+        }
+    }
+    assert!(blocked, "viewer 的 SDP 不得中继到车端（P2P 控制协商拦截）");
+    drop(vic_ws);
+
+    // operator Consumer 加入并发 SDP → 中继到车端（控制协商放行）。
+    let (mut op_ws, resp) = account_join(
+        &ws_url,
+        &account_token("carol", "operator", &["ms-car1"]),
+        "car1-room",
+        PeerRole::Consumer,
+    )
+    .await;
+    assert!(resp.contains("room_joined"));
+    let op_sdp = SignalingMessage::Sdp {
+        room_id: "car1-room".into(),
+        target: None,
+        sdp: "g3-review-i1-operator-sdp".into(),
+    };
+    op_ws
+        .send(WsMsg::Text(serde_json::to_string(&op_sdp).unwrap().into()))
+        .await
+        .unwrap();
+
+    let mut relayed = false;
+    for _ in 0..5 {
+        if let Ok(Some(Ok(msg))) = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            veh_ws.next(),
+        )
+        .await
+        {
+            let text = msg.to_text().unwrap().to_string();
+            if text.contains("g3-review-i1-operator-sdp") {
+                relayed = true;
+                break;
+            }
+        }
+    }
+    assert!(relayed, "operator 的 SDP 必须中继到车端（P2P 控制协商）");
+    drop(op_ws);
+
+    // C15: 拦截已审计。
+    assert!(
+        has_denial(&mediaservo_server::audit::recent(), "control_negotiation"),
+        "SDP 拦截必须审计"
     );
 }

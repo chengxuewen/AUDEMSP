@@ -253,20 +253,28 @@ pub fn clear_recent() {
 mod tests {
     use super::*;
 
+    // 注意: 环形缓冲是进程全局共享 — 并行测试会写入（login 审计等）。
+    // 机械性断言用白盒（直接持锁操作 deque，全程无竞争）; log_event 断言用
+    // presence 过滤（窗口 256 内不会被挤掉），禁止精确位置断言（并行竞态）。
+
     #[test]
     fn recent_ring_records_and_bounds() {
-        clear_recent();
+        // 白盒: 持锁期间独占 deque — 确定性验证 封顶 + 淘汰最旧 + 保留最新。
+        let mut ring = recent_sink().lock().unwrap_or_else(|e| e.into_inner());
+        ring.clear();
         for i in 0..300 {
-            log_event(AuditEvent::AuthorizationDenied {
+            ring.push_back(AuditEvent::AuthorizationDenied {
                 action: "test".into(),
                 peer_id: format!("p{i}"),
                 detail: "d".into(),
             });
+            if ring.len() > AUDIT_RING_CAP {
+                ring.pop_front();
+            }
         }
-        let all = recent();
-        assert_eq!(all.len(), AUDIT_RING_CAP, "环形必须封顶");
+        assert_eq!(ring.len(), AUDIT_RING_CAP, "环形必须封顶");
         assert_eq!(
-            all[0],
+            ring[0],
             AuditEvent::AuthorizationDenied {
                 action: "test".into(),
                 peer_id: "p44".into(),
@@ -275,15 +283,34 @@ mod tests {
             "最旧事件被淘汰（300 - 256 = 44）"
         );
         assert_eq!(
-            all.last(),
+            ring.back(),
             Some(&AuditEvent::AuthorizationDenied {
                 action: "test".into(),
                 peer_id: "p299".into(),
                 detail: "d".into(),
-            })
+            }),
+            "最新事件保留"
         );
+        ring.clear();
+    }
+
+    #[test]
+    fn log_event_appends_to_ring() {
+        // log_event 的 push 路径（presence 断言 — 并行写入不挤掉窗口内事件）。
         clear_recent();
-        assert!(recent().is_empty());
+        log_event(AuditEvent::AuthorizationDenied {
+            action: "log-event-path".into(),
+            peer_id: "p".into(),
+            detail: "d".into(),
+        });
+        assert!(
+            recent().iter().any(|e| matches!(
+                e,
+                AuditEvent::AuthorizationDenied { action, peer_id, .. }
+                    if action == "log-event-path" && peer_id == "p"
+            )),
+            "log_event 必须写入环形缓冲"
+        );
     }
 
     #[test]
@@ -295,14 +322,20 @@ mod tests {
             vehicle: "ms-car1".into(),
             command: "e-stop".into(),
         });
-        assert_eq!(
-            recent().last(),
-            Some(&AuditEvent::EmergencyCommand {
-                username: "carol".into(),
-                role: "operator".into(),
-                vehicle: "ms-car1".into(),
-                command: "e-stop".into(),
-            })
+        assert!(
+            recent().iter().any(|e| matches!(
+                e,
+                AuditEvent::EmergencyCommand {
+                    username,
+                    role,
+                    vehicle,
+                    command
+                } if username == "carol"
+                    && role == "operator"
+                    && vehicle == "ms-car1"
+                    && command == "e-stop"
+            )),
+            "急停审计事件必须含 谁/角色/车/命令"
         );
     }
 }

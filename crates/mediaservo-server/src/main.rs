@@ -124,14 +124,22 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             );
             reg
         }
+        // I4 review: 文件存在但损坏 → fail-fast（静默空注册表 = 授权强制被静默禁用）。
         Err(e) => {
-            tracing::warn!(
-                "Account registry {accounts_path}: {e}; running with no accounts (PSK/device path only)"
-            );
-            mediaservo_server::accounts::AccountRegistry::empty()
+            panic!("账号注册表 {accounts_path} 损坏，拒绝以授权禁用状态启动: {e}");
         }
     };
     let accounts = std::sync::Arc::new(accounts);
+
+    // I2 review: 账号 token 经 admin_jwt_secret 签发、/ws 经 jwt_secret 验签 —
+    // 分歧 = 账号认证静默回退 PSK（矩阵绕过），启动期 fail-fast。
+    if let Err(e) = mediaservo_server::accounts::validate_secret_pairing(
+        !accounts.is_empty(),
+        config.jwt_secret.as_deref(),
+        config.admin_jwt_secret.as_deref(),
+    ) {
+        panic!("{e}");
+    }
 
     // Print admin setup token if configured
     if let Some(ref secret) = config.admin_jwt_secret {

@@ -113,6 +113,10 @@ pub fn admin_router(state: AdminState) -> Router {
 // ── 登录（G3 账号体系）───────────────────────────────────────────────────────
 // 独立 router: 登录端点本身不能被 auth middleware 拦（它就是发证入口）。
 
+/// 登录限流（I3 review）: 2 请求/秒补桶 + 5 突发 — 暴力破解缓解。
+const LOGIN_RATE_PER_SEC: u64 = 2;
+const LOGIN_RATE_BURST: u32 = 5;
+
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
     pub username: String,
@@ -128,9 +132,23 @@ pub struct LoginResponse {
 }
 
 /// POST /api/auth/login — 校验 username/password（accounts.yaml）→ 签发角色 JWT。
+///
+/// I3 review: 登录是暴力破解面 — 挂 per-bucket 速率限制（GlobalKeyExtractor:
+/// 全服务单一桶, 简单且测试确定性; 多实例/代理场景按 X-Forwarded-For 分桶是后续细化）。
 pub fn login_router(state: AdminState) -> Router {
+    // ponytail: Box::leak — 进程生命周期的静态配置（tower_governor 0.3 Layer 持借用,
+    // axum Router 要求 'static; 泄漏一个配置对象对单进程服务无碍）。
+    let limiter: &'static _ = Box::leak(Box::new(
+        tower_governor::governor::GovernorConfigBuilder::default()
+            .key_extractor(tower_governor::key_extractor::GlobalKeyExtractor)
+            .per_second(LOGIN_RATE_PER_SEC)
+            .burst_size(LOGIN_RATE_BURST)
+            .finish()
+            .expect("governor config"),
+    ));
     Router::new()
         .route("/api/auth/login", axum::routing::post(login))
+        .layer(tower_governor::GovernorLayer { config: limiter })
         .with_state(state)
 }
 
@@ -936,6 +954,37 @@ mod g3_tests {
         let ub = axum::body::to_bytes(unknown.into_body(), 1 << 20).await.unwrap();
         assert_eq!(wb, ub, "未知用户与错误密码响应必须逐字一致（防枚举）");
         assert!(String::from_utf8_lossy(&wb).contains("invalid credentials"));
+    }
+
+    #[tokio::test]
+    async fn login_is_rate_limited() {
+        // I3 review: 突发超过 burst → 429（GlobalKeyExtractor 单桶, 测试确定性）
+        let state = make_state_with_accounts().await;
+        let app = login_router(state);
+        let mut statuses = Vec::new();
+        for _ in 0..(LOGIN_RATE_BURST + 2) {
+            let resp = app
+                .clone()
+                .oneshot(login_request(r#"{"username":"carol","password":"s3cret"}"#))
+                .await
+                .unwrap();
+            statuses.push(resp.status());
+        }
+        let limited = statuses
+            .iter()
+            .filter(|s| **s == StatusCode::TOO_MANY_REQUESTS)
+            .count();
+        assert!(
+            limited >= 2,
+            "burst={LOGIN_RATE_BURST} 之后必须被限流(429), got: {statuses:?}"
+        );
+        // 前若干请求必须不是 429（限流层存在但不过度拦截正常登录）
+        assert!(
+            statuses[..LOGIN_RATE_BURST as usize]
+                .iter()
+                .all(|s| *s != StatusCode::TOO_MANY_REQUESTS),
+            "burst 内的请求不应被限流: {statuses:?}"
+        );
     }
 
     #[tokio::test]
