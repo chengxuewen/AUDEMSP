@@ -113,6 +113,8 @@ struct State {
     remote_since: Option<Instant>,
     /// 整车房间（不可变）。
     vehicle_room: String,
+    /// 待应用 ConfigPush（E4：server 云端配置下发；agent 轮询消费，最新覆盖旧值）。
+    pending_config: Option<SignalingMessage>,
 }
 
 impl State {
@@ -221,6 +223,23 @@ impl State {
                     }
                 }
             }
+            // E4: 云端配置下发 — 整车 agent 专属消息（房间 + 目标 peer 匹配），
+            // 不入子进程路由；存入待应用槽（agent 轮询 take_config_push）。
+            SignalingMessage::ConfigPush { ref room_id, ref target, .. } => {
+                if *room_id != self.vehicle_room || *target != self.vehicle_peer_id {
+                    tracing::warn!(
+                        room_id = %room_id,
+                        target = %target,
+                        vehicle_room = %self.vehicle_room,
+                        vehicle_peer = %self.vehicle_peer_id,
+                        "ConfigPush 目标不匹配，丢弃"
+                    );
+                    return Vec::new();
+                }
+                tracing::info!(room_id = %room_id, peer = %target, "ConfigPush 接收（待应用）");
+                self.pending_config = Some(msg);
+                Vec::new()
+            }
             // 房间级广播（NewProducer/RoomLeave/RoomJoined 等）→ 全员
             other => {
                 let targets: Vec<(u64, SignalingMessage)> = self
@@ -308,6 +327,9 @@ fn rewrite_room(msg: &mut SignalingMessage, room: &str) {
         | Consumed { room_id, .. } => *room_id = room.to_string(),
         Error { .. } => {}
         StatusReport { .. } => {}
+        Error { .. } => {}
+        StatusReport { .. } => {}
+        ConfigPush { .. } => {} // E4: agent 专属，不入子进程路由，无需房间改写
     }
 }
 
@@ -387,6 +409,11 @@ impl GatewayHandle {
             .map_err(|_| "remote session closed".into())
     }
 
+    /// 取走待应用 ConfigPush（E4；None = 无待应用；最新覆盖旧值）。
+    pub fn take_config_push(&self) -> Option<SignalingMessage> {
+        lock_state(&self.state).pending_config.take()
+    }
+
     /// 整车房间（上报 room_id 数据源）。
     pub fn vehicle_room(&self) -> String {
         lock_state(&self.state).vehicle_room.clone()
@@ -440,6 +467,7 @@ pub async fn run_gateway(config: GatewayConfig) -> Result<(u16, GatewayHandle), 
         joined: false,
         remote_since: None,
         vehicle_room: config.room.clone(),
+        pending_config: None,
     }));
     let (remote_tx, remote_rx) = mpsc::unbounded_channel::<SignalingMessage>();
     let handle = GatewayHandle { state: Arc::clone(&state), remote_tx: remote_tx.clone() };
@@ -663,8 +691,10 @@ mod tests {
             joined: false,
             remote_since: None,
             vehicle_room: "vehicle-1".into(),
+            pending_config: None,
         }))
     }
+
 
     fn handle_for(state: Arc<Mutex<State>>) -> (GatewayHandle, mpsc::UnboundedReceiver<SignalingMessage>) {
         let (tx, rx) = mpsc::unbounded_channel();
@@ -729,6 +759,45 @@ mod tests {
         handle.send_remote(msg.clone()).expect("joined 时应发送成功");
         assert!(matches!(rx.try_recv(), Ok(m) if matches!(m, SignalingMessage::Sdp { .. })));
     }
+    #[test]
+    fn config_push_stored_when_targeted_at_vehicle() {
+        let state = test_state();
+        lock_state(&state).vehicle_peer_id = "veh-peer".into();
+        let push = SignalingMessage::ConfigPush {
+            room_id: "vehicle-1".into(),
+            target: "veh-peer".into(),
+            config: "[[cameras]]\n".into(),
+            version: 3,
+        };
+        let targets = lock_state(&state).downstream(push.clone());
+        assert!(targets.is_empty(), "ConfigPush 不入子进程路由: {targets:?}");
+        let handle = handle_for(state).0;
+        match handle.take_config_push() {
+            Some(SignalingMessage::ConfigPush { version, .. }) => assert_eq!(version, 3),
+            other => panic!("期望 ConfigPush, got {other:?}"),
+        }
+        assert!(handle.take_config_push().is_none(), "take 后应清空");
+    }
+
+    #[test]
+    fn config_push_ignored_for_other_target_or_room() {
+        let state = test_state();
+        lock_state(&state).vehicle_peer_id = "veh-peer".into();
+        let wrong_peer = SignalingMessage::ConfigPush {
+            room_id: "vehicle-1".into(),
+            target: "other-peer".into(),
+            config: "cfg".into(),
+            version: 1,
+        };
+        assert!(lock_state(&state).downstream(wrong_peer).is_empty());
+        let wrong_room = SignalingMessage::ConfigPush {
+            room_id: "other-room".into(),
+            target: "veh-peer".into(),
+            config: "cfg".into(),
+            version: 1,
+        };
+        assert!(lock_state(&state).downstream(wrong_room).is_empty());
+        let handle = handle_for(state).0;
+        assert!(handle.take_config_push().is_none(), "不匹配的 push 不得入待应用槽");
+    }
 }
-
-

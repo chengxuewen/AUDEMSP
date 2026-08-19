@@ -109,6 +109,35 @@ impl SignalingServer {
             .tx
             .clone()
     }
+    /// E4 云端配置下发: 向房间 Host（整车 host-agent 会话）推送 host.toml 全文。
+    /// 经房间 broadcast 频道投递（target = host peer_id，接收端按 target 过滤）。
+    /// 失败返回 Err —— 调用方必须打日志（C15）。
+    pub fn push_config(&self, room_id: &str, config: &str, version: u64) -> Result<(), String> {
+        let host_peer = self
+            .room_manager
+            .list_rooms()
+            .iter()
+            .find(|r| r.id == room_id)
+            .and_then(|r| r.host.clone())
+            .ok_or_else(|| format!("push_config: 房间 {room_id} 无 host"))?;
+        let msg = SignalingMessage::ConfigPush {
+            room_id: room_id.to_string(),
+            target: host_peer.clone(),
+            config: config.to_string(),
+            version,
+        };
+        let text = serde_json::to_string(&msg).map_err(|e| format!("push_config: 序列化失败: {e}"))?;
+        let tx = self.get_or_create_channel(room_id);
+        tx.send(text).map_err(|_| format!("push_config: 房间 {room_id} 无接收者"))?;
+        tracing::info!(
+            room_id,
+            peer = %host_peer,
+            version,
+            "ConfigPush 已下发（agent 应用后经 StatusReport.config_version 关联）"
+        );
+        Ok(())
+    }
+
 }
 
 // ── HealthChecker impl ────────────────────────────────────────────────────
@@ -786,5 +815,43 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
             }
         }
         _ => None,
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mediaservo_common::protocol::PeerRole;
+
+    #[test]
+    fn push_config_delivers_to_room_host() {
+        let server = SignalingServer::new(1 << 20, None);
+        server
+            .room_manager
+            .join_room("vehicle-1", "veh-peer", &PeerRole::Host)
+            .expect("join host");
+        // 房间频道订阅者（模拟整车会话的连接接收端）
+        let tx = server.get_or_create_channel("vehicle-1");
+        let mut rx = tx.subscribe();
+
+        server.push_config("vehicle-1", "[[cameras]]\nid = \"cam0\"\n", 7).expect("push");
+        let text = rx.try_recv().expect("channel 应有 ConfigPush");
+        match serde_json::from_str::<SignalingMessage>(&text).expect("parse") {
+            SignalingMessage::ConfigPush { room_id, target, config, version } => {
+                assert_eq!(room_id, "vehicle-1");
+                assert_eq!(target, "veh-peer", "target 应为房间 host peer");
+                assert!(config.contains("cam0"));
+                assert_eq!(version, 7);
+            }
+            other => panic!("expected ConfigPush, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn push_config_errors_when_room_has_no_host() {
+        let server = SignalingServer::new(1 << 20, None);
+        let err = server.push_config("empty-room", "cfg", 1).unwrap_err();
+        assert!(err.contains("无 host"), "无 host 房间必须报错: {err}");
     }
 }

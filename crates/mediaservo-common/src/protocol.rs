@@ -181,6 +181,16 @@ pub enum SignalingMessage {
         /// RTP parameters needed by the consumer to decode the stream.
         rtp_parameters: serde_json::Value,
     },
+    /// v5 (E4 云端配置闭环): Server → host-agent 整车配置下发。
+    /// config 为 host.toml 全文；target = 整车 peer_id（房间内其他 peer 忽略）；
+    /// version 与 StatusReport.config_version 关联（agent 应用成功后回报）。
+    ConfigPush {
+        room_id: String,
+        target: String,
+        config: String,
+        version: u64,
+    },
+
     // ponytail: add frame ack/retransmit when reliability matters
 }
 
@@ -644,6 +654,29 @@ mod tests {
         assert!(json.contains(r#""type":"consumed""#));
         let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
         assert!(matches!(parsed, SignalingMessage::Consumed { .. }));
+    }
+
+    #[test]
+    fn roundtrip_config_push() {
+        let msg = SignalingMessage::ConfigPush {
+            room_id: "vehicle-1".into(),
+            target: "veh-peer".into(),
+            config: "[[cameras]]\nid = \"cam0\"\n".into(),
+            version: 7,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""type":"config_push""#));
+        assert!(json.contains(r#""version":7"#));
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            SignalingMessage::ConfigPush { room_id, target, config, version } => {
+                assert_eq!(room_id, "vehicle-1");
+                assert_eq!(target, "veh-peer");
+                assert!(config.contains("cam0"));
+                assert_eq!(version, 7);
+            }
+            other => panic!("expected ConfigPush, got {other:?}"),
+        }
     }
 
     #[test]
