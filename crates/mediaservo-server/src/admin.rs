@@ -2,6 +2,7 @@
 //!
 //! Protected by JWT Bearer token auth. All endpoints require admin role.
 
+use crate::accounts::{self, AccountRegistry};
 use crate::signaling::SignalingServer;
 use axum::Router;
 use axum::body::Body;
@@ -14,9 +15,8 @@ use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
 use mediaservo_common::auth::{JwtAuth, JwtClaims};
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
-#[cfg(feature = "sfu-mediasoup")]
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 // ── State ───────────────────────────────────────────────────────────────────
 
@@ -30,6 +30,8 @@ pub struct AdminState {
     pub rate_limit: u32,
     pub room_capacity: usize,
     pub consumer_limit_per_stream: usize,
+    /// G3 舱端账号注册表（登录认证用; 空 = 无账号，登录一律 401）。
+    pub accounts: Arc<AccountRegistry>,
     #[cfg(feature = "sfu-mediasoup")]
     pub sfu_manager: Arc<crate::sfu::SfuManager>,
 }
@@ -100,11 +102,120 @@ pub fn admin_router(state: AdminState) -> Router {
         .route("/api/admin/peers/{id}", delete(kick_peer))
         .route("/api/admin/stats", get(stats))
         .route("/api/admin/config", get(server_config))
+        .route("/api/admin/config/push", axum::routing::post(push_config))
         .route("/api/admin/events", get(ws_events))
         .with_state(state.clone())
         // PIT-103 (G2 顺手修): admin API 此前完全无鉴权（check_auth 死代码）—
         // 客户端（www admin）REST 已带 Bearer、events WS 已带 ?token=，此处补服务端强制。
         .layer(axum::middleware::from_fn_with_state(state, auth_middleware))
+}
+
+// ── 登录（G3 账号体系）───────────────────────────────────────────────────────
+// 独立 router: 登录端点本身不能被 auth middleware 拦（它就是发证入口）。
+
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Serialize)]
+pub struct LoginResponse {
+    pub token: String,
+    pub username: String,
+    pub role: String,
+    pub expires_in_secs: u64,
+}
+
+/// POST /api/auth/login — 校验 username/password（accounts.yaml）→ 签发角色 JWT。
+pub fn login_router(state: AdminState) -> Router {
+    Router::new()
+        .route("/api/auth/login", axum::routing::post(login))
+        .with_state(state)
+}
+
+async fn login(
+    State(state): State<AdminState>,
+    axum::Json(req): axum::Json<LoginRequest>,
+) -> Result<Json<LoginResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let secret = state.admin_jwt_secret.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                error: "admin jwt secret not configured".into(),
+            }),
+        )
+    })?;
+    if state.accounts.is_empty() {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "account authentication failed: invalid credentials".into(),
+            }),
+        ));
+    }
+    // 未知用户与错误密码逐字一致（防枚举，同 G2 devices）。
+    let identity = state
+        .accounts
+        .authenticate(&req.username, &req.password)
+        .map_err(|_| {
+            tracing::warn!("login failed for user {}", req.username);
+            crate::audit::log_event(crate::audit::AuditEvent::AuthFailure {
+                peer_id: req.username.clone(),
+                reason: "account login failed".into(),
+            });
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "account authentication failed: invalid credentials".into(),
+                }),
+            )
+        })?;
+    let ttl: u64 = 12 * 3600; // ponytail: 12h 会话; 需要更短/续签时改为配置项
+    let token = accounts::issue_account_token(secret, &identity, ttl)
+        .map_err(|e| {
+            tracing::error!("login token issuance failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: "token issuance failed".into() }),
+            )
+        })?;
+    crate::audit::log_event(crate::audit::AuditEvent::AuthSuccess {
+        peer_id: identity.username.clone(),
+        device_id: None,
+    });
+    Ok(Json(LoginResponse {
+        token,
+        username: identity.username,
+        role: identity.role.as_str().to_string(),
+        expires_in_secs: ttl,
+    }))
+}
+
+/// POST /api/admin/config/push — admin 专属整车配置下发（E4 push_config 的 HTTP 入口）。
+#[derive(Debug, Deserialize)]
+pub struct ConfigPushRequest {
+    pub room_id: String,
+    pub config: String,
+    #[serde(default)]
+    pub version: u64,
+}
+
+async fn push_config(
+    State(state): State<AdminState>,
+    axum::Json(req): axum::Json<ConfigPushRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    state
+        .signaling
+        .push_config(&req.room_id, &req.config, req.version)
+        .map(|_| Json(serde_json::json!({"pushed": req.room_id, "version": req.version})))
+        .map_err(|e| {
+            tracing::error!("config push failed: {e}");
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse { error: e }),
+            )
+        })
 }
 
 // ── Auth helper ─────────────────────────────────────────────────────────────
@@ -136,7 +247,9 @@ fn check_auth(req: &axum::http::Request<Body>, state: &AdminState) -> Result<(),
     let claims = JwtAuth::new(secret).verify(&token).map_err(|_| {
         (StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "invalid token".into() }))
     })?;
-    if claims.sub != "admin" {
+    // G3: 按角色而非 sub 判定（账号体系: 任意 username + admin role 均可;
+    // bootstrap token sub=admin + role=admin 兼容）。
+    if claims.role.as_deref() != Some("admin") {
         return Err((StatusCode::UNAUTHORIZED, Json(ErrorResponse { error: "admin role required".into() })));
     }
     Ok(())
@@ -461,6 +574,7 @@ pub fn print_setup_token(secret: &str) {
         iat: now,
         exp: now + 365 * 86400, // ponytail: 1 year; rotate with shorter TTL if needed
         role: Some("admin".into()),
+            vehicles: None,
     };
     let token = jsonwebtoken::encode(
         &jsonwebtoken::Header::default(),
@@ -481,7 +595,7 @@ mod tests {
     use tower::util::ServiceExt;
 
     #[cfg(feature = "sfu-mediasoup")]
-    async fn make_state() -> AdminState {
+    pub(crate) async fn make_state() -> AdminState {
         let sfu = Arc::new(
             crate::sfu::SfuManager::new_with_port(crate::sfu::random_udp_port()).await.unwrap());
         let signaling = crate::signaling::SignalingServer::new(sfu.clone(), 65536, None);
@@ -495,11 +609,12 @@ mod tests {
             rate_limit: 100,
             room_capacity: 10,
             consumer_limit_per_stream: 50,
+            accounts: Arc::new(AccountRegistry::empty()),
             sfu_manager: sfu,
         }
     }
     #[cfg(not(feature = "sfu-mediasoup"))]
-    async fn make_state() -> AdminState {
+    pub(crate) async fn make_state() -> AdminState {
         let signaling = crate::signaling::SignalingServer::new(65536, None);
         let (event_tx, _) = broadcast::channel(256);
         AdminState {
@@ -511,6 +626,7 @@ mod tests {
             rate_limit: 100,
             room_capacity: 10,
             consumer_limit_per_stream: 50,
+            accounts: Arc::new(AccountRegistry::empty()),
         }
     }
 
@@ -526,6 +642,7 @@ mod tests {
             iat: now,
             exp: now + 3600,
             role: Some("admin".into()),
+            vehicles: None,
         };
         jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
@@ -719,5 +836,220 @@ mod tests {
     fn print_setup_token_works() {
         // Just ensure it doesn't panic
         print_setup_token("test-secret-with-at-least-32-bytes-here");
+    }
+}
+
+// ── G3 tests: 账号登录 + 角色化 admin 鉴权 + 配置下发门 ───────────────────────
+
+#[cfg(test)]
+mod g3_tests {
+    use super::*;
+    use crate::accounts::hash_password;
+    use mediaservo_common::protocol::PeerRole;
+    use axum::body::Body;
+    use http::{Method, Request, StatusCode};
+    use tower::util::ServiceExt;
+
+    fn accounts_yaml() -> String {
+        let hash = hash_password("carol", "s3cret");
+        format!(
+            "accounts:\n  carol:\n    password_hash: \"{hash}\"\n    role: operator\n    vehicles: [\"ms-car1\"]\n  adm:\n    password_hash: \"{}\"\n    role: admin\n",
+            hash_password("adm", "adm-secret")
+        )
+    }
+
+    async fn make_state_with_accounts() -> AdminState {
+        let mut s = super::tests::make_state().await;
+        s.accounts = Arc::new(AccountRegistry::from_yaml(&accounts_yaml()).unwrap());
+        s
+    }
+
+    fn operator_token(secret: &str) -> String {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize;
+        let claims = mediaservo_common::auth::JwtClaims {
+            sub: "carol".into(),
+            iat: now,
+            exp: now + 3600,
+            role: Some("operator".into()),
+            vehicles: Some(vec!["ms-car1".into()]),
+        };
+        jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &claims,
+            &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .unwrap()
+    }
+
+    fn login_request(body: &str) -> Request<Body> {
+        Request::builder()
+            .method(Method::POST)
+            .uri("/api/auth/login")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn login_success_issues_role_token_with_vehicles() {
+        let state = make_state_with_accounts().await;
+        let secret = state.admin_jwt_secret.clone().unwrap();
+        let app = login_router(state);
+
+        let resp = app
+            .oneshot(login_request(r#"{"username":"carol","password":"s3cret"}"#))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["username"], "carol");
+        assert_eq!(json["role"], "operator");
+        let token = json["token"].as_str().unwrap();
+        let claims = JwtAuth::new(secret).verify(token).unwrap();
+        assert_eq!(claims.sub, "carol");
+        assert_eq!(claims.role.as_deref(), Some("operator"));
+        assert_eq!(claims.vehicles.as_deref(), Some(&["ms-car1".to_string()][..]));
+    }
+
+    #[tokio::test]
+    async fn login_wrong_password_and_unknown_user_identical_401() {
+        let state = make_state_with_accounts().await;
+        let app = login_router(state);
+
+        let wrong = app
+            .clone()
+            .oneshot(login_request(r#"{"username":"carol","password":"wrong"}"#))
+            .await
+            .unwrap();
+        let unknown = app
+            .clone()
+            .oneshot(login_request(r#"{"username":"nobody","password":"s3cret"}"#))
+            .await
+            .unwrap();
+        assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(unknown.status(), StatusCode::UNAUTHORIZED);
+        let wb = axum::body::to_bytes(wrong.into_body(), 1 << 20).await.unwrap();
+        let ub = axum::body::to_bytes(unknown.into_body(), 1 << 20).await.unwrap();
+        assert_eq!(wb, ub, "未知用户与错误密码响应必须逐字一致（防枚举）");
+        assert!(String::from_utf8_lossy(&wb).contains("invalid credentials"));
+    }
+
+    #[tokio::test]
+    async fn login_without_secret_503_and_without_accounts_401() {
+        let mut state = super::tests::make_state().await; // 空账号
+        let app = login_router(state.clone());
+        let resp = app
+            .oneshot(login_request(r#"{"username":"carol","password":"s3cret"}"#))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "空注册表一律 401");
+
+        state.accounts = Arc::new(AccountRegistry::from_yaml(&accounts_yaml()).unwrap());
+        state.admin_jwt_secret = None;
+        let app = login_router(state);
+        let resp = app
+            .oneshot(login_request(r#"{"username":"carol","password":"s3cret"}"#))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE, "无 JWT secret 503");
+    }
+
+    #[tokio::test]
+    async fn config_push_admin_ok_operator_denied() {
+        let state = make_state_with_accounts().await;
+        state
+            .signaling
+            .room_manager
+            .join_room("vehicle-1", "veh-peer", &PeerRole::Host)
+            .expect("join host");
+        // 房间频道订阅者（等价真实车端 WS 连接的接收端 — push 需有接收者）。
+        let _rx = state.signaling.get_or_create_channel("vehicle-1").subscribe();
+        let app = admin_router(state);
+        let secret = "test-admin-secret-32-byte-min";
+
+        // admin 角色（账号 adm）→ 200
+        let admin_claims = mediaservo_common::auth::JwtClaims {
+            sub: "adm".into(),
+            iat: 1,
+            exp: 9999999999,
+            role: Some("admin".into()),
+            vehicles: None,
+        };
+        let admin_tok = jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &admin_claims,
+            &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .unwrap();
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/admin/config/push")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {admin_tok}"))
+                    .body(Body::from(
+                        r#"{"room_id":"vehicle-1","config":"[[cameras]]\nid=\"cam0\"\n","version":3}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "admin config push 必须放行");
+
+        // operator 角色 → 401（中间件按 role 判定）
+        let op_tok = operator_token(secret);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/admin/config/push")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {op_tok}"))
+                    .body(Body::from(
+                        r#"{"room_id":"vehicle-1","config":"evil","version":4}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "operator config push 必须拒绝");
+    }
+
+    #[tokio::test]
+    async fn config_push_admin_no_host_404() {
+        let state = make_state_with_accounts().await;
+        let app = admin_router(state);
+        let claims = mediaservo_common::auth::JwtClaims {
+            sub: "adm".into(),
+            iat: 1,
+            exp: 9999999999,
+            role: Some("admin".into()),
+            vehicles: None,
+        };
+        let admin_tok = jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &claims,
+            &jsonwebtoken::EncodingKey::from_secret("test-admin-secret-32-byte-min".as_bytes()),
+        )
+        .unwrap();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/admin/config/push")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {admin_tok}"))
+                    .body(Body::from(r#"{"room_id":"nope","config":"x"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 }

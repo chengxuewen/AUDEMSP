@@ -12,7 +12,7 @@
 //! - `ConsumerJoin` / `ConsumerLeave` — stream consumer lifecycle
 
 /// Audit event variants covering all security-relevant server operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AuditEvent {
     /// A new room was created.
     RoomCreate { room_id: String },
@@ -48,6 +48,21 @@ pub enum AuditEvent {
     ConsumerJoin { stream_id: String, peer_id: String },
     /// A peer stopped consuming a stream.
     ConsumerLeave { stream_id: String, peer_id: String },
+    /// G3 急停强审计（D-H11）— 谁/何时/哪个车/什么命令。
+    /// when = 日志时间戳（tracing 注入）；vehicle = 目标车 device_id（房间主车）。
+    EmergencyCommand {
+        username: String,
+        role: String,
+        vehicle: String,
+        command: String,
+    },
+    /// G3 授权拒绝（C15: 所有 denial 必须打日志 + 审计）。
+    /// action: room_join|consume|produce|config_push|emergency。
+    AuthorizationDenied {
+        action: String,
+        peer_id: String,
+        detail: String,
+    },
 }
 
 /// Emit an audit event as a structured `tracing` info-level log.
@@ -55,6 +70,16 @@ pub enum AuditEvent {
 /// The `audit.event` field is used as the JSON key for downstream filtering
 /// (e.g., log aggregation, SIEM ingestion).
 pub fn log_event(event: AuditEvent) {
+    // 有界环形缓冲（运维/测试读最近事件; tracing 日志仍是主通道）
+    {
+        let mut ring = recent_sink()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        ring.push_back(event.clone());
+        while ring.len() > AUDIT_RING_CAP {
+            ring.pop_front();
+        }
+    }
     match event {
         AuditEvent::RoomCreate { room_id } => {
             tracing::info!(
@@ -164,5 +189,120 @@ pub fn log_event(event: AuditEvent) {
                 "Consumer left stream"
             );
         }
+        AuditEvent::EmergencyCommand {
+            username,
+            role,
+            vehicle,
+            command,
+        } => {
+            tracing::info!(
+                audit.event = "emergency_command",
+                username = %username,
+                role = %role,
+                vehicle = %vehicle,
+                command = %command,
+                "Emergency command (强审计)"
+            );
+        }
+        AuditEvent::AuthorizationDenied {
+            action,
+            peer_id,
+            detail,
+        } => {
+            tracing::warn!(
+                audit.event = "authorization_denied",
+                action = %action,
+                peer_id = %peer_id,
+                detail = %detail,
+                "Authorization denied"
+            );
+        }
+    }
+}
+
+// ── 有界审计环形缓冲（运维/测试读最近事件）──────────────────────────────────
+// ponytail: 内存环形 256 条覆盖最近事件; 长期留存靠 tracing 日志管道（SIEM）。
+
+const AUDIT_RING_CAP: usize = 256;
+
+fn recent_sink() -> &'static std::sync::Mutex<std::collections::VecDeque<AuditEvent>> {
+    static RECENT: std::sync::OnceLock<std::sync::Mutex<std::collections::VecDeque<AuditEvent>>> =
+        std::sync::OnceLock::new();
+    RECENT.get_or_init(|| std::sync::Mutex::new(std::collections::VecDeque::new()))
+}
+
+/// 最近审计事件（有界环形，新事件在尾部；测试与运维查询用）。
+pub fn recent() -> Vec<AuditEvent> {
+    recent_sink()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .cloned()
+        .collect()
+}
+
+/// 清空环形缓冲（测试隔离用 — 各测试按新事件断言）。
+pub fn clear_recent() {
+    recent_sink()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recent_ring_records_and_bounds() {
+        clear_recent();
+        for i in 0..300 {
+            log_event(AuditEvent::AuthorizationDenied {
+                action: "test".into(),
+                peer_id: format!("p{i}"),
+                detail: "d".into(),
+            });
+        }
+        let all = recent();
+        assert_eq!(all.len(), AUDIT_RING_CAP, "环形必须封顶");
+        assert_eq!(
+            all[0],
+            AuditEvent::AuthorizationDenied {
+                action: "test".into(),
+                peer_id: "p44".into(),
+                detail: "d".into(),
+            },
+            "最旧事件被淘汰（300 - 256 = 44）"
+        );
+        assert_eq!(
+            all.last(),
+            Some(&AuditEvent::AuthorizationDenied {
+                action: "test".into(),
+                peer_id: "p299".into(),
+                detail: "d".into(),
+            })
+        );
+        clear_recent();
+        assert!(recent().is_empty());
+    }
+
+    #[test]
+    fn emergency_command_event_carries_who_vehicle_command() {
+        clear_recent();
+        log_event(AuditEvent::EmergencyCommand {
+            username: "carol".into(),
+            role: "operator".into(),
+            vehicle: "ms-car1".into(),
+            command: "e-stop".into(),
+        });
+        assert_eq!(
+            recent().last(),
+            Some(&AuditEvent::EmergencyCommand {
+                username: "carol".into(),
+                role: "operator".into(),
+                vehicle: "ms-car1".into(),
+                command: "e-stop".into(),
+            })
+        );
     }
 }

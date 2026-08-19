@@ -2,8 +2,10 @@
 //!
 //! Re-exports all server modules for binary and integration test use.
 
+pub mod accounts;
 pub mod admin;
 pub mod audit;
+pub mod roles;
 pub mod config;
 pub mod devices;
 pub mod monitor;

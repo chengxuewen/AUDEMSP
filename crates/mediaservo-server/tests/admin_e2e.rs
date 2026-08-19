@@ -2,6 +2,7 @@
 //!
 //! Exercises all admin endpoints: rooms, stats, config, auth, delete.
 
+use mediaservo_server::accounts::AccountRegistry;
 use mediaservo_server::admin::{admin_router, AdminState};
 use mediaservo_server::signaling::SignalingServer;
 use mediaservo_common::auth::JwtClaims;
@@ -9,6 +10,7 @@ use mediaservo_common::protocol::PeerRole;
 use axum::body::Body;
 use http::{Method, Request, StatusCode};
 use tower::util::ServiceExt;
+use std::sync::Arc;
 use tokio::sync::broadcast;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -32,6 +34,7 @@ async fn make_state() -> AdminState {
         rate_limit: 100,
         room_capacity: 10,
         consumer_limit_per_stream: 50,
+        accounts: Arc::new(AccountRegistry::empty()),
         sfu_manager: sfu,
     }
 }
@@ -48,6 +51,7 @@ async fn make_state() -> AdminState {
         rate_limit: 100,
         room_capacity: 10,
         consumer_limit_per_stream: 50,
+        accounts: Arc::new(AccountRegistry::empty()),
     }
 }
 
@@ -61,6 +65,7 @@ fn admin_token(state: &AdminState) -> String {
         iat: now,
         exp: now + 3600,
         role: Some("admin".into()),
+            vehicles: None,
     };
     jsonwebtoken::encode(
         &jsonwebtoken::Header::default(),

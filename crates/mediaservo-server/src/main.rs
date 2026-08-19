@@ -110,6 +110,29 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // ── G3 舱端账号注册表加载（accounts.yaml; 缺省路径与 server.yaml 同目录）────
+    // 文件缺失/解析失败 → 空注册表 + 警告（PSK/设备路径不受影响，不阻断启动）。
+    let accounts_path = config
+        .accounts_file
+        .clone()
+        .unwrap_or_else(|| "/opt/mediaservo/etc/accounts.yaml".to_string());
+    let accounts = match mediaservo_server::accounts::AccountRegistry::load(&accounts_path) {
+        Ok(reg) => {
+            tracing::info!(
+                "Account registry loaded from {accounts_path}: {} accounts",
+                reg.len()
+            );
+            reg
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Account registry {accounts_path}: {e}; running with no accounts (PSK/device path only)"
+            );
+            mediaservo_server::accounts::AccountRegistry::empty()
+        }
+    };
+    let accounts = std::sync::Arc::new(accounts);
+
     // Print admin setup token if configured
     if let Some(ref secret) = config.admin_jwt_secret {
         admin::print_setup_token(secret);
@@ -161,15 +184,19 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         rate_limit: config.rate_limit,
         room_capacity: config.room_capacity,
         consumer_limit_per_stream: config.consumer_limit_per_stream,
+        accounts: std::sync::Arc::clone(&accounts),
         #[cfg(feature = "sfu-mediasoup")]
         sfu_manager: std::sync::Arc::clone(&signaling_server.sfu_manager),
     };
 
     let admin_router = admin::admin_router(admin_state.clone());
+    // G3: 登录端点独立 router（不被 admin auth middleware 拦截 — 它就是发证入口）。
+    let login_router = admin::login_router(admin_state.clone());
 
     let app = axum::Router::new()
         .merge(signaling_router)
         .merge(monitor_router)
+        .merge(login_router)
         .merge(admin_router);
     let app = mediaservo_server::static_files::add_admin_routes(app);
 
