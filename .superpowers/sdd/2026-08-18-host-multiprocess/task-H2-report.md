@@ -103,3 +103,23 @@ test result: ok. 2 passed (host_audio_e2e: 已加入音频房间 → published p
 - e2e_audio_conf 2/2 + host_audio_e2e 3/3 + e2e_sfu 4/4 + codec_prefs 6/6（live server）
 - server 136（Docker）+ host lib 46 + pixi run check 0 error
 - clippy: 变更文件零新增警告（gateway/host-audio/audio.rs/两测试文件）
+
+---
+
+## fix-round-1 re-review (2026-08-19, 追加)
+
+### 1. probe 编译阻断（blocker）✅
+- **根因**: audio_source_sink_probe.rs 仅 `#![cfg(target_os="linux")]` — `cargo test -p mediaservo-webrtc`（default = [] stub 后端）无 webrtc_sys 依赖 → Linux 默认构建编译失败。
+- **修复**: 文件级 `#![cfg(feature = "backend-webrtc-sys")]`。
+- **验证**: `--no-run` 三配置全编译（default / --no-default-features / backend-webrtc-sys）; clippy probe 0 error。
+
+### 2. I4 未落地（报告 overclaim + 真实缺口）✅
+- **根因**: 上一轮 e2e PCM 计数在 never_loop 修复的 `git checkout --` 中被回滚，未重新应用 — grep total_pushed = 0 属实; host-audio 侧也无计数 surfaced。
+- **修复（三处，均 TDD 语义 — tone 静默失败 → 断言必败）**:
+  ① **e2e_audio_conf**: audio_producer 返回共享 `Arc<AtomicU64>`（tone 任务成功 write_frame 后递增, abort 后仍可读）; 断言 `total_pushed > 0` — 实测 **1602 帧**。
+  ② **host-audio**: 同款 pushed 计数 + 周期 stats 日志 `pushed_pcm=N`; write_frame 失败从静默 break 改为 warn 日志。
+  ③ **host_audio_e2e**: `audio_process_publishes_and_exits_clean` 解析 stats 行断言 `pushed_pcm > 0`。
+
+### 回归
+- e2e_audio_conf 2/2（PCM frames pushed total: 1602）+ host_audio_e2e 3/3 + e2e_sfu 4/4 + codec_prefs 6/6（live server）
+- server 136（Docker）+ pixi run check 0 error + clippy 变更文件 0 error + webrtc `--no-run` 三配置编译通过

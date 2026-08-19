@@ -107,7 +107,14 @@ async fn publish_audio(
     signal: &SignalSession,
     room: &str,
     tone_hz: u16,
-) -> Result<(String, Arc<mediaservo_webrtc::track::TrackSender>), String> {
+) -> Result<
+    (
+        String,
+        Arc<mediaservo_webrtc::track::TrackSender>,
+        std::sync::Arc<std::sync::atomic::AtomicU64>,
+    ),
+    String,
+> {
     // 1. Send transport
     signal
         .send(SignalingMessage::CreateWebRtcTransport {
@@ -221,6 +228,10 @@ async fn publish_audio(
         _ => return Err("expected TrackSender".into()),
     };
     let tone_track = sender.clone();
+    // PCM 推流成功计数（I4 re-review）: 周期 stats 日志 surfacing — write_frame
+    // 静默失败可观测（host_audio_e2e 断言 pushed>0）。
+    let pushed: std::sync::Arc<std::sync::atomic::AtomicU64> = Default::default();
+    let pushed_for_task = pushed.clone();
     let tone_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_millis(10));
         let mut phase: f64 = 0.0;
@@ -228,8 +239,14 @@ async fn publish_audio(
         loop {
             interval.tick().await;
             let frame = audio::tone_frame(&mut phase, freq);
-            if tone_track.write_frame(&frame).await.is_err() {
-                break;
+            match tone_track.write_frame(&frame).await {
+                Ok(()) => {
+                    pushed_for_task.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                Err(e) => {
+                    tracing::warn!("host-audio: tone write_frame failed: {e}");
+                    break;
+                }
             }
         }
     });
@@ -238,7 +255,7 @@ async fn publish_audio(
     );
     // PIT-105: tone task 全生命周期存活（避免假性内存回收）— 随进程退出
     std::mem::forget(tone_task);
-    Ok((producer_id, Arc::new(sender)))
+    Ok((producer_id, Arc::new(sender), pushed))
 }
 
 /// 订阅一路 producer: Recv transport → Consume（先拿 ssrc）→ sendonly SDP → answer → Connect。
@@ -429,7 +446,8 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     tracing::info!("host-audio: 已加入音频房间 {}", args.room);
 
     // 发布 1 路 opus
-    let (producer_id, _sender) = match publish_audio(&signal, &args.room, args.tone_hz).await {
+    let (producer_id, _sender, pushed) =
+        match publish_audio(&signal, &args.room, args.tone_hz).await {
         Ok(v) => v,
         Err(e) => {
             tracing::error!("host-audio: publish 失败: {e}");
@@ -453,8 +471,9 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         loop {
             interval.tick().await;
             let own_consumers = consumer_ids_for_stats.lock().unwrap().len();
+            let pushed_n = pushed.load(std::sync::atomic::Ordering::Relaxed);
             tracing::info!(
-                "host-audio: producer={pid} consumers={own_consumers} (PIT-105: RTP 字节统计待 libwebrtc 音频编码修复后生效)"
+                "host-audio: producer={pid} consumers={own_consumers} pushed_pcm={pushed_n} (PIT-105: RTP 字节统计待 libwebrtc 音频编码修复后生效)"
             );
         }
     });

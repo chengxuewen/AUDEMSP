@@ -7,6 +7,9 @@
 //! `#[ignore]`: 探针不依赖 PIT-105 修复（sink 链本来就通），但保持低频运行
 //! （FFI 探针语义 + 修复验证时的判别式）。
 
+// 仅 backend-webrtc-sys 有 webrtc_sys 依赖（default = stub 后端, 无 FFI 面）—
+// 无此门 default 构建编译失败（I1 re-review blocker）。
+#![cfg(feature = "backend-webrtc-sys")]
 #![cfg(target_os = "linux")]
 
 use std::sync::Arc;

@@ -208,7 +208,12 @@ async fn audio_producer<S>(
     ws: &mut S,
     room: &str,
     peer: &str,
-) -> (String, mediaservo_webrtc::track::TrackSender, tokio::task::JoinHandle<()>)
+) -> (
+    String,
+    mediaservo_webrtc::track::TrackSender,
+    tokio::task::JoinHandle<()>,
+    std::sync::Arc<std::sync::atomic::AtomicU64>,
+)
 where
     S: SinkExt<WsMsg> + StreamExt<Item = Result<WsMsg, tokio_tungstenite::tungstenite::Error>> + Unpin,
     <S as futures_util::Sink<WsMsg>>::Error: std::fmt::Debug,
@@ -377,6 +382,10 @@ where
     };
     let peer = peer.to_string();
     let tone_track = track.clone();
+    // PCM 推流成功计数（I4 re-review）: 共享计数在 tone 任务 abort 后仍可读 —
+    // write_frame 静默失败（如 PIT-105 之外的接线回归）会被下方 total_pushed 断言捕获。
+    let pushed: std::sync::Arc<std::sync::atomic::AtomicU64> = Default::default();
+    let pushed_for_task = pushed.clone();
     let tone_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_millis(10));
         let mut phase: f64 = 0.0;
@@ -386,6 +395,7 @@ where
             let frame = tone_frame(&mut phase);
             match tone_track.write_frame(&frame).await {
                 Ok(()) => {
+                    pushed_for_task.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     sent += 1;
                     if sent.is_multiple_of(100) {
                         tracing::info!("{peer}: tone frames sent: {sent}");
@@ -399,7 +409,7 @@ where
         }
     });
 
-    (producer_id, track, tone_task)
+    (producer_id, track, tone_task, pushed)
 }
 
 /// 消费方：Recv transport → Consume → 构造含 ssrc 的 sendonly SDP → answer →
@@ -587,15 +597,17 @@ async fn e2e_audio_conf_three_party_all_hear_all() {
     let mut ws_list = Vec::new();
     let mut producers = Vec::new();
     let mut tone_tasks = Vec::new();
+    let mut pcm_pushed = Vec::new();
     for peer in peers {
         let (mut ws, _) = tokio_tungstenite::connect_async(&harness.ws_url)
             .await
             .unwrap();
-        let (producer_id, _track, tone_task) =
+        let (producer_id, _track, tone_task, pushed) =
             audio_producer(&mut ws, &room, peer).await;
         tracing::info!("{peer}: produced {producer_id}");
         producers.push(producer_id);
         tone_tasks.push(tone_task);
+        pcm_pushed.push(pushed);
         ws_list.push(ws);
     }
 
@@ -644,6 +656,18 @@ async fn e2e_audio_conf_three_party_all_hear_all() {
             other => panic!("expected SfuStats for consumer {cid}, got {other:?}"),
         }
     }
+
+    // PCM 推流成功断言（I4 re-review）: tone 任务静默失败（write_frame 全 Err /
+    // 任务早退）→ total_pushed == 0 → 测试失败。abort 后计数仍可读（Arc）。
+    let total_pushed: u64 = pcm_pushed
+        .iter()
+        .map(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+        .sum();
+    assert!(
+        total_pushed > 0,
+        "PCM 帧必须成功推入 libwebrtc（capture_frame 接受）— 推流静默失败 = 接线回归"
+    );
+    tracing::info!("PCM frames pushed total: {total_pushed}");
 
     // 清理
     for t in tone_tasks {

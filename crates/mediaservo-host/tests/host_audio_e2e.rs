@@ -97,6 +97,19 @@ fn audio_process_publishes_and_exits_clean() {
         log.contains("published producer"),
         "必须成功 publish opus: {log}"
     );
+    // I4 re-review: PCM 推流成功计数（stats 日志 pushed_pcm=N）— tone 任务静默
+    // 失败（write_frame 全 Err）→ pushed_pcm=0 → 测试失败。
+    let pushed_line = log
+        .lines()
+        .find(|l| l.contains("pushed_pcm="))
+        .unwrap_or_else(|| panic!("stats 日志必须含 pushed_pcm: {log}"));
+    let pushed: u64 = pushed_line
+        .split("pushed_pcm=")
+        .nth(1)
+        .and_then(|v| v.split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    assert!(pushed > 0, "pushed_pcm 必须 > 0（PCM 帧成功推入 libwebrtc）: {pushed_line}");
     assert!(log.contains("--duration 到期"), "必须按 duration 退出: {log}");
 }
 
