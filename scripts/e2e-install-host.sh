@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# install host e2e smoke — 干净目录安装 → D-H13 布局断言 → doctor → 幂等重装
+# （identity/signing 保留）→ start/status/stop 冒烟。C22: 宿主原生执行。
+# 前置: target/debug 8 host 二进制（缺失自动构建）。
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+export PATH="$HOME/.pixi/bin:$PATH"
+
+FAIL=0
+note() { echo "== $1"; }
+
+if [ ! -x target/debug/host ]; then
+    note "building mediaservo-host (debug)"
+    pixi run cargo build -p mediaservo-host
+fi
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"; rm -rf /tmp/iceoryx2 /dev/shm/iox2_*' EXIT
+
+note "install host --prefix $TMP"
+python3 scripts/mediaservo_cli.py install host --prefix "$TMP"
+
+BIN="$TMP/bin"
+
+# ── 1. bin/: 8 进程二进制可执行 + oxmgr 打包 ───────────────
+for b in host host-agent host-capturer host-streamer host-recorder \
+         host-controller host-emergency host-audio; do
+    [ -x "$BIN/$b" ] || { echo "FAIL: bin/$b 缺失或不可执行"; FAIL=1; }
+done
+echo "OK: bin/ $(ls "$BIN" | wc -l) 个可执行文件"
+if [ -x "$BIN/oxmgr" ]; then
+    echo "OK: oxmgr 已打包 ($("$BIN/oxmgr" --version 2>/dev/null || echo '?'))"
+else
+    echo "WARN: oxmgr 未打包（PATH 无 oxmgr）— doctor oxmgr 检查将失败（预期，文档化）"
+fi
+
+# ── 2. D-H13 布局断言 ──────────────────────────────────────
+[ -f "$TMP/etc/host.toml" ] || { echo "FAIL: etc/host.toml"; FAIL=1; }
+for f in signing.pem cam0.token cam0-stream.token recorder.token agent.token; do
+    [ -f "$TMP/etc/link/$f" ] || { echo "FAIL: etc/link/$f"; FAIL=1; }
+done
+[ -d "$TMP/run/logs" ] || { echo "FAIL: run/logs"; FAIL=1; }
+[ -d "$TMP/recordings" ] || { echo "FAIL: recordings"; FAIL=1; }
+m600() { [ "$(stat -c %a "$1")" = "600" ]; }
+m600 "$TMP/etc/link/signing.pem" && echo "OK: signing.pem 0600" || { echo "FAIL: signing.pem 权限"; FAIL=1; }
+m600 "$TMP/identity.json" && echo "OK: identity.json 0600" || { echo "FAIL: identity.json 权限"; FAIL=1; }
+echo "OK: D-H13 布局完整（etc/ + run/logs + recordings + identity.json）"
+
+# ── 3. file/ldd 检查 ───────────────────────────────────────
+file "$BIN/host" | grep -q ELF || { echo "FAIL: file 非 ELF"; FAIL=1; }
+if ldd "$BIN/host" 2>/dev/null | grep -q "not found"; then
+    echo "FAIL: ldd 有 not found"; FAIL=1
+fi
+echo "OK: file/ldd 检查通过"
+
+# ── 4. host doctor（PATH 含 bin → 打包版 oxmgr 生效）────────
+note "host doctor"
+out=$(env PATH="$BIN:$PATH" "$BIN/host" doctor "$TMP" 2>&1 || true)
+echo "$out"
+echo "$out" | grep -q "全部通过" || { echo "FAIL: doctor 未全过"; FAIL=1; }
+
+# ── 5. 幂等重装: identity/signing/host.toml 哈希不变 ───────
+note "re-install idempotency"
+SUM_BEFORE=$(sha256sum "$TMP/etc/link/signing.pem" "$TMP/identity.json" "$TMP/etc/host.toml")
+python3 scripts/mediaservo_cli.py install host --prefix "$TMP" >/dev/null
+SUM_AFTER=$(sha256sum "$TMP/etc/link/signing.pem" "$TMP/identity.json" "$TMP/etc/host.toml")
+if [ "$SUM_BEFORE" = "$SUM_AFTER" ]; then
+    echo "OK: 重装后 signing.pem/identity.json/host.toml 哈希不变（凭据保留）"
+else
+    echo "FAIL: 重装破坏凭据（哈希变化）"; FAIL=1
+fi
+
+# ── 6. start/status/stop 冒烟（C25: 先清 iceoryx2 残留）────
+note "start/status/stop roundtrip"
+rm -rf /tmp/iceoryx2 /dev/shm/iox2_*
+env PATH="$BIN:$PATH" "$BIN/host" start "$TMP" >/dev/null 2>&1 || { echo "FAIL: host start"; FAIL=1; }
+sleep 4
+out=$(env PATH="$BIN:$PATH" "$BIN/host" status "$TMP" 2>&1 || true)
+echo "$out" | grep -q "host-agent" || { echo "FAIL: status 无 host-agent: $out"; FAIL=1; }
+env PATH="$BIN:$PATH" "$BIN/host" stop "$TMP" >/dev/null 2>&1 || { echo "FAIL: host stop"; FAIL=1; }
+out=$(env PATH="$BIN:$PATH" "$BIN/host" status "$TMP" 2>&1 || true)
+echo "$out" | grep -q "无已管理进程" || { echo "FAIL: stop 后仍有进程: $out"; FAIL=1; }
+echo "OK: start → status(host-agent 在列) → stop 冒烟通过"
+
+echo
+if [ "$FAIL" = 0 ]; then
+    echo "PASS: install host e2e smoke 全绿"
+else
+    echo "FAIL: $FAIL 项失败"; exit 1
+fi

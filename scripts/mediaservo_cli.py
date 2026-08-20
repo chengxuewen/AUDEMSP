@@ -118,6 +118,63 @@ def _cmd_build_bindings(release: bool = False) -> None:
 ALL_SDKS = ("field", "link", "deck")
 
 
+# D-H13: host 包 8 进程二进制（host CLI + 7 守护进程；host-legacy 旧单进程不入包）
+HOST_BINS = (
+    "host", "host-agent", "host-capturer", "host-streamer",
+    "host-recorder", "host-controller", "host-emergency", "host-audio",
+)
+
+
+def _exe_name(name: str) -> str:
+    """Windows best-effort: 二进制名带 .exe（其余平台原名）。"""
+    return name + (".exe" if sys.platform == "win32" else "")
+
+
+def _cmd_install_host(prefix: str, release: bool = False) -> None:
+    """安装 host 包（D-H13 /opt/mediaservo-host 布局）: bin 8 + oxmgr 打包（版本锁定）
+    + host init 生成 etc/{host.toml,link/*} + identity.json（幂等——重装保留凭据）
+    + run/logs + recordings。生产部署: --prefix /opt/mediaservo-host。"""
+    src_dir = ROOT / ("target/release" if release else "target/debug")
+    bin_dir = Path(prefix) / "bin"
+    try:
+        bin_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"错误: 无法创建 {bin_dir}: {e} — 生产部署用 --prefix /opt/mediaservo-host（需 root）", file=sys.stderr)
+        sys.exit(1)
+
+    missing = [str(src_dir / _exe_name(b)) for b in HOST_BINS if not (src_dir / _exe_name(b)).exists()]
+    if missing:
+        print(f"错误: 缺失二进制 {missing} — 先运行: mediaservo build host{' --release' if release else ''}，或 mediaservo install host --build", file=sys.stderr)
+        sys.exit(1)
+    for b in HOST_BINS:
+        shutil.copy2(src_dir / _exe_name(b), bin_dir / _exe_name(b))
+
+    # oxmgr 随包锁定版本（D-H13）: PATH 找到则复制打包；缺 → 清晰指引（非致命,
+    # 运行时 PATH 缺 oxmgr 由 `host doctor` 检出）
+    oxmgr_src = shutil.which("oxmgr")
+    if oxmgr_src is not None:
+        shutil.copy2(oxmgr_src, bin_dir / _exe_name("oxmgr"))
+        ver = subprocess.run([oxmgr_src, "--version"], capture_output=True, text=True, check=False)
+        print(f"  oxmgr 已打包: {ver.stdout.strip() or ver.stderr.strip() or '?'}")
+    else:
+        print("错误: PATH 未找到 oxmgr — 未打包（运行时需它拉起进程）。安装: npm install -g oxmgr（https://github.com/Vladimir-Urik/OxMgr#install），或构建 oxmgr-src 后放 ~/.local/bin，再重跑 install host", file=sys.stderr)
+
+    # host init: 生成 etc/ + identity.json + 令牌（幂等——已存在跳过, 重装保留凭据）
+    _run_or_exit([str(bin_dir / _exe_name("host")), "init", str(Path(prefix))])
+
+    for d in ("run/logs", "recordings"):
+        (Path(prefix) / d).mkdir(parents=True, exist_ok=True)
+
+    print(f"host 已安装到 {prefix}（{'release' if release else 'debug'}）")
+    print(f"  bin/    {', '.join(_exe_name(b) for b in HOST_BINS)} + oxmgr")
+    print("  etc/    host.toml + link/{signing.pem,*.token}（host init 生成, 重装保留）")
+    print("  run/    logs/")
+    print("  recordings/")
+    print("  identity.json（0600, 设备身份 — 重装保留, 勿删）")
+    print(f"使用: export PATH={bin_dir}:$PATH && host doctor {prefix} && host start {prefix}")
+    if sys.platform == "win32":
+        print("注意: Windows best-effort（未全面验证）— 生产部署建议 Linux 车端", file=sys.stderr)
+
 def _platform_tag() -> str:
     """wheel 平台 tag（Linux x86_64 → linux_x86_64；其余平台 best-effort）。"""
     import platform
@@ -553,11 +610,16 @@ def _rm_tree(path: Path) -> None:
 
 
 def _cmd_install(args: argparse.Namespace) -> None:
-    """install <target> — bindings。"""
+    """install <target> — bindings | host。"""
     if args.target == "bindings":
         if args.build:
             _cmd_build_bindings(args.release)  # 一体化: 先构建再安装
-        _cmd_install_bindings(args.prefix, args.components, args.release)
+        _cmd_install_bindings(args.prefix or str(ROOT / "install"), args.components, args.release)
+    elif args.target == "host":
+        if args.build:
+            _check("cargo", "pixi 环境未激活? 先运行: source bootstrap.sh / pixi.bat")
+            _run_or_exit(["cargo", "build"] + (["--release"] if args.release else []) + ["-p", "mediaservo-host"])
+        _cmd_install_host(args.prefix or str(ROOT / "install" / "host"), args.release)
 
 
 def _cmd_clean(args: argparse.Namespace) -> None:
@@ -665,13 +727,13 @@ def main() -> None:
     )
     sub.add_parser("test", help="workspace 测试（排除 mediaservo-server）")
     sub.add_parser("ci", help="CI 全链: fmt → clippy → test → e2e")
-    install_p = sub.add_parser("install", help="安装 <target>: bindings（lib 三件套 D241 + include/mediaservo 头 D248）")
-    install_p.add_argument("target", choices=["bindings"])
-    install_p.add_argument("--prefix", default=str(ROOT / "install"), help="安装前缀（默认 <项目根>/install）")
-    install_p.add_argument("--build", action="store_true", help="先构建 bindings 再安装（等价 build bindings && install bindings）")
+    install_p = sub.add_parser("install", help="安装 <target>: bindings（lib 三件套 D241 + include/mediaservo 头 D248）| host（D-H13 /opt/mediaservo-host 车端布局）")
+    install_p.add_argument("target", choices=["bindings", "host"])
+    install_p.add_argument("--prefix", default=None, help="安装前缀（默认 bindings: <项目根>/install；host: <项目根>/install/host）")
+    install_p.add_argument("--build", action="store_true", help="先构建再安装（等价 build && install）")
     install_p.add_argument("--components", default="all",
-                           help="按需分发: field|link|deck|all|逗号组合（如 link,deck；默认 all）")
-    install_p.add_argument("--release", action="store_true", help="安装 release 产物（target/release，配合 build bindings --release）")
+                           help="按需分发: field|link|deck|all|逗号组合（如 link,deck；默认 all；仅 bindings）")
+    install_p.add_argument("--release", action="store_true", help="安装 release 产物（target/release，配合 build --release）")
     install_p.set_defaults(func=_cmd_install)
     clean_p = sub.add_parser("clean", help="清理 <target>: all|server|host|client（默认 all）")
     clean_p.add_argument("target", nargs="?", choices=["all", "server", "host", "client"], default="all")
