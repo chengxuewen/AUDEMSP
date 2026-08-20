@@ -144,6 +144,13 @@ def _cmd_install_host(prefix: str, release: bool = False) -> None:
         print(f"错误: 无法创建 {bin_dir}: {e} — 生产部署用 --prefix /opt/mediaservo-host（需 root）", file=sys.stderr)
         sys.exit(1)
 
+    # 运行中的实例二进制被占用（Text file busy）→ 复制前自动 stop（幂等: 未运行则无操作）
+    oxfile = Path(prefix) / "run" / "oxfile.toml"
+    installed_cli = bin_dir / _exe_name("mediaservo-host")
+    if oxfile.exists() and installed_cli.exists() and shutil.which("oxmgr"):
+        print("检测到运行中的 host 实例 — 先 stop（重装不覆盖 etc/ 凭据）")
+        subprocess.run([str(installed_cli), "stop", str(prefix)], check=False)
+
     missing = [str(src_dir / _exe_name(b)) for b in HOST_BINS if not (src_dir / _exe_name(b)).exists()]
     if missing:
         print(f"错误: 缺失二进制 {missing} — 先运行: mediaservo build host{' --release' if release else ''}，或 mediaservo install host --build", file=sys.stderr)
