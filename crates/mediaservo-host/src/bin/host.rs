@@ -1008,15 +1008,144 @@ fn cmd_startup(args: &mut impl Iterator<Item = String>) -> i32 {
             return 2;
         }
     };
+    // 绝对路径——unit 名按实例目录派生必须稳定（不同 cwd 同实例同名）
+    let dir = dir.canonicalize().unwrap_or(dir);
     match sub.as_str() {
-        "on" => {
-            // 注册系统服务管理集成（auto 检测三端）；失败不阻断（开发环境无服务管理器）
-            let _ = run_oxmgr_in(Some(&dir), &["startup"]);
-            run_oxmgr_in(Some(&dir), &["service", "install"])
-        }
-        "off" => run_oxmgr_in(Some(&dir), &["service", "uninstall"]),
-        _ => run_oxmgr_in(Some(&dir), &["service", "status"]),
+        "on" => startup_install(&dir),
+        "off" => startup_uninstall(&dir),
+        _ => startup_status(&dir),
     }
+}
+
+/// 自启 unit 名（按实例目录派生——多实例各自自启，天然无覆盖竞争）
+fn startup_unit_name(dir: &std::path::Path) -> String {
+    let raw = dir.to_string_lossy().replace(['/', '\\', ' '], "-");
+    let raw = raw.trim_start_matches('-');
+    format!("oxmgr-host-{raw}.service")
+}
+
+/// 实例 daemon 的 oxmgr 二进制路径（host CLI 同目录）
+fn oxmgr_path() -> std::path::PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("oxmgr")))
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| std::path::PathBuf::from("oxmgr"))
+}
+
+#[cfg(target_os = "linux")]
+fn startup_install(dir: &std::path::Path) -> i32 {
+    let unit_name = startup_unit_name(dir);
+    let unit_path = std::path::Path::new(&std::env::var("HOME").unwrap_or_default())
+        .join(".config/systemd/user")
+        .join(&unit_name);
+    let oxmgr = oxmgr_path();
+    let data_dir = dir.join("run").join("oxmgr");
+    // 幂等: 覆盖自身 unit（同实例重跑 on = 刷新）
+    let unit = format!(
+        "[Unit]
+         Description=MediaServo host oxmgr daemon ({})
+         After=network.target
+         
+         [Service]
+         Type=simple
+         Environment=OXMGR_DATA_DIR={}
+         ExecStart={} daemon run
+         Restart=always
+         RestartSec=2
+         
+         [Install]
+         WantedBy=default.target
+",
+        dir.display(),
+        data_dir.display(),
+        oxmgr.display()
+    );
+    if let Some(parent) = unit_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(e) = std::fs::write(&unit_path, unit) {
+        eprintln!("startup on: 写入 unit 失败: {e}");
+        return 1;
+    }
+    println!("startup on: 已安装 {}（OXMGR_DATA_DIR={}）", unit_path.display(), data_dir.display());
+    for args in [
+        vec!["systemctl", "--user", "daemon-reload"],
+        vec!["systemctl", "--user", "enable", "--now", unit_name.as_str()],
+    ] {
+        let st = std::process::Command::new(args[0]).args(&args[1..]).status();
+        match st {
+            Ok(s) if s.success() => {}
+            Ok(s) => {
+                eprintln!("startup on: {} 退出码 {}", args.join(" "), s.code().unwrap_or(-1));
+                return 1;
+            }
+            Err(e) => {
+                eprintln!("startup on: 执行 {} 失败: {e}（systemd 用户服务不可用？）", args.join(" "));
+                return 1;
+            }
+        }
+    }
+    println!("startup on: 开机自启已启用（systemd 用户服务 {}）", unit_name);
+    0
+}
+
+#[cfg(target_os = "linux")]
+fn startup_uninstall(dir: &std::path::Path) -> i32 {
+    let unit_name = startup_unit_name(dir);
+    let unit_path = std::path::Path::new(&std::env::var("HOME").unwrap_or_default())
+        .join(".config/systemd/user")
+        .join(&unit_name);
+    if !unit_path.exists() {
+        println!("startup off: 未安装自启（{} 不存在）", unit_path.display());
+        return 0;
+    }
+    let _ = std::process::Command::new("systemctl")
+        .args(["--user", "disable", "--now", &unit_name])
+        .status();
+    let _ = std::fs::remove_file(&unit_path);
+    let _ = std::process::Command::new("systemctl").args(["--user", "daemon-reload"]).status();
+    println!("startup off: 已停用并移除 {}", unit_path.display());
+    0
+}
+
+#[cfg(target_os = "linux")]
+fn startup_status(dir: &std::path::Path) -> i32 {
+    let unit_name = startup_unit_name(dir);
+    let unit_path = std::path::Path::new(&std::env::var("HOME").unwrap_or_default())
+        .join(".config/systemd/user")
+        .join(&unit_name);
+    if unit_path.exists() {
+        println!("startup: 已启用（{}）", unit_path.display());
+        let st = std::process::Command::new("systemctl")
+            .args(["--user", "is-active", unit_name.as_str()])
+            .output();
+        if let Ok(o) = st {
+            println!("  daemon 状态: {}", String::from_utf8_lossy(&o.stdout).trim());
+        }
+        0
+    } else {
+        println!("startup: 未启用（{} 无自启 unit——用 `mediaservo-host startup on` 启用）", dir.display());
+        1
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn startup_install(_dir: &std::path::Path) -> i32 {
+    eprintln!("startup on: 非 Linux 平台——请用 oxmgr service install（macOS launchd / Windows Task Scheduler）");
+    1
+}
+
+#[cfg(not(target_os = "linux"))]
+fn startup_uninstall(_dir: &std::path::Path) -> i32 {
+    eprintln!("startup off: 非 Linux 平台——请用 oxmgr service uninstall");
+    1
+}
+
+#[cfg(not(target_os = "linux"))]
+fn startup_status(_dir: &std::path::Path) -> i32 {
+    eprintln!("startup status: 非 Linux 平台——请用 oxmgr service status");
+    1
 }
 
 /// 探测 host-agent 本地网关端口是否被占用（[signaling] local_port 或默认 17980）。
