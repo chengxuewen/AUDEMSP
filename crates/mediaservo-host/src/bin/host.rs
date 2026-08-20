@@ -374,14 +374,14 @@ fn cmd_stop(args: &mut impl Iterator<Item = String>) -> i32 {
 
 /// `host status [<dir>]`: `oxmgr list --json` 过滤 host 命名空间，输出状态表。
 fn cmd_status(args: &mut impl Iterator<Item = String>) -> i32 {
-    let _dir = match parse_dir(args) {
+    let dir = match parse_dir(args) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("{e}");
             return 2;
         }
     };
-    let out = match Command::new("oxmgr").args(["list", "--json"]).output() {
+    let out = match oxmgr_env(&dir).args(["list", "--json"]).output() {
         Ok(out) => out,
         Err(e) => {
             eprintln!("oxmgr 执行失败: {e} — 请先安装 OxMgr 并加入 PATH");
@@ -906,8 +906,14 @@ fn cmd_doctor(args: &mut impl Iterator<Item = String>) -> i32 {
 /// （daemon 互斥 = TCP 端口——不隔离则全局 daemon 阻断实例 daemon 启动）
 fn oxmgr_env(dir: &std::path::Path) -> std::process::Command {
     let mut cmd = std::process::Command::new("oxmgr");
-    cmd.env("OXMGR_HOME", dir.join("run").join("oxmgr"));
-    cmd.env("OXMGR_DAEMON_ADDR", format!("127.0.0.1:{}", instance_daemon_port(dir)));
+    // 绝对化（OXMGR_HOME 相对路径依赖 daemon cwd——重启/系统服务会错位）
+    let home = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf()).join("run").join("oxmgr");
+    cmd.env("OXMGR_HOME", &home);
+    let port = instance_daemon_port(&home);
+    cmd.env("OXMGR_DAEMON_ADDR", format!("127.0.0.1:{port}"));
+    // 第三个互斥点: webhook API 端口（默认从全局 daemon 端口派生——不隔离则撞全局 53081）
+    cmd.env("OXMGR_API_ADDR", format!("127.0.0.1:{}", port + 1000));
+    let _ = &home; // 保持 home 生命周期（后续 env 使用）
     cmd
 }
 
@@ -942,7 +948,8 @@ fn cmd_oxmgr(args: &mut impl Iterator<Item = String>, fixed: &[&str]) -> i32 {
     } else {
         Vec::new()
     };
-    let mut cmd = std::process::Command::new("oxmgr");
+    let dir = parse_dir(&mut std::iter::empty()).unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let mut cmd = oxmgr_env(&dir);
     cmd.args(fixed).args(&extra);
     match cmd.status() {
         Ok(st) => st.code().unwrap_or(1),
@@ -1117,6 +1124,7 @@ fn startup_install(dir: &std::path::Path) -> i32 {
          Type=simple
          Environment=OXMGR_HOME={}
          Environment=OXMGR_DAEMON_ADDR=127.0.0.1:{}
+         Environment=OXMGR_API_ADDR=127.0.0.1:{}
          ExecStart={} daemon run
          Restart=always
          RestartSec=2
@@ -1127,6 +1135,7 @@ fn startup_install(dir: &std::path::Path) -> i32 {
         dir.display(),
         data_dir.display(),
         instance_daemon_port(dir),
+        instance_daemon_port(dir) + 1000,
         oxmgr.display()
     );
     if let Some(parent) = unit_path.parent() {

@@ -230,13 +230,15 @@ pub fn oxmgr_apply(dir: &Path) -> Result<(), String> {
     if !oxfile.exists() {
         return Err(format!("{} 不存在 — 先 write_oxfile/host apply", oxfile.display()));
     }
+    let home = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf()).join("run").join("oxmgr");
     let daemon_port = {
-        let sum: u32 = dir.to_string_lossy().bytes().map(u32::from).sum();
+        let sum: u32 = home.to_string_lossy().bytes().map(u32::from).sum();
         18000 + (sum % 400)
     };
     let out = std::process::Command::new("oxmgr")
-        .env("OXMGR_HOME", dir.join("run").join("oxmgr"))
+        .env("OXMGR_HOME", &home)
         .env("OXMGR_DAEMON_ADDR", format!("127.0.0.1:{daemon_port}"))
+        .env("OXMGR_API_ADDR", format!("127.0.0.1:{}", daemon_port + 1000))
         .arg("apply")
         .arg(&oxfile)
         .output()
