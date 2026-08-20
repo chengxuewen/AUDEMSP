@@ -372,7 +372,7 @@ fn cmd_status(args: &mut impl Iterator<Item = String>) -> i32 {
     };
     let host_procs: Vec<&serde_json::Value> = rows
         .iter()
-        .filter(|p| p.get("namespace").and_then(|n| n.as_str()) == Some("host"))
+        .filter(|p| p.get("namespace").and_then(|n| n.as_str()) == Some("mediaservo-host"))
         .collect();
     if host_procs.is_empty() {
         println!("host 命名空间无已管理进程（先 host start [<dir>]）");
