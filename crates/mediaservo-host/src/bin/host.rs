@@ -26,32 +26,7 @@ use ed25519_dalek::pkcs8::{DecodePrivateKey, EncodePublicKey};
 use pkcs8::LineEnding;
 
 /// `host init` 生成的配置模板（host.toml 初版 schema，A1）。
-const HOST_TOML_TEMPLATE: &str = r#"# MediaServo host 配置（host init 生成）
-[host]
-device_id = "..."
-
-# [signaling]
-# server_url = "ws://192.168.2.127:9800/ws"   # 远程 MediaServo server（缺省 ws://127.0.0.1:9800/ws）
-# psk = "mediaservo-dev"                        # 信令 PSK（须与 server 一致）
-# room = "my-car1"                              # 整车房间（多车隔离）
-# local_port = 17980                            # 本地信令网关端口
-
-[[cameras]]
-id = "cam0"
-source = "stub"
-fps = 30
-
-[[streams]]
-id = "cam0-stream"
-camera = "cam0"
-codec = "h264"
-
-[record]
-enabled = false
-
-[control]
-enabled = false
-"#;
+const HOST_TOML_TEMPLATE: &str = include_str!("host.toml.template");
 
 const USAGE: &str = "用法: host <init|start|apply|restart|stop|status|doctor|token|version> [<dir>]（目录为位置参数，默认 .host/）";
 
