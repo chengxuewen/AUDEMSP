@@ -337,7 +337,7 @@ mod oxmgr_hot_reload {
 
     /// 运行 host CLI（PATH 注入 ~/.local/bin 使 oxmgr 可解析），返回 exit code。
     fn host_cli(args: &[&str]) -> i32 {
-        let out = Command::new(env!("CARGO_BIN_EXE_host"))
+        let out = Command::new(env!("CARGO_BIN_EXE_mediaservo-host"))
             .env("PATH", path_with_oxmgr())
             .args(args)
             .output()

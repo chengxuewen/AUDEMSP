@@ -12,7 +12,7 @@ use std::process::{Command, Output};
 use mediaservo_link::{Claims, Role, TokenFile};
 
 fn host() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_host"))
+    Command::new(env!("CARGO_BIN_EXE_mediaservo-host"))
 }
 
 /// `host init <dir>` 生成 etc/host.toml + etc/link/signing.pem。

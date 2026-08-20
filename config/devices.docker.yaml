@@ -20,4 +20,7 @@
 # devices:
 #   ms-0a1b2c3d4e5f:
 #     secret_hash: "sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
-devices: {}
+# 设备注册表（真实条目）
+devices:
+  ms-78f38e76f13a:
+    secret_hash: "sha256:1f775557c5eb8e384678c015d260a6ada38c23e5e47c60554c687b2b152612d5"

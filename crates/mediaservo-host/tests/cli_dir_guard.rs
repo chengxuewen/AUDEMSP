@@ -9,7 +9,7 @@
 use std::process::Command;
 
 fn host() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_host"))
+    Command::new(env!("CARGO_BIN_EXE_mediaservo-host"))
 }
 
 /// 以 `--` 开头的目录参数 → exit 2 + 守卫报错（任何子命令一致）。

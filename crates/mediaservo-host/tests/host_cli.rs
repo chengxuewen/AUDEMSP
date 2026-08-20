@@ -3,7 +3,7 @@
 use std::process::Command;
 
 fn host_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_host")
+    env!("CARGO_BIN_EXE_mediaservo-host")
 }
 
 #[test]

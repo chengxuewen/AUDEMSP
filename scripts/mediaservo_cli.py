@@ -122,7 +122,7 @@ ALL_SDKS = ("field", "link", "deck")
 
 # D-H13: host 包 8 进程二进制（host CLI + 7 守护进程；host-legacy 旧单进程不入包）
 HOST_BINS = (
-    "host", "host-agent", "host-capturer", "host-streamer",
+    "mediaservo-host", "host-agent", "host-capturer", "host-streamer",
     "host-recorder", "host-controller", "host-emergency", "host-audio",
 )
 
@@ -162,18 +162,19 @@ def _cmd_install_host(prefix: str, release: bool = False) -> None:
         print("错误: PATH 未找到 oxmgr — 未打包（运行时需它拉起进程）。安装: npm install -g oxmgr（https://github.com/Vladimir-Urik/OxMgr#install），或构建 oxmgr-src 后放 ~/.local/bin，再重跑 install host", file=sys.stderr)
 
     # host init: 生成 etc/ + identity.json + 令牌（幂等——已存在跳过, 重装保留凭据）
-    _run_or_exit([str(bin_dir / _exe_name("host")), "init", str(Path(prefix))])
+    _run_or_exit([str(bin_dir / _exe_name("mediaservo-host")), "init", str(Path(prefix))])
 
-    # 创建 <prefix>/host → bin/host 快捷方式（前缀根可直接 ./host 使用）
-    host_link = Path(prefix) / "host"
-    if host_link.exists():
-        host_link.unlink()
-    try:
-        host_link.symlink_to("bin/host")  # 相对路径，前缀可搬迁
-        print(f"  已创建符号链接 {host_link} → bin/host")
-    except OSError:
-        shutil.copy2(bin_dir / "host", host_link)
-        print(f"  已复制 host 到 {host_link}（符号链接失败，回退到拷贝）")
+    # 创建 <prefix>/host → bin/mediaservo-host 和 <prefix>/mediaservo-host → bin/mediaservo-host 快捷方式
+    for link_name in ("host", "mediaservo-host"):
+        link = Path(prefix) / link_name
+        if link.exists():
+            link.unlink()
+        try:
+            link.symlink_to("bin/mediaservo-host")  # 相对路径，前缀可搬迁
+            print(f"  已创建符号链接 {link} → bin/mediaservo-host")
+        except OSError:
+            shutil.copy2(bin_dir / "mediaservo-host", link)
+            print(f"  已复制 mediaservo-host 到 {link}（符号链接失败，回退到拷贝）")
 
     for d in ("run/logs", "recordings"):
         (Path(prefix) / d).mkdir(parents=True, exist_ok=True)
@@ -184,7 +185,7 @@ def _cmd_install_host(prefix: str, release: bool = False) -> None:
     print("  run/    logs/")
     print("  recordings/")
     print("  identity.json（0600, 设备身份 — 重装保留, 勿删）")
-    print(f"使用: export PATH={bin_dir}:$PATH && host doctor {prefix} && host start {prefix}")
+    print(f"使用: export PATH={bin_dir}:$PATH && mediaservo-host doctor {prefix} && mediaservo-host start {prefix}")
     if sys.platform == "win32":
         print("注意: Windows best-effort（未全面验证）— 生产部署建议 Linux 车端", file=sys.stderr)
 
@@ -492,14 +493,14 @@ def _find_host_cli() -> Path:
     cargo_target = os.environ.get("CARGO_TARGET_DIR")
     candidates = []
     if cargo_target:
-        candidates.append(Path(cargo_target) / "debug/host")
+        candidates.append(Path(cargo_target) / "debug/mediaservo-host")
     candidates += [
-        ROOT / "target/debug/host",
-        ROOT / "target/release/host",
+        ROOT / "target/debug/mediaservo-host",
+        ROOT / "target/release/mediaservo-host",
     ]
     bin_path = next((p for p in candidates if p.exists()), None)
     if bin_path is None:
-        print("错误: 未找到 host CLI 二进制 — 先运行: mediaservo build host", file=sys.stderr)
+        print("错误: 未找到 mediaservo-host CLI 二进制 — 先运行: mediaservo build host", file=sys.stderr)
         sys.exit(1)
     return bin_path
 
@@ -586,7 +587,7 @@ def _cmd_stop(target: str) -> None:
     elif target == "host":
         # 双路径幂等停止: legacy 单进程（pkill）+ 多进程（host stop, oxmgr）
         subprocess.run(["pkill", "-x", "host-legacy"], check=False)
-        host_cli = next((p for p in (ROOT / "target/debug/host", ROOT / "target/release/host") if p.exists()), None)
+        host_cli = next((p for p in (ROOT / "target/debug/mediaservo-host", ROOT / "target/release/mediaservo-host") if p.exists()), None)
         if host_cli is not None:
             _run_or_exit([str(host_cli), "stop", str(ROOT)])
         print("✓ host 已停止")

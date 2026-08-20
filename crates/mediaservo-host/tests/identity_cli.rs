@@ -3,7 +3,7 @@
 use std::process::Command;
 
 fn host() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_host"))
+    Command::new(env!("CARGO_BIN_EXE_mediaservo-host"))
 }
 
 #[test]
