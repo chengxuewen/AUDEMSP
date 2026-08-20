@@ -28,7 +28,23 @@ use pkcs8::LineEnding;
 /// `host init` 生成的配置模板（host.toml 初版 schema，A1）。
 const HOST_TOML_TEMPLATE: &str = include_str!("../host.toml.template");
 
-const USAGE: &str = "用法: host <init|start|apply|restart|stop|status|doctor|token|version> [<dir>]（目录为位置参数，默认 .host/）";
+const USAGE: &str = "用法: host <init|start|apply|restart|stop|status|doctor|token|version> [<dir>]（目录为位置参数，默认 .host/）
+
+子命令:
+  init [<dir>]       生成实例：host.toml 模板 + signing.pem(0600) + identity.json + 标准令牌集
+  start [<dir>]      读 host.toml → 校验 → 翻译 oxfile → oxmgr apply 拉起全部进程
+  apply [<dir>]      配置变更生效（增量: 新增 Start/变更 Recreate/未变 Noop）
+  restart [<dir>]    全量重启（oxmgr stop 后重新 apply）
+  stop [<dir>]       全部停止（oxmgr stop + delete）
+  status [<dir>]     查看进程状态表（oxmgr list 过滤 host 命名空间）
+  doctor [<dir>]     环境诊断（oxmgr/配置/翻译三检查，退出码=失败数）
+  token issue --role R --node N [--topic T] --out O [<dir>]   签发链路令牌
+  token --all [<dir>]  签发标准令牌集（相机/流/recorder/agent）
+  version            版本信息
+
+示例:
+  host start /opt/mediaservo-host    启动部署实例
+  host -h                            本帮助";
 
 fn main() {
     let mut args = std::env::args();
