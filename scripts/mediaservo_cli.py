@@ -180,11 +180,20 @@ def _cmd_install_host(prefix: str, release: bool = False) -> None:
     installed_cli = bin_dir / _exe_name("mediaservo-host")
     if oxfile.exists() and installed_cli.exists():
         print("检测到运行中的 host 实例 — 先停进程族（重装不覆盖 etc/ 凭据）")
+        # 复活源三连停: ① systemd 自启 unit（Restart=always 会在 daemon 被杀后立即拉起）
+        # ② daemon 自身 ③ host 进程族（restart_policy=always 由 daemon 重启——必须先杀 daemon）
+        # systemctl 不接受 glob——枚举 unit 文件逐个停（self-startup unit 是 daemon 复活源）
+        units_dir = Path.home() / ".config" / "systemd" / "user"
+        if shutil.which("systemctl") and units_dir.is_dir():
+            for u in sorted(units_dir.glob("oxmgr-host-*.service")):
+                unit = u.name
+                subprocess.run(["systemctl", "--user", "stop", unit], check=False)
+                subprocess.run(["systemctl", "--user", "reset-failed", unit], check=False)
+        _kill_using(bin_dir / "oxmgr")
         for name in ("host-agent", "host-streamer", "host-capturer", "host-recorder",
                      "host-controller", "host-emergency", "host-audio"):
             subprocess.run(["pkill", "-x", name], check=False)
         time.sleep(1)
-        _kill_using(bin_dir / "oxmgr")
 
     missing = [str(src_dir / _exe_name(b)) for b in HOST_BINS if not (src_dir / _exe_name(b)).exists()]
     if missing:

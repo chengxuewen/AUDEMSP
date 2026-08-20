@@ -907,9 +907,7 @@ fn oxmgr_env(dir: &std::path::Path) -> std::process::Command {
     cmd
 }
 
-fn run_oxmgr(args: &[&str]) -> i32 {
-    run_oxmgr_in(None, args)
-}
+
 
 fn run_oxmgr_in(dir: Option<&std::path::Path>, args: &[&str]) -> i32 {
     let mut cmd = match dir {
