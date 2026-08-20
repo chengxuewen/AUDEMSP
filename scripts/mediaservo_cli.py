@@ -134,21 +134,29 @@ def _exe_name(name: str) -> str:
 
 
 def _kill_using(path: Path) -> None:
-    """kill 占用 path 的进程（Linux: /proc/*/fd 扫描；daemon 占用二进制时 install 停干净）。"""
+    """kill 占用 path 的进程（exec 占用不通过 fd——文本 busy 是内存映射，需 cmdline 匹配）。"""
     target = os.path.realpath(path)
     killed = []
     try:
         for p in os.listdir("/proc"):
             if not p.isdigit():
                 continue
+            pid = int(p)
             try:
+                # ① fd 扫描（打开文件占用）
                 for fd in os.listdir(f"/proc/{p}/fd"):
                     try:
                         if os.path.realpath(f"/proc/{p}/fd/{fd}") == target:
-                            killed.append(int(p))
+                            killed.append(pid)
                             break
                     except OSError:
                         continue
+                if pid in killed:
+                    continue
+                # ② cmdline 匹配（exec 占用——daemon 进程自身持有二进制映射）
+                cmd = open(f"/proc/{p}/cmdline", "rb").read().replace(b"\0", b" ").decode("utf-8", "replace")
+                if target in cmd or os.path.basename(target) in cmd:
+                    killed.append(pid)
             except OSError:
                 continue
     except FileNotFoundError:
@@ -160,6 +168,20 @@ def _kill_using(path: Path) -> None:
         except OSError:
             pass
     time.sleep(1)
+
+
+def _copy_with_kill(src, dst: Path) -> None:
+    """复制带 busy 重试: Text file busy（运行中进程占用）→ 杀占用者 → 重试（最多 3 次）。"""
+    for attempt in range(3):
+        try:
+            shutil.copy2(src, dst)
+            return
+        except OSError as e:
+            if e.errno != 26 or attempt == 2:  # 26 = Text file busy
+                raise
+            print(f"  {dst.name} 被占用（Text file busy）— 终止占用进程后重试 ({attempt + 1}/3)")
+            _kill_using(dst)
+    raise OSError(f"复制 {dst} 失败（多次重试仍 busy）")
 
 def _cmd_install_host(prefix: str, release: bool = False) -> None:
     """安装 host 包（D-H13 /opt/mediaservo-host 布局）: bin 8 + oxmgr 打包（版本锁定）
@@ -200,13 +222,13 @@ def _cmd_install_host(prefix: str, release: bool = False) -> None:
         print(f"错误: 缺失二进制 {missing} — 先运行: mediaservo build host{' --release' if release else ''}，或 mediaservo install host --build", file=sys.stderr)
         sys.exit(1)
     for b in HOST_BINS:
-        shutil.copy2(src_dir / _exe_name(b), bin_dir / _exe_name(b))
+        _copy_with_kill(src_dir / _exe_name(b), bin_dir / _exe_name(b))
 
     # oxmgr 随包锁定版本（D-H13）: PATH 找到则复制打包；缺 → 清晰指引（非致命,
     # 运行时 PATH 缺 oxmgr 由 `host doctor` 检出）
     oxmgr_src = shutil.which("oxmgr")
     if oxmgr_src is not None:
-        shutil.copy2(oxmgr_src, bin_dir / _exe_name("oxmgr"))
+        _copy_with_kill(oxmgr_src, bin_dir / _exe_name("oxmgr"))
         ver = subprocess.run([oxmgr_src, "--version"], capture_output=True, text=True, check=False)
         print(f"  oxmgr 已打包: {ver.stdout.strip() or ver.stderr.strip() or '?'}")
     else:
