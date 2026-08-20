@@ -26,7 +26,7 @@ use ed25519_dalek::pkcs8::{DecodePrivateKey, EncodePublicKey};
 use pkcs8::LineEnding;
 
 /// `host init` 生成的配置模板（host.toml 初版 schema，A1）。
-const HOST_TOML_TEMPLATE: &str = include_str!("host.toml.template");
+const HOST_TOML_TEMPLATE: &str = include_str!("../host.toml.template");
 
 const USAGE: &str = "用法: host <init|start|apply|restart|stop|status|doctor|token|version> [<dir>]（目录为位置参数，默认 .host/）";
 
