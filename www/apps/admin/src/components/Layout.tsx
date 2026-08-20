@@ -1,17 +1,28 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { clearToken } from '../api/client';
 import './Layout.css';
 
 export default function Layout() {
-  const { role, username, canMonitor } = useAuth();
+  const { role, username, canMonitor, token } = useAuth();
+  const navigate = useNavigate();
 
+  const handleLogout = () => {
+    clearToken();
+    navigate('/login');
+  };
   return (
     <div className="layout">
       <header className="header">
         <span className="logo">📡 MediaServo Admin</span>
-        <span className="version">
-          {username ? `${username}${role ? ` [${role}]` : ''} · ` : ''}v0.1.0
-        </span>
+        <div className="header-right">
+          <span className="version">
+            {username ? `${username}${role ? ` [${role}]` : ''} · ` : ''}v0.1.0
+          </span>
+          {token && (
+            <button className="logout-btn" onClick={handleLogout}>Logout</button>
+          )}
+        </div>
       </header>
       <div className="main">
         <nav className="sidebar">

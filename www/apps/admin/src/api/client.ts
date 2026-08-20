@@ -13,9 +13,23 @@ function headers(): Record<string, string> {
 
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...opts, headers: { ...headers(), ...opts?.headers } });
-  if (res.status === 401) throw new Error('Authentication required — set admin token in Settings');
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (res.status === 401) {
+    // 401 自愈: 仅对失效/过期 token 清登录态跳转（valid-but-denied 如 operator 保留错误态 — roles-operator.spec）
+    const token = getToken();
+    if (!token || isTokenExpired(token)) {
+      clearToken();
+      const base = window.location.pathname.startsWith('/admin') ? '/admin' : '';
+      window.location.href = `${base}/login`;
+    }
+    throw new Error('Authentication required — please sign in');
+  }
   return res.json();
+}
+
+/** JWT exp（秒）是否已过期；无 exp/解析失败视为失效。 */
+function isTokenExpired(token: string): boolean {
+  const claims = parseToken(token);
+  return !claims?.exp || claims.exp * 1000 <= Date.now();
 }
 
 // ── JWT claims + auth 状态（H3: dispatcher 角色感知渲染）──────────────────────
