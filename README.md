@@ -68,6 +68,8 @@ MediaServo — 实时媒体伺服平台（MediaServo Platform）。独立部署�
 ./mediaservo.sh status        # 环境诊断（pixi/cargo/docker/node）
 ./mediaservo.sh config validate   # 配置校验（pyyaml）
 ./mediaservo.sh clean         # 清构建产物（保留 cargo-cache 卷）; clean --all 全清
+./mediaservo.sh install host  # 安装到前缀（默认 <root>/install/host）; install bindings 同
+./mediaservo.sh package host|bindings  # dist/ 双包发布（D-H13）: mediaservo-host-<ver>.tar.gz + mediaservo-sdk-<ver>.tar.gz
 ```
 
 > client 目标已注册（build 可用）；up/down/restart/logs client 待骨架完成后实现。

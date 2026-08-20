@@ -5,7 +5,7 @@
 环境内 PATH/LIBCLANG_PATH 已注入，subprocess 直接调 cargo/docker 等。
 平台差异仅 e2e（bash 脚本）与 clean（删除命令）两处。
 
-用法: mediaservo [-h] {build,build-host,build-server,up,down,logs,e2e,test,ci,install,clean,config,status,version} ...
+用法: mediaservo [-h] {build,build-host,build-server,up,down,logs,e2e,test,ci,install,package,clean,config,status,version} ...
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ import shutil
 import time
 import subprocess
 import sys
+import tarfile
+import tempfile
 from pathlib import Path
 
 VERSION = "0.1.0"
@@ -318,6 +320,51 @@ def _cmd_install_bindings(prefix: str, components: str = "all", release: bool = 
     print(f"Python: 包已装到 {site_packages}（fat 自包含, 含 _libs）")
     print(f"  使用: export PYTHONPATH={site_packages} && python3 app.py")
 
+
+# ── package: dist/ 双包发布（D-H13）──────────────────────────
+def _write_version_file(dst: Path, target: str) -> None:
+    """版本契约文件（D-H13: 版本兼容靠协议契约显式配对, 非同包隐含）。
+    host-version.txt / sdk-version.txt: workspace 版本 + FrameMeta wire 版本 + 令牌 schema 版本。
+    消费方（ROS/算法）校验 sdk-version.txt 与 host 包配对; 信令 wire 契约随 workspace 演进,
+    独立协议版本号 = 后续工作（D-H14 全量版本化方案）。"""
+    ver = _workspace_version()
+    lines = [
+        f"# mediaservo-{target}-{ver} — 协议契约版本声明（D-H13/D-H14 最小版）",
+        f"workspace_version: {ver}",
+        "frame_meta_version: 1",     # FrameMeta 定长 LE 36B wire format（D243; link frame.rs）
+        "token_schema_version: 1",   # MSTK 单文件自描述令牌字节版本 0x01（D238/D243; link token.rs）
+        "# host 包部署: tar 解包到前缀目录; 多设备共用同一包时, 每台删除 identity.json 后重跑",
+        "# `host init <prefix>`（幂等, 已存在凭据保留）生成独立设备身份（G4）",
+    ]
+    (dst / f"{target}-version.txt").write_text("\n".join(lines) + "\n")
+
+
+def _cmd_package(args: argparse.Namespace) -> None:
+    """package <target> — dist/mediaservo-host|sdk-<ver>.tar.gz 双包发布（D-H13）。
+    host: install host 布局（bin 8 + oxmgr + etc/ + run/logs + recordings + identity.json）
+    bindings: install bindings 布局（lib/include/python/node/pkgconfig/cmake + wheel）→ sdk 包
+    staging 临时目录 → tar.gz; 包内含版本契约文件（host-version.txt / sdk-version.txt）。"""
+    if sys.platform == "win32":
+        print("package: Windows best-effort — 验证清单见 scripts/e2e-win-validate.ps1", file=sys.stderr)
+    pkg_name = "sdk" if args.target == "bindings" else "host"
+    ver = _workspace_version()
+    dist = ROOT / "dist"
+    dist.mkdir(exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f"ms-{args.target}-pkg-", dir=str(dist)))
+    try:
+        if args.target == "host":
+            _cmd_install_host(str(staging), args.release)
+        else:
+            _cmd_install_bindings(str(staging), "all", args.release)
+        _write_version_file(staging, pkg_name)
+        out = dist / f"mediaservo-{pkg_name}-{ver}.tar.gz"
+        with tarfile.open(out, "w:gz") as tar:
+            for entry in sorted(staging.iterdir()):
+                tar.add(entry, arcname=entry.name)  # 解包到前缀目录即为 D-H13 布局
+        print(f"✓ 打包完成: {out}（{out.stat().st_size // 1024} KiB）")
+        print(f"  内容: {', '.join(sorted(e.name for e in staging.iterdir()))}")
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
 # 排除的接口类型/名称：docker 网桥、VPN 隧道、虚拟接口（这些 IP 客户端不可达）
 _ANNOUNCED_IP_BLOCKED_IFACE = ("lo", "docker", "br-", "veth", "tun", "tap", "virbr", "vpn")
@@ -735,6 +782,10 @@ def main() -> None:
                            help="按需分发: field|link|deck|all|逗号组合（如 link,deck；默认 all；仅 bindings）")
     install_p.add_argument("--release", action="store_true", help="安装 release 产物（target/release，配合 build --release）")
     install_p.set_defaults(func=_cmd_install)
+    package_p = sub.add_parser("package", help="打包 <target>: host（车端包）| bindings（SDK 包）→ dist/mediaservo-<target>-<ver>.tar.gz（D-H13 双包发布, 含版本契约文件）")
+    package_p.add_argument("target", choices=["host", "bindings"])
+    package_p.add_argument("--release", action="store_true", help="打包 release 产物（target/release, 配合 build --release）")
+    package_p.set_defaults(func=_cmd_package)
     clean_p = sub.add_parser("clean", help="清理 <target>: all|server|host|client（默认 all）")
     clean_p.add_argument("target", nargs="?", choices=["all", "server", "host", "client"], default="all")
     clean_p.add_argument("--all", action="store_true", help="显式删卷 + docker builder prune（15-30 分钟重建代价）")
