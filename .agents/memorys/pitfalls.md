@@ -1169,3 +1169,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: install 自动 stop 扩展（host 进程 + daemon）；cp 前停实例；monit 占用需用户退出
 - **验证**: 重装成功全链
 - **教训**: 自更新/重装的二进制替换必须考虑"谁在占用"（daemon/CLI 自身/TUI）——stop 清单要全
+
+## PIT-116: C2 迁移丢失 EncoderStatus 上报 + oxmgr IPC 自动拉起 daemon（2026-08-20）
+- **症状**: web stats 面板编解码器/帧率/编码耗时缺失；install host 反复 Text file busy（bin/oxmgr 被新 daemon 占用）
+- **根因**: ① C2 streamer 重构未移植旧 host 的 EncoderStatus 周期上报（数据源缺失）② oxmgr IPC 命令在 daemon 未跑时**自动拉起 daemon**——install auto-stop 的 oxmgr CLI 调用（stop/daemon stop）自身制造新 daemon → 复制恒 busy ③ 全局 daemon（~/.local/bin）存在时 apply 复用（OXMGR_DATA_DIR 注入被绕过）
+- **解法**: ① streamer 采集编码字段（StreamerStats 扩展 + get_stats 增量）→ agent 转发 EncoderStatus 信令 ② install auto-stop 改直接 pkill 进程族 + kill 占用（零 oxmgr CLI 调用）③ 杀全局 daemon 后 start 拉起实例 daemon（env 生效）
+- **验证**: 浏览器收到 encoder_status + 面板 fps/耗时 + 重装成功
+- **教训**: 功能迁移（重构）必须清单核对"旧实现有哪些能力"（EncoderStatus 遗漏）；第三方 CLI 的"自动拉起"副作用（IPC 命令非纯查询）；OXMGR_DATA_DIR 生效前提 = 无全局 daemon 复用
