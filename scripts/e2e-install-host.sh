@@ -10,7 +10,7 @@ export PATH="$HOME/.pixi/bin:$PATH"
 FAIL=0
 note() { echo "== $1"; }
 
-if [ ! -x target/debug/host ]; then
+if [ ! -x target/debug/mediaservo-host ]; then
     note "building mediaservo-host (debug)"
     pixi run cargo build -p mediaservo-host
 fi

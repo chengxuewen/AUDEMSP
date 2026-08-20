@@ -16,7 +16,7 @@ VER=$(sed -n '/\[workspace.package\]/,/^\[/p' Cargo.toml | sed -n 's/^version *=
 MAJOR=${VER%%.*}
 
 # ── 0. 前置构建（缺啥补啥, 与 e2e-install-host.sh 同模式）──────
-if [ ! -x target/debug/host ]; then
+if [ ! -x target/debug/mediaservo-host ]; then
     note "building mediaservo-host (debug)"
     pixi run cargo build -p mediaservo-host
 fi
