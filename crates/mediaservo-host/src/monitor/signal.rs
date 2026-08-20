@@ -82,6 +82,9 @@ pub fn spawn_status_reporter(
         };
         let signal = SignalMonitor::new(gateway.clone(), started);
         let room = gateway.vehicle_room();
+        // web stats 面板数据源: streamer 编码信息（StreamerStats 扩展字段）→ EncoderStatus 信令
+        // 上报（server relay 广播 → 浏览器 sfu-client emitMetrics——旧 host EncoderStatus 同链路）
+        let mut last_enc: std::collections::HashMap<String, (f64, u64)> = std::collections::HashMap::new();
         let mut tick = tokio::time::interval(interval);
         tick.tick().await; // 消费首个立即 tick（对齐 E1/E2 行为）
         loop {
@@ -149,6 +152,28 @@ pub fn spawn_status_reporter(
             );
             if let Err(e) = gateway.send_remote(report) {
                 tracing::warn!("StatusReport 发送失败: {e}"); // C15
+            }
+            // 编码信息上报: 每路 stream 的编码字段 → EncoderStatus（浏览器 web stats 面板）
+            for sf in flow_snap.streams.iter() {
+                if sf.avg_encode_ms.is_none() && sf.encoder_implementation.is_none() {
+                    continue; // 无编码信息（旧字段/未采集）跳过
+                }
+                // avg_encode_ms 已由 streamer 增量计算（ΔtotalEncodeTime/ΔframesEncoded），直接透传
+                let avg = sf.avg_encode_ms;
+                let msg = mediaservo_common::protocol::SignalingMessage::EncoderStatus {
+                    room_id: room.clone(),
+                    peer_id: sf.id.clone(),
+                    codec: sf.codec.clone(),
+                    encoder_backend: "auto".into(),
+                    encoder_implementation: sf.encoder_implementation.clone(),
+                    frames_per_second: 0.0,
+                    frame_width: sf.frame_width,
+                    frame_height: sf.frame_height,
+                    avg_encode_ms: avg,
+                };
+                if let Err(e) = gateway.send_remote(msg) {
+                    tracing::warn!("EncoderStatus 发送失败: {e}"); // C15
+                }
             }
         }
     });

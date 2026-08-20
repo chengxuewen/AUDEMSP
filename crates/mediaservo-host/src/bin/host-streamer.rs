@@ -367,7 +367,10 @@ async fn shutdown_signal() -> std::io::Result<()> {
 /// 出站统计：日志（e2e 证据: bytes_sent/frames_encoded > 0，对齐 field D4 模式）
 /// + FrameBus 发布 [`StreamerStats`] JSON 到 `stats/stream-<id>`（E2 数据面监控，
 /// additive；监控订阅者才消费，无消费者时发布零开销级）。
-fn log_stats(session: &PushSession, bus: &FrameBus, topic: &FrameTopic, started: Instant) {
+/// 编码耗时增量基线（ΔtotalEncodeTime/ΔframesEncoded——web stats 面板 avg_encode_ms）
+static LAST_ENCODE: std::sync::Mutex<Option<(f64, u64)>> = std::sync::Mutex::new(None);
+
+fn log_stats(session: &PushSession, bus: &FrameBus, topic: &FrameTopic, started: Instant, codec: &str) {
     let Some(pc) = session.peer_connection() else {
         return;
     };
@@ -378,12 +381,28 @@ fn log_stats(session: &PushSession, bus: &FrameBus, topic: &FrameTopic, started:
     }) else {
         return;
     };
+    // 编码耗时增量（旧 host EncoderStatus 同款——ΔtotalEncodeTime/ΔframesEncoded）
+    let avg_encode_ms = {
+        let mut guard = LAST_ENCODE.lock().unwrap_or_else(|e| e.into_inner());
+        let now = (o.total_encode_time.unwrap_or(0.0), o.frames_encoded as u64);
+        let avg = match *guard {
+            Some((t0, f0)) if now.1 > f0 && now.0 >= t0 => {
+                Some((now.0 - t0) * 1000.0 / (now.1 - f0) as f64)
+            }
+            _ => None,
+        };
+        *guard = Some(now);
+        avg
+    };
     tracing::info!(
-        "streamer stats: bytes_sent={} frames_encoded={} frame={}x{}",
+        "streamer stats: bytes_sent={} frames_encoded={} frame={}x{} codec={} avg_encode_ms={:?} enc={:?}",
         o.bytes_sent,
         o.frames_encoded,
         o.frame_width,
-        o.frame_height
+        o.frame_height,
+        codec,
+        avg_encode_ms,
+        o.encoder_implementation
     );
     // E2 additive: 发布推流状态（FrameMeta::FORMAT_JSON 标记；ts_mono = 进程启动
     // 单调时钟（C17 锚定语义；监控侧不消费 stats ts_mono，仅作为单调标记））
@@ -398,6 +417,9 @@ fn log_stats(session: &PushSession, bus: &FrameBus, topic: &FrameTopic, started:
         frames_encoded: o.frames_encoded,
         frame_width: o.frame_width,
         frame_height: o.frame_height,
+        codec: codec.to_string(),
+        avg_encode_ms,
+        encoder_implementation: o.encoder_implementation.clone(),
     }) {
         Ok(p) => p,
         Err(e) => {
@@ -650,7 +672,7 @@ async fn main() -> ExitCode {
                         tracing::warn!(seq = meta.seq, "write frame: {e}");
                     }
                     if last_stats.elapsed() >= STATS_INTERVAL {
-                        log_stats(&session, &bus, &stats_topic, started);
+                        log_stats(&session, &bus, &stats_topic, started, &stream.codec);
                         last_stats = Instant::now();
                     }
                 }

@@ -59,6 +59,12 @@ pub struct StreamFlow {
     pub frame_height: u32,
     /// 最近 stats 是否在新鲜窗口内。
     pub connected: bool,
+    /// 协商编解码器（host.toml [[streams]] codec）。
+    pub codec: String,
+    /// 平均编码耗时 ms（web stats 面板——EncoderStatus 转发）。
+    pub avg_encode_ms: Option<f64>,
+    /// 实际编码器实现（软编/硬编——EncoderStatus 转发）。
+    pub encoder_implementation: Option<String>,
 }
 
 /// 数据流快照（E2 数据面；与 E1 [`crate::monitor::topology::TopologySnapshot`] 并行）。
@@ -69,13 +75,22 @@ pub struct FlowSnapshot {
 }
 
 /// streamer 推流状态线格式（`stats/stream-<id>` JSON payload）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct StreamerStats {
     pub bytes_sent: u64,
     /// 与 libwebrtc RTCOutboundRtpStreamStats 对齐（u32）。
     pub frames_encoded: u32,
     pub frame_width: u32,
     pub frame_height: u32,
+    /// 协商编解码器（config.codec——h264/vp8）。
+    #[serde(default)]
+    pub codec: String,
+    /// 平均编码耗时 ms（增量 ΔtotalEncodeTime/ΔframesEncoded——web stats 面板）。
+    #[serde(default)]
+    pub avg_encode_ms: Option<f64>,
+    /// 实际编码器实现（软编/硬编识别——libwebrtc get_stats）。
+    #[serde(default)]
+    pub encoder_implementation: Option<String>,
 }
 
 /// 单 topic 采集窗口状态（drain 任务写入；collect 读取并重置窗口）。
@@ -205,7 +220,7 @@ impl FlowMonitor {
         }
         for (id, state) in &self.streams {
             let st = state.lock().expect("stream state lock");
-            let (bytes_sent, frames_encoded, frame_width, frame_height, connected) = match st.last {
+            let (bytes_sent, frames_encoded, frame_width, frame_height, connected) = match &st.last {
                 Some(s) => (
                     s.bytes_sent,
                     s.frames_encoded,
@@ -222,6 +237,11 @@ impl FlowMonitor {
                 frame_width,
                 frame_height,
                 connected,
+                codec: st.last.as_ref().map(|s| s.codec.clone()).unwrap_or_default(),
+                avg_encode_ms: st.last.as_ref().and_then(|s| s.avg_encode_ms),
+                encoder_implementation: st.last
+                    .as_ref()
+                    .and_then(|s| s.encoder_implementation.clone()),
             });
         }
         out
