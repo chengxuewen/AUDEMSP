@@ -45,13 +45,21 @@ for b in host host-agent host-capturer host-streamer host-recorder \
          host-controller host-emergency host-audio; do
     echo "$LIST" | grep -q "^bin/$b$" || { echo "FAIL: 包内缺 bin/$b"; FAIL=1; }
 done
+# oxmgr 条件断言（I2 review 修）: 打包时 PATH 有 oxmgr → 包内必须含 bin/oxmgr;
+# 环境缺 oxmgr → install 未打包（cli 明确报错）, 跳过并说明
+if command -v oxmgr >/dev/null 2>&1; then
+    echo "$LIST" | grep -q "^bin/oxmgr$" || { echo "FAIL: PATH 有 oxmgr 但包内缺 bin/oxmgr"; FAIL=1; }
+else
+    echo "NOTE: PATH 无 oxmgr — 跳过 bin/oxmgr 断言（install host 未打包, doctor 预期报错）"
+fi
 for f in etc/host.toml etc/link/signing.pem etc/link/cam0.token etc/link/cam0-stream.token \
-         etc/link/recorder.token etc/link/agent.token identity.json host-version.txt; do
+         etc/link/recorder.token etc/link/agent.token etc/link/ros_bridge.yaml \
+         etc/link/issuance.jsonl identity.json host-version.txt; do
     echo "$LIST" | grep -q "^$f$" || { echo "FAIL: 包内缺 $f"; FAIL=1; }
 done
 echo "$LIST" | grep -q "^run/logs/$" || { echo "FAIL: 包内缺 run/logs/"; FAIL=1; }
 echo "$LIST" | grep -q "^recordings/$" || { echo "FAIL: 包内缺 recordings/"; FAIL=1; }
-echo "OK: host 包布局完整（bin 8 + etc/link 凭据 + run/logs + recordings + identity.json + host-version.txt）"
+echo "OK: host 包布局完整（bin 8 + oxmgr + etc/link 凭据 + run/logs + recordings + identity.json + host-version.txt）"
 
 # ── 3. 解包到干净目录 → doctor + start/status/stop 冒烟 ──────
 note "extract + smoke"
