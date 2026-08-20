@@ -285,7 +285,7 @@ pub fn live_host_apps() -> Result<Vec<String>, String> {
         .as_array()
         .map(|arr| {
             arr.iter()
-                .filter(|p| p.get("namespace").and_then(|n| n.as_str()) == Some("host"))
+                .filter(|p| p.get("namespace").and_then(|n| n.as_str()) == Some("mediaservo-host"))
                 .filter_map(|p| p.get("name").and_then(|n| n.as_str()).map(String::from))
                 .collect()
         })
@@ -352,7 +352,8 @@ pub fn handle_config_push(
 fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Result<String, String> {
     let (cameras, streams) = camera_and_stream_ids(cfg)?;
 
-    let mut out = String::from("version = 1\n\n[defaults]\nnamespace = \"host\"\nrestart_policy = \"always\"\n");
+    let mut out = String::from("version = 1\n\n[defaults]\nnamespace = \"mediaservo-host\"\nrestart_policy = \"always\"\n");
+
     // E4 热生效: [defaults] watch = host.toml（内容指纹）— agent/CLI 写入新配置后
     // oxmgr file-watch 重启受影响进程（进程启动时重读 host.toml 生效）；
     // 增删 app（相机/流）由 `oxmgr apply` 增量处理（Start/Recreate），watch 兜底
@@ -571,7 +572,12 @@ fn exe_cmd(name: &str) -> String {
 
 fn push_app(out: &mut String, name: &str, command: &str, restart_policy: &str) {
     out.push_str(&format!(
-        "[[apps]]\nname = \"{name}\"\ncommand = \"{command}\"\nrestart_policy = \"{restart_policy}\"\n\n"
+        "[[apps]]\nname = \"{name}\"\ncommand = \"{command}\"\nrestart_policy = \"{restart_policy}\"\n"
+    ));
+    // D-H13: 每节点日志落实例 run/logs（相对 oxfile 目录 = run/）；轮转由 OxMgr daemon
+    // env 控制（OXMGR_LOG_MAX_SIZE_MB/MAX_FILES/MAX_DAYS——默认 20MB×5×14d，见 OxMgr docs）
+    out.push_str(&format!(
+        "[apps.logs]\nstdout = \"logs/{name}.out.log\"\nstderr = \"logs/{name}.err.log\"\n\n"
     ));
 }
 
