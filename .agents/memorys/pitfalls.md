@@ -1176,3 +1176,11 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: ① streamer 采集编码字段（StreamerStats 扩展 + get_stats 增量）→ agent 转发 EncoderStatus 信令 ② install auto-stop 改直接 pkill 进程族 + kill 占用（零 oxmgr CLI 调用）③ 杀全局 daemon 后 start 拉起实例 daemon（env 生效）
 - **验证**: 浏览器收到 encoder_status + 面板 fps/耗时 + 重装成功
 - **教训**: 功能迁移（重构）必须清单核对"旧实现有哪些能力"（EncoderStatus 遗漏）；第三方 CLI 的"自动拉起"副作用（IPC 命令非纯查询）；OXMGR_DATA_DIR 生效前提 = 无全局 daemon 复用
+
+## PIT-117: oxmgr daemon 互斥 = TCP 端口 + 全局 unit 隐藏复活源（2026-08-20）
+- **症状**: OXMGR_HOME 注入后实例 daemon 仍起不来/复用全局——run/oxmgr 空 + daemon 无 env；install 反复 Text file busy（daemon 被杀 1 秒内复活）
+- **根因**: ① oxmgr daemon 互斥检测 = `daemon_socket_available(OXMGR_DAEMON_ADDR)`（TCP 端口）——只注入 OXMGR_HOME 时全局 daemon 占默认端口 → 实例 daemon 启动报 DaemonAlreadyRunning → apply 复用全局（数据/日志错位）② `oxmgr.service`（早期 `oxmgr service install` 装的全局 unit，Restart=always，ExecStart=~/.local/bin/oxmgr）是隐藏复活源——install auto-stop 只枚举 oxmgr-host-* 漏掉它 ③ systemctl stop 不接受 glob（需枚举 unit 文件逐个停）
+- **解法**: 双 env 实例化（OXMGR_HOME + OXMGR_DAEMON_ADDR=18000+dir哈希%400——三处注入: oxmgr_env/oxmgr_apply/startup unit）；install auto-stop 三连停顺序（unit 枚举 → daemon → 进程族——daemon restart_policy=always 会在进程被杀后立即重启——竞态）；停用+禁用 oxmgr.service
+- **验证**: oxmgr.service 停用后 daemon 不再复活；功能链（推流+面板）正常
+- **遗留**: apply 自动拉起的 daemon 二进制仍取 PATH 全局（~/.local/bin）——ensure_daemon_running 的 current_exe 语义待查（env 生效但二进制来源未解——功能不受阻）
+- **教训**: "数据目录隔离"≠"daemon 实例化"——互斥机制（端口/锁）也要隔离；service install 装的全局 unit 是永久复活源（卸载服务要 disable+stop 双清）

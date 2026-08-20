@@ -486,10 +486,10 @@ ff_.*_muxer` 应为 0（demuxer-only 实证）。
 ## C32: host 实例隔离三原则 — OXMGR_DATA_DIR/端口/房间（2026-08-20）
 
 **约束**: host 多实例共存必须三隔离（PIT-113 多 daemon 分裂教训）：
-① **OXMGR_DATA_DIR=<dir>/run/oxmgr**（host start/apply/stop/restart/service 统一注入——daemon 状态/日志/轮转在实例内，多 PATH/多实例无竞争）；② **[signaling] local_port**（host-agent 网关端口，默认 17980——同端口启动被检测拒绝）；③ **[signaling] room**（server 房间——同房间多 Host 语义混乱）。
+① **oxmgr 双 env 实例化**: `OXMGR_HOME=<dir>/run/oxmgr`（数据/日志/state）+ `OXMGR_DAEMON_ADDR=127.0.0.1:<18000+dir哈希%400>`（**daemon 互斥 = TCP 端口——只隔离数据目录不够，全局 daemon 占默认端口会阻断实例 daemon 启动（DaemonAlreadyRunning）→ apply 复用全局**）；② **[signaling] local_port**（host-agent 网关端口，默认 17980——同端口启动被检测拒绝）；③ **[signaling] room**（server 房间——同房间多 Host 语义混乱）。
 
-**竞争防护**: start 前端口探测（被占 → 交互 y 接管[停旧启新]/退出；非交互自动退出）；开机自启**全局唯一**（startup on 检测其他实例 unit → 交互接管——相机等共享资源防竞争）。
+**竞争防护**: start 前端口探测（被占 → 交互 y 接管[停旧启新]/退出；非交互自动退出）；开机自启**全局唯一**（startup on 检测其他实例 unit → 交互接管——相机等共享资源防竞争）；install auto-stop 三连停（**systemd unit 枚举逐个停**——systemctl 不支持 glob + `oxmgr.service`（service install 装的全局 unit）是隐藏复活源 → daemon → 进程族）。
 
-**检查**: `grep -rn "OXMGR_DATA_DIR" crates/mediaservo-host/src/` — 应见 start/stop/apply/restart/service 注入；`host startup on` 二次实例应被拒。
+**检查**: `grep -rn "OXMGR_HOME\|OXMGR_DAEMON_ADDR" crates/mediaservo-host/src/` — 应见三处注入（oxmgr_env/oxmgr_apply/startup unit）；`host startup on` 二次实例应被拒。
 
 **来源**: 2026-08-20 多实例部署实操（PIT-111/112/113/115 系列）
