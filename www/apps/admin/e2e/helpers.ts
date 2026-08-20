@@ -8,7 +8,7 @@ export interface Creds { username: string; password: string; role: string; }
  */
 export async function login(page: Page, creds: Creds, attempts = 4): Promise<void> {
   for (let i = 0; i < attempts; i++) {
-    await page.goto('http://localhost:5173/settings');
+    await page.goto('http://localhost:5173/login');
     await page.locator('input.login-input[placeholder="username"]').fill(creds.username);
     await page.locator('input.login-input[placeholder="password"]').fill(creds.password);
     await page.locator('button', { hasText: 'Login' }).click();
