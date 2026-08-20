@@ -150,6 +150,10 @@ def _cmd_install_host(prefix: str, release: bool = False) -> None:
     if oxfile.exists() and installed_cli.exists() and shutil.which("oxmgr"):
         print("检测到运行中的 host 实例 — 先 stop（重装不覆盖 etc/ 凭据）")
         subprocess.run([str(installed_cli), "stop", str(prefix)], check=False)
+        # 停实例 daemon（占用 bin/oxmgr 导致 Text file busy）——OXMGR_DATA_DIR 实例化后 daemon 在 run/oxmgr
+        env = dict(os.environ, OXMGR_DATA_DIR=str(Path(prefix) / "run" / "oxmgr"))
+        subprocess.run(["oxmgr", "daemon", "stop"], env=env, check=False)
+        time.sleep(1)
 
     missing = [str(src_dir / _exe_name(b)) for b in HOST_BINS if not (src_dir / _exe_name(b)).exists()]
     if missing:
