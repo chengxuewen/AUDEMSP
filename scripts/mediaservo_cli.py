@@ -132,6 +132,35 @@ def _exe_name(name: str) -> str:
     return name + (".exe" if sys.platform == "win32" else "")
 
 
+
+def _kill_using(path: Path) -> None:
+    """kill 占用 path 的进程（Linux: /proc/*/fd 扫描；daemon 占用二进制时 install 停干净）。"""
+    target = os.path.realpath(path)
+    killed = []
+    try:
+        for p in os.listdir("/proc"):
+            if not p.isdigit():
+                continue
+            try:
+                for fd in os.listdir(f"/proc/{p}/fd"):
+                    try:
+                        if os.path.realpath(f"/proc/{p}/fd/{fd}") == target:
+                            killed.append(int(p))
+                            break
+                    except OSError:
+                        continue
+            except OSError:
+                continue
+    except FileNotFoundError:
+        pass
+    for pid in killed:
+        try:
+            os.kill(pid, 15)  # SIGTERM（daemon 优雅退出）
+            print(f"  已终止占用进程 {pid}")
+        except OSError:
+            pass
+    time.sleep(1)
+
 def _cmd_install_host(prefix: str, release: bool = False) -> None:
     """安装 host 包（D-H13 /opt/mediaservo-host 布局）: bin 8 + oxmgr 打包（版本锁定）
     + host init 生成 etc/{host.toml,link/*} + identity.json（幂等——重装保留凭据）
@@ -144,16 +173,18 @@ def _cmd_install_host(prefix: str, release: bool = False) -> None:
         print(f"错误: 无法创建 {bin_dir}: {e} — 生产部署用 --prefix /opt/mediaservo-host（需 root）", file=sys.stderr)
         sys.exit(1)
 
-    # 运行中的实例二进制被占用（Text file busy）→ 复制前自动 stop（幂等: 未运行则无操作）
+    # 运行中的实例二进制被占用（Text file busy）→ 复制前自动停进程族。
+    # 注意: 不调 oxmgr CLI（其 IPC 命令在 daemon 未跑时自动拉起 daemon——反而制造 busy）；
+    # 直接 kill host 进程族 + 占用 bin/oxmgr 的 daemon。
     oxfile = Path(prefix) / "run" / "oxfile.toml"
     installed_cli = bin_dir / _exe_name("mediaservo-host")
-    if oxfile.exists() and installed_cli.exists() and shutil.which("oxmgr"):
-        print("检测到运行中的 host 实例 — 先 stop（重装不覆盖 etc/ 凭据）")
-        subprocess.run([str(installed_cli), "stop", str(prefix)], check=False)
-        # 停实例 daemon（占用 bin/oxmgr 导致 Text file busy）——OXMGR_DATA_DIR 实例化后 daemon 在 run/oxmgr
-        env = dict(os.environ, OXMGR_DATA_DIR=str(Path(prefix) / "run" / "oxmgr"))
-        subprocess.run(["oxmgr", "daemon", "stop"], env=env, check=False)
+    if oxfile.exists() and installed_cli.exists():
+        print("检测到运行中的 host 实例 — 先停进程族（重装不覆盖 etc/ 凭据）")
+        for name in ("host-agent", "host-streamer", "host-capturer", "host-recorder",
+                     "host-controller", "host-emergency", "host-audio"):
+            subprocess.run(["pkill", "-x", name], check=False)
         time.sleep(1)
+        _kill_using(bin_dir / "oxmgr")
 
     missing = [str(src_dir / _exe_name(b)) for b in HOST_BINS if not (src_dir / _exe_name(b)).exists()]
     if missing:
