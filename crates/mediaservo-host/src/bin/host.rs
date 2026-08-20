@@ -242,6 +242,16 @@ fn cmd_apply_impl(args: &mut impl Iterator<Item = String>, verb: &str) -> i32 {
             return 2;
         }
     };
+    // 多实例竞争检测: host-agent 本地网关端口被占用 = 另一 host 实例在运行（或端口被占）。
+    // 有意多实例（多车模拟）需显式配置不同 [signaling] local_port + room。
+    if verb == "start" {
+        if let Some(port) = agent_port_in_use(&dir) {
+            eprintln!(
+                "错误: 本地信令网关端口 {port} 已被占用——另一 host 实例在运行？\n                   有意多实例: 配置不同 [signaling] local_port + room 后重试；或先 stop 其他实例"
+            );
+            return 1;
+        }
+    }
     // C25/PIT: iceoryx2 SHM 残留（SystemInFlux）会让 capturer/streamer 订阅 open 失败——
     // start（全量启动）前清理；apply（热更新）不清理（进程在跑，SHM 在用）
     if verb == "start" {
@@ -982,4 +992,19 @@ fn cmd_service(args: &mut impl Iterator<Item = String>) -> i32 {
         let _ = run_oxmgr_in(Some(&dir), &["startup"]);
     }
     run_oxmgr_in(Some(&dir), &["service", sub.as_str()])
+}
+
+/// 探测 host-agent 本地网关端口是否被占用（[signaling] local_port 或默认 17980）。
+fn agent_port_in_use(dir: &std::path::Path) -> Option<u16> {
+    let cfg_path = dir.join("etc").join("host.toml");
+    let port = std::fs::read_to_string(&cfg_path)
+        .ok()
+        .and_then(|c| mediaservo_host::translate::signaling_local_port(&c).ok().flatten())
+        .unwrap_or(17980);
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        std::time::Duration::from_millis(300),
+    )
+    .map(|_| port)
+    .ok()
 }
