@@ -72,7 +72,8 @@ impl Default for GatewayConfig {
             remote_url: "ws://127.0.0.1:9800/ws".into(),
             psk: "mediaservo-dev".into(),
             device: None,
-            // TODO(D3): 整车房间由 host.toml 配置（[host] device_id 或 [signaling] room）接入
+            // I1 review (D3 TODO 关闭): 整车房间由 host.toml [signaling] room 配置 —
+            // translate 转译为 agent --room；此处为 CLI 缺省（host-agent 内置默认）。
             room: "vehicle".into(),
             retry: RetryConfig::default(),
         }

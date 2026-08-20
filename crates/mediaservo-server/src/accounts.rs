@@ -170,7 +170,39 @@ impl AccountRegistry {
     ) -> Result<AccountIdentity, AccountAuthError> {
         self.verify(username, password)
     }
+
+    /// I2 review: 检测注册表是否含已知开发占位哈希（命中用户名列表）。
+    pub fn dev_credentials_present(&self) -> Vec<&'static str> {
+        DEV_CREDENTIAL_HASHES
+            .iter()
+            .filter(|(_, hash)| self.accounts.values().any(|e| e.password_hash == *hash))
+            .map(|(user, _)| *user)
+            .collect()
+    }
+
+    /// I2 review: 启动守卫 — 含开发占位账号 → Err（fail-fast，同损坏注册表纪律）；
+    /// `allow_dev` = 显式覆盖（env MEDIASERVO_ALLOW_DEV_CREDENTIALS=1，仅 dev compose 设置）。
+    pub fn check_dev_credentials(&self, allow_dev: bool) -> Result<(), String> {
+        let found = self.dev_credentials_present();
+        if found.is_empty() || allow_dev {
+            return Ok(());
+        }
+        Err(format!(
+            "DEVELOPMENT CREDENTIALS DETECTED in accounts registry ({}):              default dev accounts (admin123/dispatch123/operator123) are placeholder              credentials for local dev only — refuse to start. Replace them with real              hashes, or set MEDIASERVO_ALLOW_DEV_CREDENTIALS=1 to explicitly allow              (dev environment only).",
+            found.join(", ")
+        ))
+    }
 }
+
+/// I2 review: 已知开发占位账号哈希（config/accounts.docker.yaml 的 admin123/
+/// dispatch123/operator123）— 哈希即 sha256(username:password)，含 username 盐。
+/// 生产部署启动守卫（check_dev_credentials）拒绝；dev compose 经
+/// MEDIASERVO_ALLOW_DEV_CREDENTIALS=1 显式豁免。
+pub const DEV_CREDENTIAL_HASHES: &[(&str, &str)] = &[
+    ("admin", "sha256:bf6b5bdb74c79ece9fc0ad0ac9fb0359f9555d4f35a83b2e6ec69ae99e09603d"),
+    ("dispatcher", "sha256:51f00e625e5fb3aff1c5a55eff96d1f2f03273afd8b0bc2514961e33dd82f8b2"),
+    ("operator", "sha256:21cfc6b0fe8e257247937406f1ee83ae8acd3dc447c38b8431abecaf6d7ea437"),
+];
 
 /// sha256(username + ":" + password)，hex 编码，`sha256:` 前缀（username 充当盐）。
 pub fn hash_password(username: &str, password: &str) -> String {
@@ -365,5 +397,43 @@ mod tests {
         );
         // vehicles 缺省空
         assert!(reg.authenticate("adm", "p").unwrap().vehicles.is_empty());
+    }
+
+    // ── I2 review: 开发占位账号守卫 ──────────────────────────────────────────
+
+    /// 含 dev 占位哈希的注册表（accounts.docker.yaml 同构）
+    fn dev_registry() -> AccountRegistry {
+        AccountRegistry::from_yaml(
+            "accounts:\n  admin:\n    password_hash: \"sha256:bf6b5bdb74c79ece9fc0ad0ac9fb0359f9555d4f35a83b2e6ec69ae99e09603d\"\n    role: admin\n  operator:\n    password_hash: \"sha256:21cfc6b0fe8e257247937406f1ee83ae8acd3dc447c38b8431abecaf6d7ea437\"\n    role: operator\n",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn dev_credentials_detected_by_hash_membership() {
+        let reg = dev_registry();
+        let found = reg.dev_credentials_present();
+        assert_eq!(found.len(), 2, "应命中 admin + operator: {found:?}");
+        assert!(found.contains(&"admin"));
+        assert!(found.contains(&"operator"));
+        // 非 dev 注册表 → 空
+        assert!(test_registry().dev_credentials_present().is_empty());
+        assert!(AccountRegistry::empty().dev_credentials_present().is_empty());
+    }
+
+    #[test]
+    fn dev_credentials_refuse_startup_unless_explicitly_allowed() {
+        let reg = dev_registry();
+        let err = reg.check_dev_credentials(false).unwrap_err();
+        assert!(
+            err.contains("DEVELOPMENT CREDENTIALS DETECTED"),
+            "启动必须拒绝开发占位账号: {err}"
+        );
+        assert!(err.contains("admin123"), "错误应点名 dev 账号: {err}");
+        // 显式覆盖（dev compose env）→ 放行
+        assert_eq!(reg.check_dev_credentials(true), Ok(()));
+        // 非 dev / 空注册表 → 恒放行
+        assert_eq!(test_registry().check_dev_credentials(false), Ok(()));
+        assert_eq!(AccountRegistry::empty().check_dev_credentials(false), Ok(()));
     }
 }

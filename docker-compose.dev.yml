@@ -16,6 +16,9 @@ services:
     environment:
       RUST_LOG: debug
       MEDIASERVO_PSK: mediaservo-dev
+      # I2 review: accounts.docker.yaml 含 dev 占位账号（admin123 等）—
+      # 启动守卫 fail-fast；dev 环境显式豁免（生产部署必须移除占位账号）。
+      MEDIASERVO_ALLOW_DEV_CREDENTIALS: "1"
       # PIT-58: SFU announced_address 用宿主可达 IP — 容器内探测=172.18.0.2 其他主机不可达。
       # 支持逗号分隔多 IP（宿主多网卡）；由 mediaservo.sh/CLI 自动探测注入，
       # 直接 compose up 时需手动设 MEDIASERVO_SFU_ANNOUNCED_IP

@@ -162,7 +162,9 @@ fn free_local_port() -> u16 {
     l.local_addr().expect("probe addr").port()
 }
 
-/// admin API 房间列表（真 server 无 JWT 配置时允许无认证访问，已实证）。
+/// admin API 房间列表 — H3 起 admin REST 强制 JWT（auth_middleware），
+/// 用 accounts.docker.yaml 的 dev admin 账号登录取 token（I2 review 守卫下
+/// dev compose 已显式豁免）。
 fn admin_rooms() -> serde_json::Value {
     let port = ws_url()
         .trim_start_matches("ws://")
@@ -172,10 +174,29 @@ fn admin_rooms() -> serde_json::Value {
         .unwrap_or("9800")
         .parse::<u16>()
         .unwrap_or(9800);
-    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("admin connect");
     use std::io::{Read, Write};
+    // 1. 登录（dev 账号 admin/admin123 — accounts.docker.yaml）
+    let mut login = std::net::TcpStream::connect(("127.0.0.1", port)).expect("login connect");
+    let login_body = r#"{"username":"admin","password":"admin123"}"#;
+    let login_req = format!(
+        "POST /api/auth/login HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        login_body.len(),
+        login_body
+    );
+    login.write_all(login_req.as_bytes()).expect("login req");
+    let mut login_buf = String::new();
+    login.read_to_string(&mut login_buf).expect("login read");
+    let login_json = login_buf.split("\r\n\r\n").nth(1).expect("login body");
+    let token: String = serde_json::from_str::<serde_json::Value>(login_json)
+        .expect("login json")
+        .get("token")
+        .and_then(|t| t.as_str())
+        .map(str::to_string)
+        .expect("login token");
+    // 2. 房间列表（Bearer）
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("admin connect");
     let req = format!(
-        "GET /api/admin/rooms HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+        "GET /api/admin/rooms HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
     );
     stream.write_all(req.as_bytes()).expect("admin req");
     let mut buf = String::new();

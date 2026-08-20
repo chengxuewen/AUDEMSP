@@ -54,17 +54,27 @@ struct RecordSection {
     out_dir: Option<String>,
 }
 
-/// `[signaling]` 段（D1: agent 网关本地端口）。
+/// `[signaling]` 段（D1: agent 网关本地端口; I1 review: 整车房间）。
 #[derive(Debug, Deserialize)]
 struct SignalingSection {
     #[serde(default)]
     local_port: Option<u16>,
+    /// 整车房间（D3 TODO 关闭 — host-agent --room；缺省 = agent 内置 "vehicle"）。
+    #[serde(default)]
+    room: Option<String>,
 }
 
 /// 网关本地端口（[signaling] local_port；缺省 None → agent 内置 17980）。
 pub fn signaling_local_port(cfg: &str) -> Result<Option<u16>, String> {
     let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
     Ok(cfg.signaling.and_then(|s| s.local_port))
+}
+
+/// 整车房间（[signaling] room；缺省 None → host-agent 内置默认 "vehicle"）。
+/// D3 TODO（gateway.rs Default）关闭 — translate 负责把配置翻译进 oxfile。
+pub fn signaling_room(cfg: &str) -> Result<Option<String>, String> {
+    let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
+    Ok(cfg.signaling.and_then(|s| s.room))
 }
 
 /// 子进程网关 URL（D2）：`ws://127.0.0.1:{port}/ws`，port = [signaling] local_port
@@ -114,6 +124,7 @@ pub fn validate(cfg: &str) -> Result<(), String> {
     let streams = stream_configs(cfg)?;
     record_config(cfg)?;
     signaling_local_port(cfg)?;
+    signaling_room(cfg)?;
     let mut seen = std::collections::HashSet::new();
     for c in &cameras {
         check_id("相机", &c.id)?;
@@ -354,6 +365,10 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
         if name == "host-agent" {
             if let Some(port) = signaling_local_port(cfg)? {
                 cmd.push_str(&format!(" --port {port}"));
+            }
+            // I1 review (D3 TODO 关闭): [signaling] room → --room（缺省 agent 内置 "vehicle"）
+            if let Some(room) = signaling_room(cfg)? {
+                cmd.push_str(&format!(" --room {room}"));
             }
             if !config_path.as_os_str().is_empty() {
                 cmd.push_str(&format!(" --config {}", config_path.display()));
@@ -604,6 +619,33 @@ camera = "cam0"
             agent_line.contains("--token") && agent_line.contains("agent.token"),
             "host-agent 应带 --token agent.token: {agent_line}"
         );
+    }
+
+    /// I1 review (D3 TODO 关闭): [signaling] room → agent --room；缺省不 emit（agent 内置 "vehicle"）。
+    #[test]
+    fn oxfile_wires_signaling_room_to_agent() {
+        // 配置了 room → --room 上 oxfile
+        let with_room = format!("{CFG_V0}\n[signaling]\nroom = \"ms-car7\"\n");
+        let ox = to_oxfile(&with_room).expect("to_oxfile");
+        let agent_line = ox.lines()
+            .find(|l| l.contains("command") && l.contains("host-agent"))
+            .expect("agent 命令行: {ox}");
+        assert!(
+            agent_line.contains("--room ms-car7"),
+            "host-agent 应带 --room ms-car7: {agent_line}"
+        );
+        // signaling_room 解析直测
+        assert_eq!(signaling_room(&with_room).unwrap().as_deref(), Some("ms-car7"));
+        // 未配置 → 不 emit（agent 内置默认 "vehicle" 保持）
+        let ox2 = to_oxfile(CFG_V0).expect("to_oxfile 默认");
+        let agent_line2 = ox2.lines()
+            .find(|l| l.contains("command") && l.contains("host-agent"))
+            .expect("agent 命令行: {ox2}");
+        assert!(
+            !agent_line2.contains("--room"),
+            "未配置 room 时不得 emit --room: {agent_line2}"
+        );
+        assert_eq!(signaling_room(CFG_V0).unwrap(), None);
     }
 
     #[test]
