@@ -12,6 +12,7 @@ pub fn add_admin_routes(router: Router) -> Router {
         use axum::body::Body;
         use axum::extract::Path;
         use axum::http::{header, HeaderValue, Response, StatusCode};
+        use axum::response::Redirect;
         use axum::response::{Html, IntoResponse};
         use axum::routing::get;
 
@@ -76,6 +77,7 @@ pub fn add_admin_routes(router: Router) -> Router {
         let index_trailing = html.clone();
         let index_spa = html.clone();
         router
+            .route("/", get(|| async { Redirect::permanent("/admin") }))
             .route(
                 "/admin",
                 get(move || {
