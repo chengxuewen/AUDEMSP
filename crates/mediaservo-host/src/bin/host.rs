@@ -242,14 +242,35 @@ fn cmd_apply_impl(args: &mut impl Iterator<Item = String>, verb: &str) -> i32 {
             return 2;
         }
     };
-    // 多实例竞争检测: host-agent 本地网关端口被占用 = 另一 host 实例在运行（或端口被占）。
-    // 有意多实例（多车模拟）需显式配置不同 [signaling] local_port + room。
+    // 多实例竞争检测: host-agent 本地网关端口被占用 = 另一 host 实例在运行。
+    // 交互式二选一（非交互环境默认退出）: 退出 / 接管（停旧实例启当前）。
     if verb == "start" {
         if let Some(port) = agent_port_in_use(&dir) {
-            eprintln!(
-                "错误: 本地信令网关端口 {port} 已被占用——另一 host 实例在运行？\n                   有意多实例: 配置不同 [signaling] local_port + room 后重试；或先 stop 其他实例"
-            );
-            return 1;
+            let old_dir = find_other_instance_dir();
+            eprintln!("检测到另一 host 实例在运行（本地信令网关端口 {port} 被占用）");
+            if let Some(od) = &old_dir {
+                eprintln!("  旧实例目录: {}", od.display());
+            } else {
+                eprintln!("  （未能定位旧实例目录——端口被其他程序占用？）");
+            }
+            if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                eprintln!("  非交互环境——退出（有意多实例: 配置不同 [signaling] local_port + room 共存）");
+                return 1;
+            }
+            eprint!("  输入 y 接管（停止旧实例并启动当前）/ 其他键退出: ");
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+            let mut ans = String::new();
+            let _ = std::io::stdin().read_line(&mut ans);
+            if !ans.trim().eq_ignore_ascii_case("y") {
+                return 1;
+            }
+            if let Some(od) = old_dir {
+                let oxfile = od.join("run").join("oxfile.toml");
+                let ox = oxfile.to_str().unwrap_or_default().to_string();
+                eprintln!("接管: 停止旧实例 {}", od.display());
+                let _ = run_oxmgr_in(Some(&od), &["stop", &ox]);
+                let _ = run_oxmgr_in(Some(&od), &["delete", &ox]);
+            }
         }
     }
     // C25/PIT: iceoryx2 SHM 残留（SystemInFlux）会让 capturer/streamer 订阅 open 失败——
@@ -1007,4 +1028,45 @@ fn agent_port_in_use(dir: &std::path::Path) -> Option<u16> {
     )
     .map(|_| port)
     .ok()
+}
+
+/// 定位另一 host 实例目录：扫描 host-agent 进程 cmdline 的 --config <dir>/etc/host.toml。
+/// Linux /proc/*/cmdline；macOS ps -o command；Windows 返回 None（best-effort）。
+fn find_other_instance_dir() -> Option<std::path::PathBuf> {
+    let probe = |cmd: &str| -> Option<std::path::PathBuf> {
+        let cfg_marker = "--config";
+        let mut parts = cmd.split_whitespace();
+        while let Some(p) = parts.next() {
+            if p == cfg_marker {
+                if let Some(path) = parts.next() {
+                    let cfg = std::path::Path::new(path);
+                    if cfg.ends_with("etc/host.toml") {
+                        return cfg.parent()?.parent().map(|d| d.to_path_buf());
+                    }
+                }
+            }
+        }
+        None
+    };
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(entries) = std::fs::read_dir("/proc") {
+            for e in entries.flatten() {
+                let pid = e.file_name();
+                let Some(pid) = pid.to_str().and_then(|s| s.parse::<u32>().ok()) else { continue };
+                let cmdline = std::fs::read_to_string(format!("/proc/{pid}/cmdline")).ok()?;
+                let cmdline = cmdline.replace('\0', " ");
+                if cmdline.contains("host-agent") {
+                    if let Some(d) = probe(&cmdline) {
+                        return Some(d);
+                    }
+                }
+            }
+        }
+        None
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
 }
