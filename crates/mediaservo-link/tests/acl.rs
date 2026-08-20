@@ -29,9 +29,14 @@ fn pusher_sub_not_pub() {
     assert!(a.can_subscribe(&FrameTopic::new("video/stitched")));
     // F3: 推流节点订阅视觉结果（vision/<camera-id>，D-H8 链路）
     assert!(a.can_subscribe(&FrameTopic::new("vision/cam0")));
+    // stats/* 发布权限（推流状态上报，E2 设计）
+    assert!(a.can_publish(&FrameTopic::new("stats/stream-s0")));
+    assert!(a.can_publish(&FrameTopic::new("stats/x")));
+    // 无 camera/video/vision 发布权
     assert!(!a.can_publish(&FrameTopic::new("camera/front/raw")));
+    assert!(!a.can_publish(&FrameTopic::new("video/x")));
     // 单方向契约（host.rs build_acl 显式 --topic 支持订阅型角色）
-    assert!(!a.can_publish(&FrameTopic::new("stats/stream-s0")));
+    assert!(!a.can_subscribe(&FrameTopic::new("control/cmd")));
 }
 
 #[test]

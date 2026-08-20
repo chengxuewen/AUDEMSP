@@ -84,7 +84,7 @@ fn issue_subscribe_role_puts_topics_in_subscribe_allow() {
     init(dir.path());
     let tok = dir.path().join("streamer.token");
 
-    // streamer 角色: pusher（订阅 camera/*，不发布）
+    // streamer 角色: pusher（订阅 camera/*，发布 stats/*）
     let out = issue(
         dir.path(),
         &[
@@ -95,7 +95,7 @@ fn issue_subscribe_role_puts_topics_in_subscribe_allow() {
     assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
     let claims = decode_claims(&tok);
     assert_eq!(claims.role, Role::Pusher);
-    assert!(claims.acl.publish_allow.is_empty(), "pusher 无发布权");
+    assert_eq!(claims.acl.publish_allow, vec!["stats/*"], "pusher stats/* 发布权");
     assert_eq!(claims.acl.subscribe_allow, vec!["camera/cam0"]);
 }
 
@@ -212,7 +212,7 @@ fn issue_all_standard_set_with_correct_claims() {
     assert_eq!(stream.role, Role::Pusher);
     assert_eq!(stream.node_id, "host-streamer-cam0-stream");
     assert_eq!(stream.acl.subscribe_allow, vec!["camera/cam0", "vision/cam0"]);
-    assert!(stream.acl.publish_allow.is_empty());
+    assert_eq!(stream.acl.publish_allow, vec!["stats/*"]);
 
     // etc/link/recorder.token: Recorder 矩阵缺省（订阅 camera/video/vision + 发布 stats）
     let rec = decode_claims(&dir.path().join("etc/link/recorder.token"));

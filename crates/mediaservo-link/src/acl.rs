@@ -10,7 +10,7 @@ pub enum Role {
     Capture,
     /// 处理节点：订阅相机帧、发布派生 topic（如拼接）。
     Processor,
-    /// 推流节点：订阅帧、推 WebRTC（不进总线发布）。
+    /// 推流节点：订阅帧、推 WebRTC、发布自身 stats（stats/*）。
     Pusher,
     /// 舱端拉流（本地总线无权限）。
     Puller,
@@ -41,9 +41,9 @@ impl NodeAcl {
         let (publish_allow, subscribe_allow): (Vec<String>, Vec<String>) = match role {
             Role::Capture => (vec!["camera/*".into()], vec![]),
             Role::Processor => (vec!["video/*".into()], vec!["camera/*".into()]),
-            Role::Pusher => (vec![], vec!["camera/*".into(), "video/*".into(), "vision/*".into()]),
+            Role::Pusher => (vec!["stats/*".into()], vec!["camera/*".into(), "video/*".into(), "vision/*".into()]),
             Role::Puller => (vec![], vec![]),
-            // E2 推流状态上报: streamer 令牌缺省 Recorder（C2 遗留）→ stats/* 发布权
+            // E2 推流状态上报: Recorder 订阅帧 + 发布 stats/*
             // F3: 订阅视觉结果（vision/<camera-id>，D-H8 链路）
             Role::Recorder => (vec!["stats/*".into()], vec!["camera/*".into(), "video/*".into(), "vision/*".into()]),
             Role::Control => (

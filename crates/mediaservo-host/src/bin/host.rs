@@ -534,22 +534,30 @@ fn validate_topics(role: Role, topics: &[String]) -> Result<(), String> {
         return Ok(()); // 无显式 topic → 矩阵缺省，无需校验
     }
     let base = NodeAcl::for_role(NodeId::new(""), role);
-    let allowed: &[String] = match (base.publish_allow.is_empty(), base.subscribe_allow.is_empty()) {
-        (false, true) => &base.publish_allow,
-        (true, false) => &base.subscribe_allow,
-        _ => {
-            return Err(format!(
-                "角色 {:?} 为双方向/无方向 ACL — 显式 --topic 仅支持单方向角色（capture/pusher/monitor 及 recorder 订阅向）; 省略 --topic 使用矩阵缺省",
-                role
-            ));
+    // --topic 匹配订阅方向（pusher/recorder/monitor/processor）
+    if !base.subscribe_allow.is_empty() {
+        let allowed = &base.subscribe_allow;
+        for t in topics {
+            if !allowed.iter().any(|p| FrameTopic::new(t).matches(p)) {
+                return Err(format!("topic {t:?} 超出角色 {:?} 订阅允许模式: {:?}", role, allowed));
+            }
         }
-    };
-    for t in topics {
-        if !allowed.iter().any(|p| FrameTopic::new(t).matches(p)) {
-            return Err(format!("topic {t:?} 超出角色 {:?} ACL 矩阵（允许模式: {:?}）", role, allowed));
-        }
+        return Ok(());
     }
-    Ok(())
+    // --topic 匹配发布方向（capture）
+    if !base.publish_allow.is_empty() {
+        let allowed = &base.publish_allow;
+        for t in topics {
+            if !allowed.iter().any(|p| FrameTopic::new(t).matches(p)) {
+                return Err(format!("topic {t:?} 超出角色 {:?} 发布允许模式: {:?}", role, allowed));
+            }
+        }
+        return Ok(());
+    }
+    Err(format!(
+        "role {:?} has no direction — explicit --topic only supported for single-direction roles (capture/pusher/recorder); omit --topic for matrix defaults",
+        role,
+    ))
 }
 
 /// G1 加固: node id 字符集守卫（与 host.toml id 同规则 [A-Za-z0-9_-]+，
@@ -646,7 +654,7 @@ fn role_name(r: &Role) -> &'static str {
 /// G1: `host token issue --all` — 从 host.toml 签发标准车辆令牌集（幂等，
 /// 已存在跳过 — D-H10 固定令牌）：
 ///   etc/link/<cam>.token     Capture  publish camera/<cam>（host-capturer-<cam>）
-///   etc/link/<stream>.token  Pusher   subscribe camera/<cam> + vision/<cam>（F3 视觉 DC）
+///   etc/link/<stream>.token  Pusher   subscribe camera/<cam> + vision/<cam> + publish stats/*
 ///   etc/link/recorder.token  Recorder 矩阵缺省（subscribe camera/video/vision + publish stats）
 ///   etc/link/agent.token     Monitor  矩阵缺省（subscribe camera/* + stats/* — E2 数据流监控）
 /// ROS 令牌（--for-ros）不自动签发——ROS 存在性可选。
@@ -770,14 +778,18 @@ fn build_acl(node_id: NodeId, role: Role, topics: Vec<String>) -> Result<NodeAcl
         return Ok(NodeAcl::for_role(node_id, role));
     }
     let base = NodeAcl::for_role(node_id, role);
-    match (base.publish_allow.is_empty(), base.subscribe_allow.is_empty()) {
-        (false, true) => Ok(NodeAcl { publish_allow: topics, subscribe_allow: vec![], ..base }),
-        (true, false) => Ok(NodeAcl { publish_allow: vec![], subscribe_allow: topics, ..base }),
-        _ => Err(format!(
-            "角色 {:?} 为双方向/无方向 ACL — 显式 --topic 仅支持单方向角色（capture/pusher/recorder）; 省略 --topic 使用矩阵缺省",
-            role
-        )),
+    // --topic controls subscribe direction for subscribe-oriented roles
+    if !base.subscribe_allow.is_empty() {
+        return Ok(NodeAcl { subscribe_allow: topics, ..base });
     }
+    // --topic controls publish direction for publish-oriented roles (Capture)
+    if !base.publish_allow.is_empty() {
+        return Ok(NodeAcl { publish_allow: topics, ..base });
+    }
+    Err(format!(
+        "role {:?} has no direction — explicit --topic only supported for single-direction roles (capture/pusher/recorder); omit --topic for matrix defaults",
+        role,
+    ))
 }
 
 /// `host doctor [<dir>]`: 环境诊断。三项检查：
