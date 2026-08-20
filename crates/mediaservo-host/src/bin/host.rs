@@ -240,6 +240,14 @@ fn cmd_apply_impl(args: &mut impl Iterator<Item = String>, verb: &str) -> i32 {
             return 2;
         }
     };
+    // C25/PIT: iceoryx2 SHM 残留（SystemInFlux）会让 capturer/streamer 订阅 open 失败——
+    // start（全量启动）前清理；apply（热更新）不清理（进程在跑，SHM 在用）
+    if verb == "start" {
+        for p in ["/tmp/iceoryx2", "/dev/shm/iox2_*"] {
+            let _ = std::process::Command::new("rm").args(["-rf", p]).status();
+        }
+        println!("start: 已清理 iceoryx2 SHM 残留（C25）");
+    }
     match mediaservo_host::translate::apply_config(&dir) {
         Ok(()) => {
             println!("{verb}: 已应用 {}", dir.join("run").join("oxfile.toml").display());

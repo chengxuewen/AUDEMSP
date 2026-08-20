@@ -488,11 +488,18 @@ async fn main() -> ExitCode {
         }
     };
     let topic = FrameTopic::new(format!("camera/{}", cam.id));
-    let frames = match bus.subscribe(&topic) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("streamer: 订阅 {} 失败: {e}", topic.as_str());
-            return ExitCode::from(1);
+    // D-H14 顺序无关 + SystemInFlux 残留容错: 订阅失败（capturer 后起 / SHM 残留瞬态）
+    // 每 3s 重试最多 10 次（30s）——避免一次失败即退出被 oxmgr 重启到 errored（PIT）
+    let frames = loop {
+        match bus.subscribe(&topic) {
+            Ok(f) => break f,
+            Err(e) => {
+                eprintln!(
+                    "streamer: 订阅 {} 失败（3s 后重试——capturer 后起/SHM 残留容错）: {e}",
+                    topic.as_str()
+                );
+                std::thread::sleep(std::time::Duration::from_secs(3));
+            }
         }
     };
     tracing::info!(topic = %topic.as_str(), "FrameBus subscribed");
