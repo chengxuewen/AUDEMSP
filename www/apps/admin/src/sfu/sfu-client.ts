@@ -125,6 +125,9 @@ export class SfuConsumerClient {
   private onStatus: StatusCallback;
   private onMetrics: MetricsCallback;
   private transportId: string | null = null;
+  /** SFU 模式标志: startPlay 发出 create_web_rtc_transport 即置位 —
+      P2P 房间的 SDP/ICE 全房间广播（host 侧协商），SFU 流程收到即无关，一律忽略 */
+  private sfuMode = false;
   // PIT-65: 每连接唯一 SFU peer_id — 多网页同 peer_id 导致 SfuManager recv_transport 互相覆盖
   private sfuPeerId: string;
   private transportResolver: ((params: TransportCreated) => void) | null = null;
@@ -214,6 +217,7 @@ export class SfuConsumerClient {
     };
   }
   async startPlay(): Promise<void> {
+    this.sfuMode = true; // 进入 SFU 流程: 之后到达的 sdp 广播一律忽略
     if (!this.ws) throw new Error('Not connected');
 
     // Create RTCPeerConnection upfront (shared for SFU and P2P)
@@ -343,7 +347,7 @@ export class SfuConsumerClient {
         // host 侧（controller/emergency/vision）的协商 SDP 会到达浏览器。
         // SFU 模式（transportId 已建）的 consume 是消息驱动, 不需要任何 SDP 消息 —
         // 收到即无关广播, 忽略（否则把别人的 offer 当自己的协商 → 状态错乱）。
-        if (this.transportId) {
+        if (this.sfuMode) {
           console.log("SfuClient: SDP ignored (SFU mode, room broadcast)");
           return;
         }
@@ -365,6 +369,9 @@ export class SfuConsumerClient {
       } else if ((msg.type === 'rtc_ice_candidate' || msg.type === 'r_t_c_ice_candidate') && this.pc) {
         // PIT-106 (I2 review): server 中继重序列化为规范名 r_t_c_ice_candidate（serde snake_case）
         // — 两 tag 都收，兼容旧 server 与新 alias 两种 wire。
+        if (this.sfuMode && this.pc && this.pc.remoteDescription === null) {
+          return; // 协商未完成前的房间广播 candidate，忽略
+        }
         console.log('SfuClient: ICE candidate received', msg.candidate);
         this.pc.addIceCandidate({
           candidate: msg.candidate,
