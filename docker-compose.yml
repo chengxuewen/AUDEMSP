@@ -10,9 +10,8 @@ services:
     environment:
       RUST_LOG: debug
       MEDIASERVO_PSK: mediaservo-dev
-      # I2 review: accounts.docker.yaml 含 dev 占位账号（admin123 等）—
-      # 启动守卫 fail-fast；dev 环境显式豁免（生产部署必须移除占位账号）。
-      MEDIASERVO_ALLOW_DEV_CREDENTIALS: "1"
+      # 生产：不豁免 dev 凭证守卫（fail-fast）。若挂载文件含 dev 占位账号，
+      # server 拒绝启动 — 必须使用 config/accounts.production.yaml（无 dev 账号）。
     deploy:
       resources:
         limits:
@@ -29,7 +28,7 @@ services:
     volumes:
       - ./config/server.docker.yaml:/opt/mediaservo/etc/server.yaml:ro
       - ./config/devices.docker.yaml:/opt/mediaservo/etc/devices.yaml:ro
-      - ./config/accounts.docker.yaml:/opt/mediaservo/etc/accounts.yaml:ro
+      - ./config/accounts.production.yaml:/opt/mediaservo/etc/accounts.yaml:ro
 
   proxy:
     image: caddy:2
