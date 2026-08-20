@@ -900,11 +900,21 @@ fn cmd_doctor(args: &mut impl Iterator<Item = String>) -> i32 {
 
 
 /// 代理 oxmgr CLI；oxmgr 不在 PATH 时报清晰错误并提示安装。
-/// 注入实例化的 oxmgr 数据目录（<dir>/run/oxmgr）——多实例/多 PATH 的 daemon 状态隔离
+/// 注入实例化的 oxmgr 数据目录（<dir>/run/oxmgr——oxmgr 用 OXMGR_HOME env）——多实例 daemon 状态隔离
+/// 注入实例化的 oxmgr 环境——多实例 daemon 完全隔离:
+/// ① OXMGR_HOME = <dir>/run/oxmgr（数据/日志/state）② OXMGR_DAEMON_ADDR 端口从 dir 稳定派生
+/// （daemon 互斥 = TCP 端口——不隔离则全局 daemon 阻断实例 daemon 启动）
 fn oxmgr_env(dir: &std::path::Path) -> std::process::Command {
     let mut cmd = std::process::Command::new("oxmgr");
-    cmd.env("OXMGR_DATA_DIR", dir.join("run").join("oxmgr"));
+    cmd.env("OXMGR_HOME", dir.join("run").join("oxmgr"));
+    cmd.env("OXMGR_DAEMON_ADDR", format!("127.0.0.1:{}", instance_daemon_port(dir)));
     cmd
+}
+
+/// 实例 daemon 端口: 18000 + dir 路径字节和 % 400（稳定——跨进程一致）
+fn instance_daemon_port(dir: &std::path::Path) -> u16 {
+    let sum: u32 = dir.to_string_lossy().bytes().map(u32::from).sum();
+    18000u16 + (sum % 400) as u16
 }
 
 
@@ -1105,7 +1115,8 @@ fn startup_install(dir: &std::path::Path) -> i32 {
          
          [Service]
          Type=simple
-         Environment=OXMGR_DATA_DIR={}
+         Environment=OXMGR_HOME={}
+         Environment=OXMGR_DAEMON_ADDR=127.0.0.1:{}
          ExecStart={} daemon run
          Restart=always
          RestartSec=2
@@ -1115,6 +1126,7 @@ fn startup_install(dir: &std::path::Path) -> i32 {
 ",
         dir.display(),
         data_dir.display(),
+        instance_daemon_port(dir),
         oxmgr.display()
     );
     if let Some(parent) = unit_path.parent() {
