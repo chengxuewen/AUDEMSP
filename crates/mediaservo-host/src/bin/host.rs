@@ -1033,8 +1033,66 @@ fn oxmgr_path() -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from("oxmgr"))
 }
 
+/// 扫描已安装的其他实例自启 unit（返回 (旧 unit 路径, 旧实例目录)）。
+/// 从 unit 的 Environment=OXMGR_DATA_DIR=<dir>/run/oxmgr 反推实例目录。
+fn other_startup_units(dir: &std::path::Path) -> Vec<(std::path::PathBuf, std::path::PathBuf)> {
+    let my_name = startup_unit_name(dir);
+    let units_dir = std::path::Path::new(&std::env::var("HOME").unwrap_or_default())
+        .join(".config/systemd/user");
+    let mut found = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&units_dir) else { return found };
+    for e in entries.flatten() {
+        let name = e.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !name.starts_with("oxmgr-host-") || !name.ends_with(".service") || name == my_name {
+            continue;
+        }
+        let path = e.path();
+        let dir = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|c| {
+                c.lines().find_map(|l| {
+                    l.trim().strip_prefix("Environment=OXMGR_DATA_DIR=").map(|v| v.trim().to_string())
+                })
+            })
+            .map(|d| std::path::PathBuf::from(d).join("..").join(".."))
+            .unwrap_or_default();
+        found.push((path, dir));
+    }
+    found
+}
+
 #[cfg(target_os = "linux")]
 fn startup_install(dir: &std::path::Path) -> i32 {
+    // 全局唯一自启（相机等共享资源——多实例自启会抢设备）: 检测其他实例 unit → 交互接管
+    let others = other_startup_units(dir);
+    if !others.is_empty() {
+        for (p, od) in &others {
+            eprintln!("检测到其他实例已开启自启: {}（实例目录: {}）", p.display(), od.display());
+        }
+        if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+            eprintln!("  非交互环境——退出（只允许一个自启实例；先 `mediaservo-host startup off <旧dir>` 或手动接管）");
+            return 1;
+        }
+        eprint!("  输入 y 接管（停旧实例并改为当前实例自启）/ 其他键退出: ");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let mut ans = String::new();
+        let _ = std::io::stdin().read_line(&mut ans);
+        if !ans.trim().eq_ignore_ascii_case("y") {
+            return 1;
+        }
+        // 停旧实例（OXMGR_DATA_DIR 反推的 dir 可用则 stop+delete；unit 删除）
+        for (p, od) in &others {
+            if !od.as_os_str().is_empty() && od.join("run/oxfile.toml").exists() {
+                let ox = od.join("run/oxfile.toml").to_string_lossy().into_owned();
+                eprintln!("接管: 停止旧实例 {}", od.display());
+                let _ = run_oxmgr_in(Some(od), &["stop", &ox]);
+                let _ = run_oxmgr_in(Some(od), &["delete", &ox]);
+            }
+            let _ = std::fs::remove_file(p);
+        }
+        let _ = std::process::Command::new("systemctl").args(["--user", "daemon-reload"]).status();
+    }
     let unit_name = startup_unit_name(dir);
     let unit_path = std::path::Path::new(&std::env::var("HOME").unwrap_or_default())
         .join(".config/systemd/user")
