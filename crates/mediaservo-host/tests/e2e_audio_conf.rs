@@ -362,6 +362,7 @@ where
             "encodings": encodings,
             "rtcp": {"reducedSize": rtp_params.rtcp.reduced_size},
         }),
+        transport_id: None, // legacy 路径回归
     };
     ws.send(WsMsg::Text(serde_json::to_string(&produce).unwrap()))
         .await
@@ -462,6 +463,7 @@ where
                     {"uri": "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01", "preferredId": 3, "kind": "audio", "preferredEncrypt": false, "direction": "sendrecv"},
                 ],
             }),
+            transport_id: None, // legacy 路径回归
         })
         .unwrap(),
     ))
@@ -721,6 +723,7 @@ async fn e2e_audio_room_rejects_video_produce() {
                 "encodings": [{"ssrc": 12345}],
                 "rtcp": {"reducedSize": true}
             }),
+            transport_id: None, // legacy 路径回归
         })
         .unwrap(),
     ))

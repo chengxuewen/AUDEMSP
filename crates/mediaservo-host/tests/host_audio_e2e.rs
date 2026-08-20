@@ -182,6 +182,7 @@ async fn audio_through_gateway_reaches_audio_room() {
                 "encodings": [{"ssrc": 12345}],
                 "rtcp": {"reducedSize": true}
             }),
+            transport_id: None, // legacy 路径回归
         })
         .await
         .expect("probe produce");

@@ -117,6 +117,10 @@ pub enum SignalingMessage {
         transport_direction: TransportDirection,
         kind: MediaKind,
         rtp_parameters: serde_json::Value,
+        /// C1 (D-H14 顺序无关): 绑定目标 send transport（CreateWebRtcTransport 返回的
+        /// transport_id）。None = legacy 单槽回退（最近创建的 send transport）。
+        #[serde(skip_serializing_if = "Option::is_none")]
+        transport_id: Option<String>,
     },
 
     /// Server confirms producer created.
@@ -179,6 +183,10 @@ pub enum SignalingMessage {
         peer_id: String,
         producer_id: String,
         rtp_capabilities: serde_json::Value,
+        /// C1: 绑定目标 recv transport。None = legacy 单槽回退（最近创建的 recv transport）
+        /// ——修复多连接共享 peer_id 时 recv_transport 互相覆盖 → consumer 挂错 transport 黑屏。
+        #[serde(skip_serializing_if = "Option::is_none")]
+        transport_id: Option<String>,
     },
 
     /// Server confirms consumer created.
@@ -221,6 +229,9 @@ pub enum SignalingMessage {
         protocol: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         sctp_stream_parameters: Option<SctpStreamParameters>,
+        /// C1: 绑定目标 send transport。None = legacy 单槽回退。
+        #[serde(skip_serializing_if = "Option::is_none")]
+        transport_id: Option<String>,
     },
 
     /// Server confirms data producer created.
@@ -244,6 +255,9 @@ pub enum SignalingMessage {
         peer_id: String,
         transport_direction: TransportDirection,
         data_producer_id: String,
+        /// C1: 绑定目标 recv transport。None = legacy 单槽回退。
+        #[serde(skip_serializing_if = "Option::is_none")]
+        transport_id: Option<String>,
     },
 
     /// Server confirms data consumer created.
@@ -693,7 +707,20 @@ mod tests {
             transport_direction: TransportDirection::Send,
             kind: MediaKind::Video,
             rtp_parameters: serde_json::json!({"codecs": [{"mimeType": "video/VP8"}]}),
+            transport_id: Some("transport-9".into()),
         };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""type":"produce""#));
+        assert!(json.contains("transport-9"), "transport_id 必须上 wire: {json}");
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            SignalingMessage::Produce { room_id, kind, transport_id, .. } => {
+                assert_eq!(room_id, "room-1");
+                assert_eq!(kind, MediaKind::Video);
+                assert_eq!(transport_id.as_deref(), Some("transport-9"));
+            }
+            _ => panic!("expected Produce"),
+        }
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"produce""#));
         let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
@@ -739,11 +766,33 @@ mod tests {
             peer_id: "peer-1".into(),
             producer_id: "prod-1".into(),
             rtp_capabilities: serde_json::json!({"codecs": [{"mimeType": "video/VP8"}]}),
+            transport_id: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"consume""#));
         let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
         assert!(matches!(parsed, SignalingMessage::Consume { .. }));
+    }
+
+    /// C1: transport_id 缺省（legacy 客户端 wire 无该字段）→ 解析为 None（向后兼容）；
+    /// None 不序列化该字段（旧 server 也可解析）。
+    #[test]
+    fn roundtrip_consume_legacy_without_transport_id() {
+        let json = serde_json::json!({
+            "type": "consume",
+            "room_id": "room-1",
+            "peer_id": "peer-1",
+            "producer_id": "prod-1",
+            "rtp_capabilities": {"codecs": []},
+        });
+        let parsed: SignalingMessage = serde_json::from_str(&json.to_string()).unwrap();
+        match parsed {
+            SignalingMessage::Consume { ref transport_id, .. } => assert_eq!(transport_id, &None),
+            other => panic!("expected Consume, got {other:?}"),
+        }
+        // 反向: None 不序列化该字段（legacy server 也可解析）
+        let out = serde_json::to_string(&parsed).unwrap();
+        assert!(!out.contains("transport_id"), "None transport_id 不得上 wire: {out}");
     }
 
     #[test]
@@ -910,7 +959,23 @@ mod tests {
                 max_packet_life_time: None,
                 max_retransmits: None,
             }),
+            transport_id: Some("transport-9".into()),
         };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#"type":"create_data_producer"#));
+        assert!(json.contains(r#"label":"control"#));
+        assert!(json.contains("transport-9"), "transport_id 必须上 wire: {json}");
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            SignalingMessage::CreateDataProducer { room_id, label, protocol, sctp_stream_parameters, transport_id, .. } => {
+                assert_eq!(room_id, "room-1");
+                assert_eq!(label, "control");
+                assert_eq!(protocol, "mediaservo.control");
+                assert_eq!(sctp_stream_parameters.unwrap().stream_id, 1);
+                assert_eq!(transport_id.as_deref(), Some("transport-9"));
+            }
+            other => panic!("expected CreateDataProducer, got {other:?}"),
+        }
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#"type":"create_data_producer"#));
         assert!(json.contains(r#"label":"control"#));
@@ -960,7 +1025,16 @@ mod tests {
             peer_id: "peer-1".into(),
             transport_direction: TransportDirection::Recv,
             data_producer_id: "dp-1".into(),
+            transport_id: None,
         };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#"type":"consume_data"#));
+        assert!(!json.contains("transport_id"), "None transport_id 不得上 wire: {json}");
+        let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            SignalingMessage::ConsumeData { transport_id, .. } => assert_eq!(transport_id, None),
+            other => panic!("expected ConsumeData, got {other:?}"),
+        }
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#"type":"consume_data"#));
         let parsed: SignalingMessage = serde_json::from_str(&json).unwrap();

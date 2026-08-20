@@ -181,7 +181,7 @@ async fn publish_audio(
         .send(SignalingMessage::ConnectWebRtcTransport {
             room_id: room.into(),
             peer_id: signal.peer_id().into(),
-            transport_id: send_tid,
+            transport_id: send_tid.clone(),
             dtls_parameters: DtlsParameters {
                 fingerprints: vec![Fingerprint {
                     algorithm: "sha-256".to_string(),
@@ -210,6 +210,8 @@ async fn publish_audio(
             transport_direction: TransportDirection::Send,
             kind: MediaKind::Audio,
             rtp_parameters: audio::build_audio_produce_rtp_parameters(&rtp_params),
+            // C1: 指名绑定本会话的 send transport（host 子进程共享 peer_id 防串线）
+            transport_id: Some(send_tid),
         })
         .await
         .map_err(|e| format!("produce: {e}"))?;
@@ -308,6 +310,8 @@ async fn subscribe_producer(
                         {"uri": "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01", "preferredId": 3, "kind": "audio", "preferredEncrypt": false, "direction": "sendrecv"},
                     ],
                 }),
+                // C1: 指名绑定本会话的 recv transport（防多连接共享 peer_id 串线）
+                transport_id: Some(recv_tid.clone()),
             })
             .await
             .map_err(|e| format!("consume: {e}"))?;

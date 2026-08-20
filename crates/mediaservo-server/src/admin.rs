@@ -629,10 +629,11 @@ async fn handle_admin_sfu(
             peer_id,
             producer_id,
             rtp_capabilities,
+            transport_id,
         } => {
             // PIT-65: 用消息 peer_id (每连接唯一), 非硬编码 admin — 多连接隔离
             match sfu
-                .create_consumer(room_id, &peer_id, producer_id, rtp_capabilities.clone())
+                .create_consumer(room_id, &peer_id, producer_id, rtp_capabilities.clone(), transport_id.as_deref())
                 .await
             {
                 Ok(result) => {

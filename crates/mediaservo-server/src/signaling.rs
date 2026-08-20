@@ -741,9 +741,23 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
 
                 // v4 (E3): 整车状态上报 — Server 直接消费存储（非 relay 消息，
                 // 不广播房间；旧 Server 解析失败静默丢弃 = 可容忍，周期性上报自愈）
+                // I3 review: 身份门 — 仅 Device 会话或 Host 角色可上报；其他拒绝 + 审计（C15）。
                 if let Ok(sig) = serde_json::from_str::<SignalingMessage>(&text_str) {
                     let is_report = matches!(&sig, SignalingMessage::StatusReport { .. });
                     if is_report {
+                        if let Some(error) = status_report_denial(
+                            &session_identity,
+                            &role,
+                            &relay_peer_id,
+                            &relay_room,
+                        ) {
+                            let _ = direct_sender
+                                .lock()
+                                .await
+                                .send(Message::Text(send_msg(&error).unwrap()))
+                                .await;
+                            continue;
+                        }
                         server.status_registry.store(&relay_room, sig);
                         tracing::info!("StatusReport stored for room {relay_room}");
                         continue;
@@ -1034,11 +1048,43 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
     );
 }
 
+/// I3 review: StatusReport 身份门判定 — 仅 Device 会话（车端）或 Host 角色（PSK 车端）
+/// 可上报整车状态；账号/其他会话拒绝（舱端不可伪造车端状态）。返回拒绝原因（None = 允许）。
+fn status_report_denial_reason(identity: &SessionIdentity, role: &PeerRole) -> Option<&'static str> {
+    if matches!(identity, SessionIdentity::Device(_)) || *role == PeerRole::Host {
+        None
+    } else {
+        Some("status reports require a device session or host role")
+    }
+}
+
+/// I3 review: StatusReport 门 + 审计（C15）— 拒绝时返回 Error 4031 响应（调用方发送），
+/// 并记录 AuthorizationDenied（谁/动作/详情）。
+fn status_report_denial(
+    identity: &SessionIdentity,
+    role: &PeerRole,
+    peer_id: &str,
+    room: &str,
+) -> Option<SignalingMessage> {
+    let reason = status_report_denial_reason(identity, role)?;
+    let detail = format!("{reason} (peer={peer_id}, room={room})");
+    tracing::warn!("StatusReport denied: {detail}");
+    audit::log_event(AuditEvent::AuthorizationDenied {
+        action: "status_report".into(),
+        peer_id: peer_id.to_string(),
+        detail: detail.clone(),
+    });
+    Some(SignalingMessage::Error {
+        code: 4031,
+        message: detail,
+    })
+}
+
 /// Handle SFU transport negotiation and produce/consume messages.
 /// Returns the response message to send, or None if not handled.
 /// Caller is responsible for sending the response (avoids sender lock contention with relay loop).
 #[cfg(feature = "sfu-mediasoup")]
-    pub(crate) async fn handle_sfu_message(
+pub(crate) async fn handle_sfu_message(
     msg: &SignalingMessage,
     server: &SignalingServer,
     broadcast_tx: &tokio::sync::broadcast::Sender<String>,
@@ -1124,6 +1170,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
             transport_direction,
             kind,
             rtp_parameters,
+            transport_id,
         } => {
             // PIT-65: 用消息 peer_id — 与 create/connect/consume 一致
             let sfu_peer_id = msg_peer_id.as_str();
@@ -1167,7 +1214,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                 });
             }
             match sfu
-                .create_producer(room_id, sfu_peer_id, kind, rtp_parameters.clone())
+                .create_producer(room_id, sfu_peer_id, kind, rtp_parameters.clone(), transport_id.as_deref())
                 .await
             {
                 Ok(result) => {
@@ -1208,6 +1255,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
             peer_id: msg_peer_id,
             producer_id,
             rtp_capabilities,
+            transport_id,
         } => {
             // PIT-65: 用消息 peer_id (每网页唯一 sfuPeerId), 非 session relay_peer_id —
             // 否则多网页共享 admin → recv_transport 互相覆盖 → consumer 挂错 transport → 黑屏
@@ -1229,7 +1277,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                 });
             }
             match sfu
-                .create_consumer(room_id, sfu_peer_id, producer_id, rtp_capabilities.clone())
+                .create_consumer(room_id, sfu_peer_id, producer_id, rtp_capabilities.clone(), transport_id.as_deref())
                 .await
             {
                 Ok(result) => Some(SignalingMessage::Consumed {
@@ -1252,6 +1300,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
             label,
             protocol,
             sctp_stream_parameters,
+            transport_id,
         } => {
             // PIT-65: 用消息 peer_id (每网页唯一 sfuPeerId), 与 produce/consume 一致
             let sfu_peer_id = msg_peer_id.as_str();
@@ -1289,6 +1338,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                     label,
                     protocol,
                     sctp_stream_parameters.clone(),
+                    transport_id.as_deref(),
                 )
                 .await
             {
@@ -1332,6 +1382,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
             peer_id: msg_peer_id,
             transport_direction,
             data_producer_id,
+            transport_id,
         } => {
             let sfu_peer_id = msg_peer_id.as_str();
             tracing::info!(
@@ -1366,7 +1417,7 @@ async fn handle_socket(socket: WebSocket, server: SignalingServer, jwt_token: Op
                 });
             }
             match sfu
-                .create_data_consumer(room_id, sfu_peer_id, data_producer_id)
+                .create_data_consumer(room_id, sfu_peer_id, data_producer_id, transport_id.as_deref())
                 .await
             {
                 Ok(result) => Some(SignalingMessage::DataConsumed {
@@ -1504,6 +1555,65 @@ mod tests {
             }
             other => panic!("expected ConfigPush, got {other:?}"),
         }
+    }
+
+    /// I3 review: StatusReport 门 — Device 会话或 Host 角色放行；账号/Legacy 非 Host 拒绝 + 审计。
+    #[test]
+    fn status_report_gate_allows_device_and_host_only() {
+        use crate::roles::{AccountIdentity, CockpitRole, SessionIdentity};
+        let device = SessionIdentity::Device("ms-car1".into());
+        let account = SessionIdentity::Account(AccountIdentity {
+            username: "u".into(),
+            role: CockpitRole::Viewer,
+            vehicles: vec![],
+        });
+        // 放行: 设备会话（车端，角色不限）; legacy + Host 角色（PSK 车端）
+        assert_eq!(status_report_denial_reason(&device, &PeerRole::Host), None);
+        assert_eq!(status_report_denial_reason(&device, &PeerRole::Remote), None);
+        assert_eq!(
+            status_report_denial_reason(&SessionIdentity::Legacy, &PeerRole::Host),
+            None
+        );
+        // 拒绝: 账号（舱端，Host 角色已被 RoomJoin 门拦截 — 不可达）; legacy 非 Host
+        assert!(
+            status_report_denial_reason(&account, &PeerRole::Remote).is_some(),
+            "账号禁止上报整车状态（防伪造车端）"
+        );
+        assert!(status_report_denial_reason(&account, &PeerRole::Consumer).is_some());
+        assert!(status_report_denial_reason(&SessionIdentity::Legacy, &PeerRole::Remote).is_some());
+    }
+
+    /// I3 review: 拒绝路径必须返回 4031 + 审计 AuthorizationDenied(status_report)。
+    #[test]
+    fn status_report_denial_audits_and_returns_4031() {
+        use crate::roles::{AccountIdentity, CockpitRole, SessionIdentity};
+        let account = SessionIdentity::Account(AccountIdentity {
+            username: "carol".into(),
+            role: CockpitRole::Viewer,
+            vehicles: vec![],
+        });
+        let before = audit::recent().len();
+        let resp = status_report_denial(&account, &PeerRole::Remote, "peer-x", "vehicle-1")
+            .expect("拒绝必须返回 Error 响应");
+        match resp {
+            SignalingMessage::Error { code, message } => {
+                assert_eq!(code, 4031);
+                assert!(message.contains("status reports require"), "{message}");
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+        let after = audit::recent();
+        assert!(
+            after.iter().skip(before).any(|e| matches!(
+                e,
+                AuditEvent::AuthorizationDenied { action, peer_id, .. }
+                    if action == "status_report" && peer_id == "peer-x"
+            )),
+            "拒绝必须审计 AuthorizationDenied(status_report): {after:?}"
+        );
+        // 放行路径: 无响应无审计
+        let device = SessionIdentity::Device("ms-car1".into());
+        assert!(status_report_denial(&device, &PeerRole::Remote, "p", "r").is_none());
     }
 
     #[tokio::test]

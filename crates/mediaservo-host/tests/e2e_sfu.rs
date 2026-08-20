@@ -463,6 +463,7 @@ async fn e2e_sfu_host_produce() {
                 "encodings": [{"ssrc": 12345}],
                 "rtcp": {"reducedSize": true}
             }),
+            transport_id: None, // legacy 路径回归
         };
         ws.send(WsMsg::Text(serde_json::to_string(&produce).unwrap().into()))
             .await
@@ -583,6 +584,7 @@ async fn e2e_sfu_host_produce() {
                 "codecs": [{"mimeType": "video/VP8", "clockRate": 90000, "kind": "video"}],
                 "headerExtensions": []
             }),
+            transport_id: None, // legacy 路径回归
         };
         ws.send(WsMsg::Text(serde_json::to_string(&consume).unwrap().into()))
             .await
@@ -769,6 +771,7 @@ async fn e2e_sfu_full_pipeline() {
                 "encodings": [{"ssrc": 12345}],
                 "rtcp": {"reducedSize": true}
             }),
+            transport_id: None, // legacy 路径回归
         };
         ws.send(WsMsg::Text(serde_json::to_string(&produce).unwrap().into()))
             .await
@@ -941,6 +944,7 @@ async fn e2e_sfu_full_pipeline() {
                 "codecs": [{"mimeType": "video/VP8", "clockRate": 90000, "kind": "video"}],
                 "headerExtensions": []
             }),
+            transport_id: None, // legacy 路径回归
         };
         ws.send(WsMsg::Text(serde_json::to_string(&consume).unwrap().into()))
             .await

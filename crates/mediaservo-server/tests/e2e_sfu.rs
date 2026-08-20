@@ -304,6 +304,7 @@ async fn e2e_sfu_consume_pipeline() {
             transport_direction: mediaservo_common::protocol::TransportDirection::Send,
             kind: mediaservo_common::protocol::MediaKind::Video,
             rtp_parameters: serde_json::json!({"mid": "0", "codecs": [{"mimeType": "video/VP8", "payloadType": 100, "clockRate": 90000}], "headerExtensions": [], "encodings": [{"ssrc": 12345}], "rtcp": {"reducedSize": true}}),
+            transport_id: Some(send_tid.clone()), // C1: 指名绑定本会话 transport
         }).unwrap();
         ws.send(WsMsg::Text(produce.into())).await.unwrap();
         let prod_resp = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next()).await.unwrap().unwrap().unwrap();
@@ -385,6 +386,7 @@ async fn e2e_sfu_consume_pipeline() {
                 "codecs": [{"mimeType": "video/VP8", "clockRate": 90000, "kind": "video"}],
                 "headerExtensions": []
             }),
+            transport_id: None, // legacy 路径回归
         }).unwrap();
         ws.send(WsMsg::Text(consume.into())).await.unwrap();
         let consumed_resp = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next()).await.unwrap().unwrap().unwrap();
@@ -613,6 +615,7 @@ async fn e2e_sfu_role_enforcement() {
             transport_direction: mediaservo_common::protocol::TransportDirection::Send,
             kind: mediaservo_common::protocol::MediaKind::Video,
             rtp_parameters: serde_json::json!({"mid": "0", "codecs": [{"mimeType": "video/VP8", "payloadType": 100, "clockRate": 90000}], "headerExtensions": [], "encodings": [{"ssrc": 12345}], "rtcp": {"reducedSize": true}}),
+            transport_id: None, // legacy 路径回归
         })
         .unwrap();
         ws.send(WsMsg::Text(produce.into())).await.unwrap();
@@ -659,6 +662,7 @@ async fn e2e_sfu_role_enforcement() {
                 "codecs": [{"mimeType": "video/VP8", "clockRate": 90000, "kind": "video"}],
                 "headerExtensions": []
             }),
+            transport_id: None, // legacy 路径回归
         })
         .unwrap();
         ws.send(WsMsg::Text(consume.into())).await.unwrap();
@@ -730,6 +734,7 @@ async fn e2e_sfu_role_enforcement() {
             transport_direction: mediaservo_common::protocol::TransportDirection::Send,
             kind: mediaservo_common::protocol::MediaKind::Video,
             rtp_parameters: serde_json::json!({"mid": "0", "codecs": [{"mimeType": "video/VP8", "payloadType": 100, "clockRate": 90000}], "headerExtensions": [], "encodings": [{"ssrc": 999}], "rtcp": {"reducedSize": true}}),
+            transport_id: None, // legacy 路径回归
         })
         .unwrap();
         ws.send(WsMsg::Text(produce.into())).await.unwrap();
@@ -902,6 +907,7 @@ async fn e2e_sfu_data_domain() {
                 max_packet_life_time: None,
                 max_retransmits: None,
             }),
+            transport_id: None, // legacy 路径回归
         })
         .unwrap();
         ws.send(WsMsg::Text(produce_data.into())).await.unwrap();
@@ -996,6 +1002,7 @@ async fn e2e_sfu_data_domain() {
             peer_id: "carol".into(),
             transport_direction: mediaservo_common::protocol::TransportDirection::Recv,
             data_producer_id: dp_id,
+            transport_id: None, // legacy 路径回归
         })
         .unwrap();
         ws.send(WsMsg::Text(consume_data.into())).await.unwrap();
@@ -1074,6 +1081,7 @@ async fn e2e_sfu_data_domain() {
                 max_packet_life_time: None,
                 max_retransmits: None,
             }),
+            transport_id: None, // legacy 路径回归
         })
         .unwrap();
         ws.send(WsMsg::Text(produce_data.into())).await.unwrap();
@@ -1216,6 +1224,7 @@ async fn e2e_audio_room_device_identity() {
                     "encodings": [{"ssrc": 12345}],
                     "rtcp": {"reducedSize": true}
                 }),
+                transport_id: None, // legacy 路径回归
             })
             .unwrap()
             .into(),

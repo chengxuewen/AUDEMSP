@@ -250,6 +250,9 @@ impl PushSession {
             transport_direction: TransportDirection::Send,
             kind: MediaKind::Video,
             rtp_parameters: sfu::build_produce_rtp_parameters_from_rtp(&rtp_params),
+            // C1: 指名绑定本会话创建的 send transport（host 子进程共享 peer_id 时
+            // 不依赖"最近创建"单槽 — 防 boot storm 串线）
+            transport_id: Some(transport_id.clone()),
         };
         self.signal.send(produce).await.map_err(FieldError::Link)?;
 
@@ -499,6 +502,9 @@ impl PullSession {
                         {"uri": "http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time", "preferredId": 5, "kind": "video", "preferredEncrypt": false, "direction": "sendrecv"},
                     ],
                 }),
+                // C1: 指名绑定本会话创建的 recv transport（多连接共享 peer_id 时
+                // 不依赖"最近创建"单槽 — 防 consumer 挂错 transport 黑屏）
+                transport_id: Some(transport_id.clone()),
             })
             .await
             .map_err(FieldError::Link)?;

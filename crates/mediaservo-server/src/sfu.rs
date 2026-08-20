@@ -137,13 +137,41 @@ mod imp {
 
     /// Per-peer state: send/recv transports and active producers/consumers.
     pub struct SfuPeer {
-        pub send_transport: Option<WebRtcTransport>,
-        pub recv_transport: Option<WebRtcTransport>,
+        /// C1 (D-H14 顺序无关): send transport 注册表 — 多 host 子进程共享 peer_id
+        /// （如 "host"），并发 CreateWebRtcTransport 不得互相覆盖（旧单槽: 后建覆盖
+        /// 先建 → produce 挂错 transport → 静默流丢失）。`.last()` = legacy 单槽回退。
+        pub send_transports: Vec<WebRtcTransport>,
+        /// C1: recv transport 注册表（多连接共享 peer_id 场景同缺陷 — consumer 挂错
+        /// transport → 黑屏，见 signaling.rs 注释）。`.last()` = legacy 单槽回退。
+        pub recv_transports: Vec<WebRtcTransport>,
         pub producers: Vec<Producer>,
         pub consumers: Vec<Consumer>,
         /// H1 (SFU data 域): SCTP DataChannel producers/consumers（mediasoup 原生 data 域）。
         pub data_producers: Vec<DataProducer>,
         pub data_consumers: Vec<DataConsumer>,
+        /// C1: producer_id → transport_id 绑定（produce 时记录；bind 断言/诊断访问器）。
+        pub producer_transports: std::collections::HashMap<String, String>,
+        /// C1: data_producer_id → transport_id 绑定。
+        pub data_producer_transports: std::collections::HashMap<String, String>,
+    }
+
+    impl SfuPeer {
+        /// 按 transport_id 定位 send transport；None = 最近创建（legacy 单槽语义，
+        /// 单 transport 客户端行为不变）。
+        fn send_transport(&self, transport_id: Option<&str>) -> Option<&WebRtcTransport> {
+            match transport_id {
+                Some(id) => self.send_transports.iter().find(|t| t.id().to_string() == id),
+                None => self.send_transports.last(),
+            }
+        }
+
+        /// 按 transport_id 定位 recv transport；None = 最近创建（legacy 单槽语义）。
+        fn recv_transport(&self, transport_id: Option<&str>) -> Option<&WebRtcTransport> {
+            match transport_id {
+                Some(id) => self.recv_transports.iter().find(|t| t.id().to_string() == id),
+                None => self.recv_transports.last(),
+            }
+        }
     }
     /// Per-room SFU state: one Router, all connected peers.
     pub struct SfuRoom {
@@ -345,21 +373,24 @@ mod imp {
             if let Some(room) = self.rooms.get_mut(room_id) {
                 let mut peer = room.peers.entry(peer_id.to_string()).or_insert_with(|| {
                     SfuPeer {
-                        send_transport: None,
-                        recv_transport: None,
+                        send_transports: Vec::new(),
+                        recv_transports: Vec::new(),
                         producers: Vec::new(),
                         consumers: Vec::new(),
                         data_producers: Vec::new(),
                         data_consumers: Vec::new(),
+                        producer_transports: std::collections::HashMap::new(),
+                        data_producer_transports: std::collections::HashMap::new(),
                     }
                 });
 
                 match direction {
                     "send" => {
-                        peer.send_transport = Some(transport);
+                        // C1: 追加进注册表（不覆盖 — 并发子进程各自 transport 并存）
+                        peer.send_transports.push(transport);
                     }
                     "recv" => {
-                        peer.recv_transport = Some(transport);
+                        peer.recv_transports.push(transport);
                     }
                     _ => return Err(format!("Invalid direction: {direction}")),
                 }
@@ -401,12 +432,14 @@ mod imp {
             existed
         }
         /// Create a producer for a peer on its send transport.
+        /// C1: transport_id 指名绑定 transport；None = legacy 单槽回退（最近创建）。
         pub async fn create_producer(
             &self,
             room_id: &str,
             peer_id: &str,
             kind: &protocol::MediaKind,
             rtp_parameters_json: serde_json::Value,
+            transport_id: Option<&str>,
         ) -> Result<ProduceResult, String> {
             // Convert JSON RTP parameters to mediasoup type
             let rtp_parameters: RtpParameters = serde_json::from_value(rtp_parameters_json)
@@ -422,8 +455,8 @@ mod imp {
             let mut peer = room.peers.get_mut(peer_id)
                 .ok_or_else(|| format!("Peer {} not found in room {}", peer_id, room_id))?;
 
-            let transport = peer.send_transport.as_ref()
-                .ok_or_else(|| format!("No send transport for peer {}", peer_id))?;
+            let transport = peer.send_transport(transport_id)
+                .ok_or_else(|| format!("No send transport for peer {} (transport_id={transport_id:?})", peer_id))?;
 
             // ponytail: construct ProducerOptions; let compiler validate the exact constructor
             let producer_options = ProducerOptions::new(ms_kind, rtp_parameters);
@@ -455,8 +488,10 @@ mod imp {
                 }
             }
 
+            // C1: 记录 producer→transport 绑定（bind 断言/诊断）— 先取 id 结束 transport 借用。
+            let bound_transport_id = transport.id().to_string();
             peer.producers.push(producer);
-
+            peer.producer_transports.insert(producer_id.clone(), bound_transport_id);
             Ok(ProduceResult {
                 producer_id,
                 kind: kind.clone(),
@@ -465,12 +500,14 @@ mod imp {
 
         /// Create a consumer for a peer on its recv transport,
         /// subscribing to an existing producer in the room.
+        /// C1: transport_id 指名绑定 recv transport；None = legacy 单槽回退。
         pub async fn create_consumer(
             &self,
             room_id: &str,
             peer_id: &str,
             producer_id: &str,
             rtp_capabilities_json: serde_json::Value,
+            transport_id: Option<&str>,
         ) -> Result<ConsumeResult, String> {
             // Convert JSON RTP capabilities to mediasoup type
             let rtp_capabilities: RtpCapabilities = serde_json::from_value(rtp_capabilities_json)
@@ -497,8 +534,8 @@ mod imp {
                 .ok_or_else(|| format!("Room {} not found", room_id))?;
             let mut peer = room.peers.get_mut(peer_id)
                 .ok_or_else(|| format!("Peer {} not found in room {}", peer_id, room_id))?;
-            let transport = peer.recv_transport.as_ref()
-                .ok_or_else(|| format!("No recv transport for peer {}", peer_id))?;
+            let transport = peer.recv_transport(transport_id)
+                .ok_or_else(|| format!("No recv transport for peer {} (transport_id={transport_id:?})", peer_id))?;
 
             let consumer_options = ConsumerOptions::new(producer_id_ms, rtp_capabilities);
             let consumer = transport.consume(consumer_options).await
@@ -587,6 +624,7 @@ mod imp {
             label: &str,
             protocol: &str,
             sctp_stream_parameters: Option<protocol::SctpStreamParameters>,
+            transport_id: Option<&str>,
         ) -> Result<DataProduceResult, String> {
             let sctp_params = sctp_stream_parameters
                 .ok_or_else(|| "sctp_stream_parameters required for SCTP data producer".to_string())?;
@@ -601,8 +639,8 @@ mod imp {
                 .ok_or_else(|| format!("Room {} not found for produce_data", room_id))?;
             let mut peer = room.peers.get_mut(peer_id)
                 .ok_or_else(|| format!("Peer {} not found in room {}", peer_id, room_id))?;
-            let transport = peer.send_transport.as_ref()
-                .ok_or_else(|| format!("No send transport for peer {}", peer_id))?;
+            let transport = peer.send_transport(transport_id)
+                .ok_or_else(|| format!("No send transport for peer {} (transport_id={transport_id:?})", peer_id))?;
 
             let mut options = DataProducerOptions::new_sctp(ms_sctp);
             options.label = label.to_string();
@@ -615,8 +653,10 @@ mod imp {
                 "DataProducer {} (label={}) created for peer {} in room {}",
                 data_producer_id, label, peer_id, room_id
             );
+            // C1: 记录 data producer→transport 绑定（bind 断言/诊断）— 先取 id 结束 transport 借用。
+            let bound_transport_id = transport.id().to_string();
             peer.data_producers.push(producer);
-
+            peer.data_producer_transports.insert(data_producer_id.clone(), bound_transport_id);
             Ok(DataProduceResult { data_producer_id })
         }
 
@@ -628,6 +668,7 @@ mod imp {
             room_id: &str,
             peer_id: &str,
             data_producer_id: &str,
+            transport_id: Option<&str>,
         ) -> Result<DataConsumeResult, String> {
             // Find the data producer in the room (read-lock first, then write-lock insert)
             // ponytail: read-lock first to get producer info, then write-lock for consumer insert
@@ -649,8 +690,8 @@ mod imp {
                 .ok_or_else(|| format!("Room {} not found", room_id))?;
             let mut peer = room.peers.get_mut(peer_id)
                 .ok_or_else(|| format!("Peer {} not found in room {}", peer_id, room_id))?;
-            let transport = peer.recv_transport.as_ref()
-                .ok_or_else(|| format!("No recv transport for peer {}", peer_id))?;
+            let transport = peer.recv_transport(transport_id)
+                .ok_or_else(|| format!("No recv transport for peer {} (transport_id={transport_id:?})", peer_id))?;
 
             let consumer_options = DataConsumerOptions::new_sctp(producer_id_ms);
             let consumer = transport.consume_data(consumer_options).await
@@ -713,13 +754,12 @@ mod imp {
             let peer = room.peers.get_mut(peer_id)
                 .ok_or_else(|| format!("Peer {peer_id} not found in room {room_id}"))?;
 
-            // Find the transport by ID in send or recv transport
-            let transport = peer.send_transport.as_ref()
-                .filter(|t| t.id().to_string() == transport_id)
-                .or_else(|| {
-                    peer.recv_transport.as_ref()
-                        .filter(|t| t.id().to_string() == transport_id)
-                })
+            // C1: 在 send/recv 注册表中按 id 查找（旧单槽: 后建覆盖先建 → 先建 connect 失败）
+            let transport = peer
+                .send_transports
+                .iter()
+                .chain(peer.recv_transports.iter())
+                .find(|t| t.id().to_string() == transport_id)
                 .ok_or_else(|| {
                     format!("Transport {transport_id} not found for peer {peer_id}")
                 })?;
@@ -739,6 +779,24 @@ mod imp {
                 "SFU: transport {transport_id} connected for peer {peer_id} in room {room_id}"
             );
             Ok(())
+        }
+
+        /// C1: producer → transport 绑定访问器（bind 断言/诊断；produce 时记录）。
+        pub fn producer_transport_id(&self, producer_id: &str) -> Option<String> {
+            self.rooms.iter().find_map(|room| {
+                room.peers.iter().find_map(|peer| {
+                    peer.producer_transports.get(producer_id).cloned()
+                })
+            })
+        }
+
+        /// C1: data producer → transport 绑定访问器（bind 断言/诊断）。
+        pub fn data_producer_transport_id(&self, data_producer_id: &str) -> Option<String> {
+            self.rooms.iter().find_map(|room| {
+                room.peers.iter().find_map(|peer| {
+                    peer.data_producer_transports.get(data_producer_id).cloned()
+                })
+            })
         }
 
         /// List all producers in a room. Returns (producer_id, kind, peer_id) tuples.
@@ -911,8 +969,8 @@ mod tests {
         let room = sfu.rooms.get("room-sctp").expect("room");
         let peer = room.peers.get("peer-a").expect("peer");
         let dump = peer
-            .send_transport
-            .as_ref()
+            .send_transports
+            .last()
             .expect("send transport")
             .dump()
             .await
@@ -1094,6 +1152,7 @@ mod tests {
                     max_packet_life_time: None,
                     max_retransmits: None,
                 }),
+                None,
             )
             .await;
         match result {
@@ -1116,10 +1175,125 @@ mod tests {
             .await
             .expect("transport");
         let err = sfu
-            .create_data_producer("room-dp2", "peer-a", "control", "mediaservo.control", None)
+            .create_data_producer("room-dp2", "peer-a", "control", "mediaservo.control", None, None)
             .await
             .expect_err("缺 sctp_stream_parameters 必须报错");
         assert!(err.contains("sctp_stream_parameters"), "错误信息: {err}");
+    }
+
+    // ── C1: per-peer transport 注册表（D-H14 顺序无关 — host 子进程并发建 transport）──
+
+    /// C1 关键回归: 并发 CreateWebRtcTransport(send)（boot storm / 并行 crash-recovery）
+    /// 后，Produce 必须绑定到 transport_id 命名的 transport，而非"最近创建"（旧单槽
+    /// 覆盖 → producer 挂错 transport → 静默流丢失）。
+    #[tokio::test]
+    async fn transport_registry_binds_produce_to_named_transport() {
+        let sfu = SfuManager::new_with_port(random_udp_port()).await.expect("sfu");
+        let t1 = sfu
+            .create_webrtc_transport("room-c1", "host", "send")
+            .await
+            .expect("t1")
+            .transport_id;
+        let t2 = sfu
+            .create_webrtc_transport("room-c1", "host", "send")
+            .await
+            .expect("t2")
+            .transport_id;
+        let t3 = sfu
+            .create_webrtc_transport("room-c1", "host", "send")
+            .await
+            .expect("t3")
+            .transport_id;
+        // 三个 send transport 并存（旧实现: t3 覆盖 t1/t2 单槽）
+        let rtp = serde_json::json!({"mid": "0", "codecs": [{"mimeType": "video/VP8", "payloadType": 100, "clockRate": 90000}], "headerExtensions": [], "encodings": [{"ssrc": 12345}], "rtcp": {"reducedSize": true}});
+        let p1 = sfu
+            .create_producer("room-c1", "host", &protocol::MediaKind::Video, rtp.clone(), Some(&t1))
+            .await
+            .expect("p1");
+        let p2 = sfu
+            .create_producer("room-c1", "host", &protocol::MediaKind::Video, rtp.clone(), Some(&t2))
+            .await
+            .expect("p2");
+        assert_eq!(
+            sfu.producer_transport_id(&p1.producer_id).as_deref(),
+            Some(t1.as_str()),
+            "P1 必须绑定到 t1（非最近创建的 t3）"
+        );
+        assert_eq!(
+            sfu.producer_transport_id(&p2.producer_id).as_deref(),
+            Some(t2.as_str()),
+            "P2 必须绑定到 t2（非最近创建的 t3）"
+        );
+        // legacy 客户端回退: 无 transport_id → 最近创建（单槽语义保持）
+        let p3 = sfu
+            .create_producer("room-c1", "host", &protocol::MediaKind::Video, rtp, None)
+            .await
+            .expect("p3");
+        assert_eq!(
+            sfu.producer_transport_id(&p3.producer_id).as_deref(),
+            Some(t3.as_str()),
+            "legacy（无 transport_id）必须回退最近创建 transport"
+        );
+    }
+
+    /// C1: data producer 同语义 — 绑定 transport_id 命名的 send transport；
+    /// connect_transport 在注册表中按 id 查找（旧单槽: 先建 transport 被覆盖后无法连接）。
+    #[tokio::test]
+    async fn transport_registry_binds_data_producer_and_connects_by_id() {
+        let sfu = SfuManager::new_with_port(random_udp_port()).await.expect("sfu");
+        let t1 = sfu
+            .create_webrtc_transport("room-c1d", "host", "send")
+            .await
+            .expect("t1")
+            .transport_id;
+        sfu.create_webrtc_transport("room-c1d", "host", "send")
+            .await
+            .expect("t2");
+        let dp = sfu
+            .create_data_producer(
+                "room-c1d",
+                "host",
+                "control",
+                "mediaservo.control",
+                Some(protocol::SctpStreamParameters {
+                    stream_id: 1,
+                    ordered: true,
+                    max_packet_life_time: None,
+                    max_retransmits: None,
+                }),
+                Some(&t1),
+            )
+            .await
+            .expect("dp");
+        assert_eq!(
+            sfu.data_producer_transport_id(&dp.data_producer_id).as_deref(),
+            Some(t1.as_str()),
+            "DataProducer 必须绑定到 t1（非最近创建的 t2）"
+        );
+        // connect: t1 在 t2 创建后仍可按 id 找到（旧单槽: t1 被覆盖 → not found）
+        let dtls = protocol::DtlsParameters {
+            fingerprints: vec![protocol::Fingerprint {
+                algorithm: "sha-256".into(),
+                value: "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99".into(),
+            }],
+            role: "client".into(),
+        };
+        // 命中注册表（不报 not found）；mediasoup 侧成功/失败均证明查找路径正确
+        match sfu.connect_transport("room-c1d", "host", &t1, dtls).await {
+            Ok(()) => {}
+            Err(e) => assert!(!e.contains("not found"), "t1 必须在注册表中找到: {e}"),
+        }
+        // 未知 id → 明确报错（注册表查找路径的反向断言）
+        let err = sfu
+            .connect_transport(
+                "room-c1d",
+                "host",
+                "ghost-transport",
+                protocol::DtlsParameters { fingerprints: vec![], role: "client".into() },
+            )
+            .await
+            .expect_err("未知 transport_id 必须报错");
+        assert!(err.contains("not found"), "错误信息: {err}");
     }
 }}
 
@@ -1155,6 +1329,7 @@ mod imp {
             _peer_id: &str,
             _kind: &protocol::MediaKind,
             _rtp_parameters_json: serde_json::Value,
+            _transport_id: Option<&str>,
         ) -> Result<ProduceResult, String> {
             Err("sfu-mediasoup feature not enabled".into())
         }
@@ -1166,6 +1341,7 @@ mod imp {
             _peer_id: &str,
             _producer_id: &str,
             _rtp_capabilities_json: serde_json::Value,
+            _transport_id: Option<&str>,
         ) -> Result<ConsumeResult, String> {
             Err("sfu-mediasoup feature not enabled".into())
         }
@@ -1178,6 +1354,7 @@ mod imp {
             _label: &str,
             _protocol: &str,
             _sctp_stream_parameters: Option<protocol::SctpStreamParameters>,
+            _transport_id: Option<&str>,
         ) -> Result<DataProduceResult, String> {
             Err("sfu-mediasoup feature not enabled".into())
         }
@@ -1188,6 +1365,7 @@ mod imp {
             _room_id: &str,
             _peer_id: &str,
             _data_producer_id: &str,
+            _transport_id: Option<&str>,
         ) -> Result<DataConsumeResult, String> {
             Err("sfu-mediasoup feature not enabled".into())
         }
