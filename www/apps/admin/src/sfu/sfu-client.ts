@@ -339,6 +339,14 @@ export class SfuConsumerClient {
         console.log('SfuClient: error', msg.code, msg.message);
       } else if (msg.type === "sdp") {
         console.log("SfuClient: SDP received");
+        // P2P 房间广播过滤: vehicle 房间是 P2P 类型, SDP/ICE 全房间广播 —
+        // host 侧（controller/emergency/vision）的协商 SDP 会到达浏览器。
+        // SFU 模式（transportId 已建）的 consume 是消息驱动, 不需要任何 SDP 消息 —
+        // 收到即无关广播, 忽略（否则把别人的 offer 当自己的协商 → 状态错乱）。
+        if (this.transportId) {
+          console.log("SfuClient: SDP ignored (SFU mode, room broadcast)");
+          return;
+        }
         if (!this.pc) { this.pendingSdp = msg; return; }
         // P2P mode: handle host's SDP offer → create answer
         try {
