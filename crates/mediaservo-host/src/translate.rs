@@ -378,6 +378,11 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
         // C4: recorder [record] enabled=false 时按设计 exit 0 — 在 oxmgr
         // restart_policy=always 下会重启风暴; 改 on_failure（崩溃重启，干净退出不重启）。
         let policy = if name == "host-recorder" { "on_failure" } else { "always" };
+        // H2: host-audio 必须带 --room audio-<room>（[signaling] room 或缺省 vehicle）。
+        if name == "host-audio" {
+            let room = signaling_room(cfg)?.unwrap_or_else(|| "vehicle".to_string());
+            cmd.push_str(&format!(" --room audio-{room}"));
+        }
         push_app(&mut out, name, &cmd, policy);
     }
     for cam in &cameras {
@@ -646,6 +651,31 @@ camera = "cam0"
             "未配置 room 时不得 emit --room: {agent_line2}"
         );
         assert_eq!(signaling_room(CFG_V0).unwrap(), None);
+    }
+
+    /// H2: host-audio 必须带 --room audio-<vehicle>（音频房间约定）。
+    /// [signaling] room 配置 → audio-<room>；未配置 → audio-vehicle（gateway 默认）。
+    #[test]
+    fn oxfile_wires_audio_room_to_host_audio() {
+        // 配置了 room → --room audio-<room>
+        let with_room = format!("{CFG_V0}\n[signaling]\nroom = \"ms-deploy-car1\"\n");
+        let ox = to_oxfile(&with_room).expect("to_oxfile");
+        let audio_line = ox.lines()
+            .find(|l| l.contains("command") && l.contains("host-audio"))
+            .expect("host-audio 命令行: {ox}");
+        assert!(
+            audio_line.contains("--room audio-ms-deploy-car1"),
+            "host-audio 应带 --room audio-ms-deploy-car1: {audio_line}"
+        );
+        // 未配置 room → audio-vehicle（gateway 默认 "vehicle"）
+        let ox2 = to_oxfile(CFG_V0).expect("to_oxfile 默认");
+        let audio_line2 = ox2.lines()
+            .find(|l| l.contains("command") && l.contains("host-audio"))
+            .expect("host-audio 命令行: {ox2}");
+        assert!(
+            audio_line2.contains("--room audio-vehicle"),
+            "host-audio 未配置 room 时默认 audio-vehicle: {audio_line2}"
+        );
     }
 
     #[test]
