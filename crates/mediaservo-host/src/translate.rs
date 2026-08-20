@@ -62,6 +62,12 @@ struct SignalingSection {
     /// 整车房间（D3 TODO 关闭 — host-agent --room；缺省 = agent 内置 "vehicle"）。
     #[serde(default)]
     room: Option<String>,
+    /// 远程 MediaServo server WS URL（缺省 agent 内置 ws://127.0.0.1:9800/ws）。
+    #[serde(default)]
+    server_url: Option<String>,
+    /// 信令 PSK（缺省 agent 内置 mediaservo-dev）。
+    #[serde(default)]
+    psk: Option<String>,
 }
 
 /// 网关本地端口（[signaling] local_port；缺省 None → agent 内置 17980）。
@@ -75,6 +81,18 @@ pub fn signaling_local_port(cfg: &str) -> Result<Option<u16>, String> {
 pub fn signaling_room(cfg: &str) -> Result<Option<String>, String> {
     let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
     Ok(cfg.signaling.and_then(|s| s.room))
+}
+
+/// 远程 server URL（[signaling] server_url；缺省 None → host-agent 内置默认）。
+pub fn signaling_server_url(cfg: &str) -> Result<Option<String>, String> {
+    let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
+    Ok(cfg.signaling.and_then(|s| s.server_url))
+}
+
+/// 信令 PSK（[signaling] psk；缺省 None → host-agent 内置默认）。
+pub fn signaling_psk(cfg: &str) -> Result<Option<String>, String> {
+    let cfg: HostConfig = toml::from_str(cfg).map_err(|e| format!("host.toml 解析失败: {e}"))?;
+    Ok(cfg.signaling.and_then(|s| s.psk))
 }
 
 /// 子进程网关 URL（D2）：`ws://127.0.0.1:{port}/ws`，port = [signaling] local_port
@@ -370,6 +388,13 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
             if let Some(room) = signaling_room(cfg)? {
                 cmd.push_str(&format!(" --room {room}"));
             }
+            // 远程 server 配置: [signaling] server_url/psk → --remote/--psk（缺省 agent 内置）
+            if let Some(url) = signaling_server_url(cfg)? {
+                cmd.push_str(&format!(" --remote {url}"));
+            }
+            if let Some(psk) = signaling_psk(cfg)? {
+                cmd.push_str(&format!(" --psk {psk}"));
+            }
             if !config_path.as_os_str().is_empty() {
                 cmd.push_str(&format!(" --config {}", config_path.display()));
                 cmd.push_str(&format!(" --token {}/agent.token", token_dir.display()));
@@ -552,6 +577,19 @@ fn push_app(out: &mut String, name: &str, command: &str, restart_policy: &str) {
 
 #[cfg(test)]
 mod tests {
+    // 部署配置面: [signaling] server_url/psk → host-agent --remote/--psk
+    #[test]
+    fn oxfile_wires_remote_server_and_psk() {
+        let cfg = "[host]\ndevice_id = \"x\"\n[signaling]\nserver_url = \"ws://192.168.2.127:9800/ws\"\npsk = \"prod-psk\"\n[[cameras]]\nid = \"cam0\"\n[[streams]]\nid = \"cam0-stream\"\ncamera = \"cam0\"\n";
+        let ox = to_oxfile(cfg).unwrap();
+        assert!(ox.contains("--remote ws://192.168.2.127:9800/ws"));
+        assert!(ox.contains("--psk prod-psk"));
+        // 未配置 → 不生成（agent 内置默认）
+        let ox2 = to_oxfile("[host]\ndevice_id = \"x\"\n[[cameras]]\nid = \"cam0\"\n[[streams]]\nid = \"cam0-stream\"\ncamera = \"cam0\"\n").unwrap();
+        assert!(!ox2.contains("--remote"));
+        assert!(!ox2.contains("--psk"));
+    }
+
     use super::*;
 
     const CFG_V0: &str = r#"
