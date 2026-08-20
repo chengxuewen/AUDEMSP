@@ -28,7 +28,7 @@ use pkcs8::LineEnding;
 /// `host init` 生成的配置模板（host.toml 初版 schema，A1）。
 const HOST_TOML_TEMPLATE: &str = include_str!("../host.toml.template");
 
-const USAGE: &str = "用法: mediaservo-host <init|start|apply|restart|stop|status|doctor|token|version> [<dir>]（目录为位置参数，默认 .host/）
+const USAGE: &str = "用法: mediaservo-host <init|start|apply|restart|stop|status|doctor|token|monit|ps|logs|version> [<dir>]（目录为位置参数，默认 .host/）
 子命令:
   init [<dir>]       生成实例：host.toml 模板 + signing.pem(0600) + identity.json + 标准令牌集
   start [<dir>]      读 host.toml → 校验 → 翻译 oxfile → oxmgr apply 拉起全部进程
@@ -39,6 +39,9 @@ const USAGE: &str = "用法: mediaservo-host <init|start|apply|restart|stop|stat
   doctor [<dir>]     环境诊断（oxmgr/配置/翻译三检查，退出码=失败数）
   token issue --role R --node N [--topic T] --out O [<dir>]   签发链路令牌
   token --all [<dir>]  签发标准令牌集（相机/流/recorder/agent）
+  monit               打开 oxmgr TUI（进程监控/日志/重启——需 oxmgr 在 PATH）
+  ps                  进程列表（oxmgr list——含 CPU/RAM/uptime 列）
+  logs [<proc>]       oxmgr 日志查看（logs all = 全部进程）
   version            版本信息
 
 示例:
@@ -65,6 +68,10 @@ fn main() {
         "status" => cmd_status(&mut args),
         "doctor" => cmd_doctor(&mut args),
         "token" => cmd_token(&mut args),
+        // oxmgr 代理（方式 D: host 目录内统一入口）— oxmgr 需在 PATH（install 打包于 bin/）
+        "monit" => cmd_oxmgr(&mut args, &["ui"]),
+        "ps" => cmd_oxmgr(&mut args, &["list"]),
+        "logs" => cmd_oxmgr(&mut args, &["logs"]),
         "version" => {
             println!("mediaservo-host {}", env!("CARGO_PKG_VERSION"));
             0
@@ -854,6 +861,27 @@ fn run_oxmgr(args: &[&str]) -> i32 {
         Ok(status) => status.code().unwrap_or(1),
         Err(e) => {
             eprintln!("oxmgr 执行失败: {e} — 请先安装 OxMgr 并加入 PATH（npm install -g oxmgr，见 https://github.com/Vladimir-Urik/OxMgr#install）");
+            1
+        }
+    }
+}
+
+/// 代理 oxmgr 命令（TUI/列表/日志——薄封装，stdio 继承）。
+/// 用法: mediaservo-host <monit|ps|logs [proc]> —— oxmgr 不在 PATH 时报清晰错误。
+fn cmd_oxmgr(args: &mut impl Iterator<Item = String>, fixed: &[&str]) -> i32 {
+    // monit/ps 无额外参数；logs 透传全部参数（进程名 + oxmgr 选项如 --lines/-f）
+    let extra: Vec<String> = if fixed[0] == "logs" {
+        args.collect()
+    } else {
+        Vec::new()
+    };
+    let mut cmd = std::process::Command::new("oxmgr");
+    cmd.args(fixed).args(&extra);
+    match cmd.status() {
+        Ok(st) => st.code().unwrap_or(1),
+        Err(e) => {
+            eprintln!("无法执行 oxmgr: {e}");
+            eprintln!("提示: oxmgr 在 install 打包的 bin/ 下——export PATH=<prefix>/bin:$PATH 后使用（或绝对路径）");
             1
         }
     }
