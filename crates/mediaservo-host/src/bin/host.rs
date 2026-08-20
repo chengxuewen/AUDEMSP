@@ -243,6 +243,9 @@ fn cmd_apply_impl(args: &mut impl Iterator<Item = String>, verb: &str) -> i32 {
     match mediaservo_host::translate::apply_config(&dir) {
         Ok(()) => {
             println!("{verb}: 已应用 {}", dir.join("run").join("oxfile.toml").display());
+            // 日志同步: OxMgr 0.5.0 [apps.logs] override 未接线（upstream）—
+            // 日志在 oxmgr log_dir；把 host 进程日志 symlink 到实例 run/logs/（D-H13 布局）
+            sync_host_logs(&dir);
             0
         }
         Err(e) => {
@@ -885,4 +888,50 @@ fn cmd_oxmgr(args: &mut impl Iterator<Item = String>, fixed: &[&str]) -> i32 {
             1
         }
     }
+}
+
+/// 把 oxmgr 日志目录中本实例的 host-* 进程日志 symlink 到 <dir>/run/logs/（D-H13 布局）。
+/// OxMgr 0.5.0 的 [apps.logs] 路径 override 未接线（daemon 忽略）——日志实际在
+/// oxmgr log_dir（默认 ~/.local/share/oxmgr/logs）；symlink 让实例目录可读、轮转自动反映。
+fn sync_host_logs(dir: &std::path::Path) {
+    let log_dir = dirs_log_dir();
+    let run_logs = dir.join("run").join("logs");
+    let _ = std::fs::create_dir_all(&run_logs);
+    let Ok(entries) = std::fs::read_dir(&log_dir) else {
+        return;
+    };
+    let mut n = 0;
+    for e in entries.flatten() {
+        let name = e.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !name.starts_with("host-") {
+            continue;
+        }
+        let link = run_logs.join(name);
+        // 已存在且指向同一文件 → 跳过；否则重建（轮转/改名后更新）
+        if let Ok(md) = std::fs::symlink_metadata(&link) {
+            if md.file_type().is_symlink()
+                && std::fs::read_link(&link).map(|p| p == e.path()).unwrap_or(false)
+            {
+                continue;
+            }
+            let _ = std::fs::remove_file(&link);
+        }
+        if std::os::unix::fs::symlink(&e.path(), &link).is_ok() {
+            n += 1;
+        }
+    }
+    if n > 0 {
+        println!("日志同步: {n} 个进程日志 → {}", run_logs.display());
+    }
+}
+
+/// oxmgr 日志目录（默认 ~/.local/share/oxmgr/logs；OXMGR_DATA_DIR 自定义时按 env）
+fn dirs_log_dir() -> std::path::PathBuf {
+    if let Ok(d) = std::env::var("OXMGR_DATA_DIR") {
+        return std::path::PathBuf::from(d).join("logs");
+    }
+    std::env::var("HOME")
+        .map(|h| std::path::PathBuf::from(h).join(".local/share/oxmgr/logs"))
+        .unwrap_or_else(|_| std::path::PathBuf::from(".oxmgr/logs"))
 }
