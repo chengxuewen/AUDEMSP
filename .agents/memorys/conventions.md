@@ -447,3 +447,21 @@ conda 交叉编译器（会 PIT-85 复发）。
 **检查**: `grep -n "is_audio_room" crates/mediaservo-server/src/sfu.rs`（前缀判定单测）; `grep -n "audio rooms allow audio producers only" crates/mediaservo-server/src/signaling.rs`; `grep -n "audio-" crates/mediaservo-host/src/gateway.rs`（rewrite 直通）。
 
 **来源**: H2 实现实证 (2026-08-19), PIT-105 阻塞说明见 pitfalls.md
+
+## C30: libwebrtc 内嵌 FFmpeg 符号抢先满足 — host 二进制内 FFmpeg 调用必须进程内验证 (2026-08-20)
+
+**约束**: ① host 树任何二进制若同时链接 mediaservo-webrtc（backend-webrtc-sys →
+livekit libwebrtc.a）与 mediaservo-deck/codec 的 ffmpeg-the-third（动态
+libavformat），**禁止假定 FFmpeg 调用走动态库**——libwebrtc.a 内嵌 demuxer-only
+静态 FFmpeg（av_guess_format 等符号），最终链接时抢先满足 ffmpeg-the-third 的
+UNDEF（PIT-107 实证），muxer 类调用（如 mp4 落盘）必失败。② 涉及 FFmpeg 的
+新代码路径验证必须**在目标进程内**做（gdb 断 av_guess_format 看符号落点 / 
+`ld --trace-symbol=` 看定义来源），禁止用"独立探针/另一二进制能跑"推断。③
+修复方向：webrtc-sys build.rs 对 libwebrtc.a 的 av* 符号做 objcopy 前缀化或
+控制链接顺序（静态库晚于动态 -l）。
+
+**检查**: `gdb -batch -ex 'break av_guess_format' -ex run --args <host-bin> ...` →
+符号地址在 PIE 主二进制（0x5555...）= 静态副本抢先；`nm <libwebrtc.a> | grep
+ff_.*_muxer` 应为 0（demuxer-only 实证）。
+
+**来源**: PIT-107 (2026-08-20 整支审查回归轮, recorder_e2e 2/4 既有失败根因)

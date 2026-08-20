@@ -1092,3 +1092,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: H2 范围内不可修（vendor 域）——音频 RTP 媒体面证据（byte_count>0）挂起；H2 交付完整接线（信令/transport/produce/consume/统计/策略）+ 文档化阻塞；e2e 断言 wiring 证据（kind=Audio + 统计可达）。修复优先级: 对照 livekit-go 官方 publish 流程写 C++ 最小复现（C11），或换 webrtc-rs TrackLocalStaticSample 音频路径（需先验证 webrtc-rs ICE vs mediasoup）。
 - **验证**: e2e_audio_conf 2/2（3 方 produce/consume + 4031 负例）+ host_audio_e2e 2/2（进程全流程+优雅退出）；`docker logs` PROD-TRACE 计数 0 为 PIT-105 复发判据。
 - **教训**: "FFI 存在 + 源侧交付通" ≠ "RTP 出包"——音频发送链有五段（源→轨道→sink 适配器→媒体通道→编码器→RTP），逐段实证才能定位；与 PIT-104 同属 vendor 集成盲区，接入新 FFI 能力前先做端到端最小验证（本轮的 FFI 探针 audio_source_sink_probe 即为该模式）。
+
+## PIT-107: host-recorder MP4 mux 失败 — libwebrtc 内嵌 demuxer-only 静态 FFmpeg 抢先满足 ffmpeg-the-third 符号 (2026-08-20)
+- **症状**: host-recorder 落盘失败 `[AVFormatContext] Unable to choose an output format for '.../cam0.mp4'` + `recorder worker failed: io: open output: Invalid argument`；recorder_e2e 2/4（坏参/disabled 绿，两真进程闭环红）；deck closed_loop/独立 deckrec/C 探针全部正常。
+- **根因**: livekit 预构建 `libwebrtc.a` 内嵌 demuxer-only 静态 FFmpeg（ff_*_demuxer 有、muxer 零）；host 二进制最终链接时 deck 的 ffmpeg-the-third `av_guess_format` UNDEF 被 webrtc-sys rlib 内嵌 `format.o`（静态副本）抢先满足（`ld --trace-symbol=av_guess_format` 实证 definition 在 libwebrtc_sys rlib）→ avformat_alloc_output_context2 走静态副本（无 mp4 muxer）→ guess 失败。gdb 断点确认 av_guess_format 落主二进制 PIE 地址。
+- **解法**: 归属 webrtc-sys 构建层——对 libwebrtc.a 的 av* 符号 `objcopy --prefix-symbols` 或控制链接顺序（动态 -lavformat 先于静态 webrtc）；修复后全量回归 webrtc/host。
+- **验证**: `gdb -batch -ex 'break av_guess_format' -ex run --args host-recorder ...` → 符号落主二进制 = 复发判据；`ld --trace-symbol=av_guess_format` 输出 definition 在 webrtc_sys rlib = 根因判据。
+- **教训**: 预编译静态库（尤其 libwebrtc 这种巨型 blob）可能内嵌同名 FFmpeg/OpenSSL 等符号 — 与新 FFmpeg 绑定同进程共存 = 符号抢先满足竞态（与 C21 双 OpenSSL 冲突同族）；"本机某进程/某二进制能用" ≠ "目标二进制能用"，须在目标进程内验证（gdb/ld trace 二件套）。

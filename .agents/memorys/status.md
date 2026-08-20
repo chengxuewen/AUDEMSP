@@ -1,6 +1,6 @@
 # MediaServo Status
 
-**生成**: 2026-08-19| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP + H1 data 域 + H2 音频会议 || 377 commits | 22 skills | mediasoup 0.24.1 | PIT-105 | 分支: main (field Push/Pull 协商全通 + SFU 多 IP) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-20| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP + H1 data 域 + H2 音频会议 + 整支审查 C1/I1/I2/I3 || 379 commits | 22 skills | mediasoup 0.24.1 | PIT-107 | 分支: main (C1 transport_id 注册表 + I1 room 接线 + I2 dev 守卫 + I3 StatusReport 门) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | mediaservo-common | 82 | — | +SfuStatsRequest/SfuStats (H2) |
 | mediaservo-media | 107 | — | |
@@ -468,3 +468,26 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **e2e**: e2e_sfu_data_domain 4 段（车端 produce_data 放行 + 广播到达 + 授权 consume_data 放行 +
   账号 produce_data 4031）; Docker 全量 134 绿; 原生 75 绿; clippy 0
 - **遗留**: 消息内容端到端接收证明阻塞于 PIT-104（upstream）；host 侧 SFU-DC 接线归 H2+
+
+
+## 整支审查 C1+I1+I2+I3 修复波 (2026-08-20, 67eec0e + 1a11942)
+
+- **C1 (CRITICAL, D-H14 顺序无关)**: Produce/Consume/CreateDataProducer/ConsumeData
+  加可选 transport_id（skip_serializing_if, 双向兼容）; SfuPeer 单槽 →
+  send/recv_transports 注册表 + producer→transport 绑定表 + 绑定访问器;
+  produce/consume/data 按 transport_id 指名绑定, None = legacy 最近创建回退;
+  connect_transport 按 id 双注册表查找。客户端绑定链完成: field Push/Pull +
+  host-audio + host-legacy 发 Some(transport_id)。TDD: 2 新注册表测试 +
+  4 wire 兼容测试。Docker server 95 lib + 6 e2e_sfu 全绿; field push_e2e
+  6/6 live 走新路径。
+- **I1**: host.toml [signaling] room → oxfile host-agent --room → GatewayConfig.room
+  （D3 TODO 关闭; 缺省 vehicle 保持; translate 测试 14/14）。
+- **I2**: accounts.docker.yaml dev 占位哈希（admin123/dispatch123/operator123）
+  启动 fail-fast（DEVELOPMENT CREDENTIALS DETECTED）; MEDIASERVO_ALLOW_DEV_CREDENTIALS=1
+  豁免（dev compose ×2 已设）; 2 新单测。
+- **I3**: StatusReport 仅 Device 会话或 Host 角色可上报; 拒绝 4031 + 审计; 2 新单测。
+- **streamer_e2e**: admin_rooms() 适配 H3 auth 强制 JWT（dev 账号登录取 token）。
+- **recorder_e2e 2/4 既有失败（非本波）**: PIT-107 — livekit libwebrtc.a 内嵌
+  demuxer-only 静态 FFmpeg 抢先满足 ffmpeg-the-third 符号 → mp4 mux 失败;
+  clean HEAD stash 实证; C30 规则沉淀。修复 = webrtc-sys 符号前缀化/链接序（独立任务）。
+- **I4（macOS client e2e 9/9）**: 环境阻塞（Linux 宿主），记录欠账，macOS 回填。
