@@ -53,9 +53,13 @@ fn main() {
     let mut args = std::env::args();
     let _prog = args.next();
     let Some(cmd) = args.next() else {
-        eprintln!("{USAGE}");
-        std::process::exit(2);
+        println!("{USAGE}");
+        return;
     };
+    if cmd == "-h" || cmd == "--help" {
+        println!("{USAGE}");
+        return;
+    }
     let code = match cmd.as_str() {
         "init" => cmd_init(&mut args),
         "start" => cmd_apply_impl(&mut args, "start"),

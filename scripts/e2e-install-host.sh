@@ -47,20 +47,31 @@ m600 "$TMP/etc/link/signing.pem" && echo "OK: signing.pem 0600" || { echo "FAIL:
 m600 "$TMP/identity.json" && echo "OK: identity.json 0600" || { echo "FAIL: identity.json 权限"; FAIL=1; }
 echo "OK: D-H13 布局完整（etc/ + run/logs + recordings + identity.json）"
 
-# ── 3. file/ldd 检查 ───────────────────────────────────────
+# ── 3. <prefix>/host 快捷方式 ───────────────────────────────
+if [ -L "$TMP/host" ] || [ -x "$TMP/host" ]; then
+    echo "OK: <prefix>/host 快捷方式存在"
+    out=$("$TMP/host" version 2>&1) || { echo "FAIL: <prefix>/host version 失败: $out"; FAIL=1; }
+    echo "$out" | grep -q "mediaservo-host" || { echo "FAIL: <prefix>/host version 输出异常: $out"; FAIL=1; }
+    echo "OK: <prefix>/host version 正常"
+else
+    echo "FAIL: <prefix>/host 快捷方式缺失"; FAIL=1
+fi
+
+
+# ── 4. file/ldd 检查 ───────────────────────────────────────
 file "$BIN/host" | grep -q ELF || { echo "FAIL: file 非 ELF"; FAIL=1; }
 if ldd "$BIN/host" 2>/dev/null | grep -q "not found"; then
     echo "FAIL: ldd 有 not found"; FAIL=1
 fi
 echo "OK: file/ldd 检查通过"
 
-# ── 4. host doctor（PATH 含 bin → 打包版 oxmgr 生效）────────
+# ── 5. host doctor（PATH 含 bin → 打包版 oxmgr 生效）────────
 note "host doctor"
 out=$(env PATH="$BIN:$PATH" "$BIN/host" doctor "$TMP" 2>&1 || true)
 echo "$out"
 echo "$out" | grep -q "全部通过" || { echo "FAIL: doctor 未全过"; FAIL=1; }
 
-# ── 5. 幂等重装: identity/signing/host.toml 哈希不变 ───────
+# ── 6. 幂等重装: identity/signing/host.toml 哈希不变 ───────
 note "re-install idempotency"
 SUM_BEFORE=$(sha256sum "$TMP/etc/link/signing.pem" "$TMP/identity.json" "$TMP/etc/host.toml")
 python3 scripts/mediaservo_cli.py install host --prefix "$TMP" >/dev/null
@@ -71,7 +82,7 @@ else
     echo "FAIL: 重装破坏凭据（哈希变化）"; FAIL=1
 fi
 
-# ── 6. start/status/stop 冒烟（C25: 先清 iceoryx2 残留）────
+# ── 7. start/status/stop 冒烟（C25: 先清 iceoryx2 残留）────
 note "start/status/stop roundtrip"
 rm -rf /tmp/iceoryx2 /dev/shm/iox2_*
 env PATH="$BIN:$PATH" "$BIN/host" start "$TMP" >/dev/null 2>&1 || { echo "FAIL: host start"; FAIL=1; }

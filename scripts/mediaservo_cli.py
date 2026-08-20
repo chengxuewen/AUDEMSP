@@ -164,6 +164,17 @@ def _cmd_install_host(prefix: str, release: bool = False) -> None:
     # host init: 生成 etc/ + identity.json + 令牌（幂等——已存在跳过, 重装保留凭据）
     _run_or_exit([str(bin_dir / _exe_name("host")), "init", str(Path(prefix))])
 
+    # 创建 <prefix>/host → bin/host 快捷方式（前缀根可直接 ./host 使用）
+    host_link = Path(prefix) / "host"
+    if host_link.exists():
+        host_link.unlink()
+    try:
+        host_link.symlink_to("bin/host")  # 相对路径，前缀可搬迁
+        print(f"  已创建符号链接 {host_link} → bin/host")
+    except OSError:
+        shutil.copy2(bin_dir / "host", host_link)
+        print(f"  已复制 host 到 {host_link}（符号链接失败，回退到拷贝）")
+
     for d in ("run/logs", "recordings"):
         (Path(prefix) / d).mkdir(parents=True, exist_ok=True)
 
