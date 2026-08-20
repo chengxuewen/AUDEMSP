@@ -482,3 +482,14 @@ ff_.*_muxer` 应为 0（demuxer-only 实证）。
 **检查**: `grep -c "C31" .agents/memorys/conventions.md` = 1；派发前自问：这任务需要独立上下文/审查吗？不需要 → 直接做。
 
 **来源**: 2026-08-20 长会话实证（90 commits 后上下文 277K、派发反复失败/超慢；小任务直做秒级完成）
+
+## C32: host 实例隔离三原则 — OXMGR_DATA_DIR/端口/房间（2026-08-20）
+
+**约束**: host 多实例共存必须三隔离（PIT-113 多 daemon 分裂教训）：
+① **OXMGR_DATA_DIR=<dir>/run/oxmgr**（host start/apply/stop/restart/service 统一注入——daemon 状态/日志/轮转在实例内，多 PATH/多实例无竞争）；② **[signaling] local_port**（host-agent 网关端口，默认 17980——同端口启动被检测拒绝）；③ **[signaling] room**（server 房间——同房间多 Host 语义混乱）。
+
+**竞争防护**: start 前端口探测（被占 → 交互 y 接管[停旧启新]/退出；非交互自动退出）；开机自启**全局唯一**（startup on 检测其他实例 unit → 交互接管——相机等共享资源防竞争）。
+
+**检查**: `grep -rn "OXMGR_DATA_DIR" crates/mediaservo-host/src/` — 应见 start/stop/apply/restart/service 注入；`host startup on` 二次实例应被拒。
+
+**来源**: 2026-08-20 多实例部署实操（PIT-111/112/113/115 系列）

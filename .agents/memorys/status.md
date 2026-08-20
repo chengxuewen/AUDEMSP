@@ -499,3 +499,11 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **安全**：PIT-103 admin 零认证修复（JWT 中间件）+ 登录页/路由守卫（用户驱动）+ 生产 compose 移除 dev 豁免（PIT-110）+ G2 设备认证（devices.yaml 配发链）
 - **工具链**：C31 任务分级（小任务父会话直做——277K 上下文派发实证）；host CLI 完善（-h 完整帮助、位置参数 + .host/ 默认、模板提为源码文件 include_str!、[signaling] server_url/psk 配置面、mediaservo-host 改名中）
 - **遗留**：macOS client e2e 9/9 回填；PIT-104/105 vendor 域；PIT-107 符号前缀化（独立任务）；mediaservo-host 改名待完成
+
+## host 部署运维体系（用户驱动，2026-08-20）
+
+- **CLI 完善**: mediaservo-host 改名（避 /usr/bin/host）+ -h 完整帮助 + install 双快捷方式 + [signaling] server_url/psk 配置面 + 模板提源码文件（include_str!）+ 智能默认目录（实例根可用）
+- **oxmgr 集成**: monit/ps/logs 代理 + OXMGR_DATA_DIR 实例化（PIT-113 根治）+ namespace mediaservo-host + 日志同步 run/logs（PIT-112 symlink 桥）+ startup 自管 unit（三端/全局唯一/交互接管）
+- **竞争防护**: start 端口检测 + 交互接管；install 自动 stop（host+daemon，PIT-115）；SystemInFlux 复发防护（start 清 SHM + streamer 订阅重试）
+- **web play 修复链**: SDP 广播污染（PIT-114 sfuMode 全程忽略）→ Playwright 实测 1280x720 真实帧（vehicle-live/vehicle-content spec）；画面增强（方块移动+时间戳水印）
+- **遗留**: server 重启后媒体面自愈（PIT-111 长期修复待实现）；macOS/Windows startup 自管 unit；真实终端交互验证（接管路径）

@@ -1134,3 +1134,38 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: 生产 compose 移除豁免 + 挂载 accounts.production.yaml（空模板）；带 dev 账号启动 = fail-fast 拒绝（强制真实账号）
 - **验证**: `grep -c "ALLOW_DEV" docker-compose.yml` = 0；生产启动带 dev 账号 = panic
 - **教训**: 安全豁免 env 必须按环境严格区分——dev 便利逻辑复制到生产 = 漏洞；compose 审查清单含"豁免 env 只应在 dev 文件"
+
+## PIT-111: server 重启后 host 媒体面不自动恢复 — B1 只覆盖信令（2026-08-20）
+- **症状**: server 重启（前端 rebuild 等）后，host streamer 显示 connected=true + bytes_sent 增长（本地统计），但 server 收 0 RTP、vehicle 房间 0 producer → web play 无帧
+- **根因**: B1 信令重连覆盖网关/信令 WS；但 streamer 的媒体 PC（libwebrtc）只在启动时创建——server 重启销毁 mediasoup worker 全部 transport 后，host 侧 PC 未重建 → RTP 发往新 worker 无对应 transport 被丢弃（本地发送计数正常——"假推流"）
+- **解法**: 临时 = `mediaservo-host restart`（重建媒体面）；长期 = streamer 检测信令重连后重建 PC/重新 produce（媒体面自愈——待实现，C5 崩溃恢复哲学的扩展）
+- **验证**: restart 后 server ReceiveRtpPacket>0 + web play 有帧
+- **教训**: 信令重连 ≠ 媒体恢复——双层面都要自愈；"本地 bytes_sent 增长"是假健康信号（对端无 transport）
+
+## PIT-112: OxMgr [apps.logs] 路径 override 未接线 — daemon 忽略（upstream 缺陷）（2026-08-20）
+- **症状**: oxfile 配 `[apps.logs] stdout = "logs/<name>.out.log"` 后日志仍写默认 ~/.local/share/oxmgr/logs/
+- **根因**: OxMgr 0.5.0 oxfile.rs 解析出 stdout_log_override（merge_logs→flatten_logs）但 daemon 端 spawn 进程时忽略该字段（daemon.rs 只有测试用 None）——死配置
+- **解法**: host apply/start 后自动 symlink oxmgr 日志到 <dir>/run/logs/（实例视图）；轮转由 OXMGR_LOG_MAX_SIZE_MB/MAX_FILES/MAX_DAYS（daemon env）控制
+- **验证**: run/logs/host-*.out.log 链接可见 + tail 实时
+- **教训**: 第三方配置字段"解析存在"≠"daemon 生效"——配置落地必须实证（C18/C11 官方行为核实）
+
+## PIT-113: 多 oxmgr daemon 分裂 — 全局数据目录共享 + 二进制路径不同（2026-08-20）
+- **症状**: host restart 报 "process not found"（全部）——进程在跑但 oxmgr 不认；随后进程全部消失
+- **根因**: ~/.local/bin/oxmgr 老 daemon（8月18 起）与 install/bin/oxmgr（start 自动拉起的新 daemon）共用 ~/.local/share/oxmgr 数据目录——state.json 视角分裂（老 daemon 0 进程、新 daemon 管进程）；新 daemon 消亡时带走管理的 host 进程
+- **解法**: OXMGR_DATA_DIR=<dir>/run/oxmgr 实例化——每个实例独立 daemon 状态/日志/轮转；多 PATH/多实例彻底隔离
+- **验证**: run/oxmgr/ 存在 + restart 全量成功 + 单 daemon
+- **教训**: 双二进制同数据目录 = 状态分裂；daemon 类组件数据目录必须实例化或全局唯一
+
+## PIT-114: P2P 房间 SDP 全房间广播污染 web consume 协商（2026-08-20）
+- **症状**: 浏览器 consume 时收到房间广播的 host 侧协商 SDP → setRemoteDescription 状态错乱（stable + m-line 顺序冲突）→ 协商失败无帧
+- **根因**: vehicle 房间为 P2P 类型（Host 创建）→ SDP/ICE 全房间广播（Sdp.target 字段存在但 relay 未按 target 路由）——浏览器把无关 SDP 当自己的协商
+- **解法**: sfu-client sfuMode 标志（startPlay 即置位）——SFU 流程全程忽略 sdp 广播 + 协商前忽略 ICE 广播；**transportId 判断不够**（create 请求发出到 transport_created 的窗口仍污染）
+- **验证**: Playwright 1280x720 readyState=4 真实帧
+- **教训**: 广播协议的消息必须按协商状态过滤（状态机门）；修复要看"整个流程窗口"而非单点
+
+## PIT-115: Text file busy 系列 — 运行中二进制被覆盖失败（2026-08-20）
+- **症状**: install host 报 bin/oxmgr busy、cp mediaservo-host busy——运行中进程占用二进制文件
+- **根因**: ① install 自动 stop 只停 host 进程未停 oxmgr daemon（daemon 占用 bin/oxmgr）② monit（TUI）进程本身持有 bin/mediaservo-host
+- **解法**: install 自动 stop 扩展（host 进程 + daemon）；cp 前停实例；monit 占用需用户退出
+- **验证**: 重装成功全链
+- **教训**: 自更新/重装的二进制替换必须考虑"谁在占用"（daemon/CLI 自身/TUI）——stop 清单要全
