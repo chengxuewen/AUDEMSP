@@ -17,8 +17,10 @@ use mediaservo_media::base::buffer::VideoBuffer;
 use mediaservo_media::base::frame::BoxVideoFrame;
 use mediaservo_media::error::MediaError;
 use mediaservo_media::pipeline::generator::{
-    ColorStrategy, PatternMode, SquaresConfig, VideoFrameGenerator,
+    BitmapFont, ColorStrategy, PatternMode, SquaresConfig, TextBurner,
+    TimestampFormat, TimestampOverlay, VideoFrameGenerator,
 };
+use mediaservo_media::pipeline::generator::fonts::Anchor;
 use mediaservo_media::pipeline::source::VideoSource;
 use mediaservo_media::pipeline::sink::{VideoSink, VideoSinkWants};
 
@@ -177,10 +179,13 @@ async fn main() -> ExitCode {
             count: 16,
             min_size: 32,
             max_size: 96,
-            motion_speed: 0,
+            motion_speed: 3,
             color_strategy: ColorStrategy::RandomPerSquare,
         }),
-        None,
+        Some(TimestampOverlay::new(
+            TextBurner::new(BitmapFont::new(), false, Anchor::TopLeft),
+            TimestampFormat::Combined,
+        )),
         DEFAULT_WIDTH,
         DEFAULT_HEIGHT,
     );
