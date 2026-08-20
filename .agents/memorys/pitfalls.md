@@ -1099,3 +1099,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: 归属 webrtc-sys 构建层——对 libwebrtc.a 的 av* 符号 `objcopy --prefix-symbols` 或控制链接顺序（动态 -lavformat 先于静态 webrtc）；修复后全量回归 webrtc/host。
 - **验证**: `gdb -batch -ex 'break av_guess_format' -ex run --args host-recorder ...` → 符号落主二进制 = 复发判据；`ld --trace-symbol=av_guess_format` 输出 definition 在 webrtc_sys rlib = 根因判据。
 - **教训**: 预编译静态库（尤其 libwebrtc 这种巨型 blob）可能内嵌同名 FFmpeg/OpenSSL 等符号 — 与新 FFmpeg 绑定同进程共存 = 符号抢先满足竞态（与 C21 双 OpenSSL 冲突同族）；"本机某进程/某二进制能用" ≠ "目标二进制能用"，须在目标进程内验证（gdb/ld trace 二件套）。
+
+## PIT-108: 人工部署演练发现三集成缺口 — host-audio --room / Pusher stats 发布权 / devices 配发实操 (2026-08-20)
+- **症状**: 本机全流程部署（install host → init → token → start）后：① host-audio errored（缺 --room）② streamer 推流状态永空（bytes_sent=0）但 server 实际收帧 ③ 设备认证 4010 Unknown（已注册却失败）
+- **根因**: ① translate.rs oxfile 未给 host-audio 生成 `--room audio-<room>`（H2 必需参数，G1/I1 只接了 agent/streamer/recorder）② acl.rs Pusher 矩阵 publish=[]——streamer 的 stats/stream-<id> 发布被静默拒（E2 审查 M3 已注"实盘未验证"）③ devices.yaml 配发是人工编辑——YAML 结构错误（条目插在注释区）→ server 畸形 fallback 空注册表（G2-M3 warn-only，无 fail-fast）→ 4010
+- **解法**: ① translate.rs host-audio 生成 --room（signaling_room 缺省 vehicle）② acl.rs Pusher publish += stats/*（矩阵 + 测试同步）③ 演练教训: devices 配发需 CLI 辅助（H 阶段 hash-device 预留在案）; G2-M3 畸形 fail-fast 升级建议
+- **验证**: 修复后 7 进程全 running + server 收关键帧（ssrc:1223256448）+ bytes_sent=5506/239 帧/connected=true
+- **教训**: 脚本 e2e（e2e-install-host.sh/e2e-package.sh）只验证布局/冒烟，未覆盖"生产语义"（进程真实职责/ACL 门/凭证配发）——人工端到端部署演练是集成缺口的必要验证层
