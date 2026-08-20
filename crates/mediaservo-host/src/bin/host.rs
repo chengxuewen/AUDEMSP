@@ -85,7 +85,12 @@ fn main() {
 /// 参数不一致，目录统一位置参数后 -- 前缀必为用户笔误。）
 fn parse_dir(args: &mut impl Iterator<Item = String>) -> Result<PathBuf, String> {
     let Some(arg) = args.next() else {
-        return Ok(PathBuf::from(".host"));
+        // 智能默认: 当前目录有实例（etc/host.toml）→ "."；否则 .host/（安装于根目录的实例兼容）
+        return Ok(if PathBuf::from("etc/host.toml").exists() {
+            PathBuf::from(".")
+        } else {
+            PathBuf::from(".host")
+        });
     };
     if arg.starts_with("--") {
         return Err(format!("实例目录参数不能以 -- 开头（目录是位置参数）: {arg}"));

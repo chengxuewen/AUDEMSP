@@ -24,3 +24,5 @@
 devices:
   ms-78f38e76f13a:
     secret_hash: "sha256:1f775557c5eb8e384678c015d260a6ada38c23e5e47c60554c687b2b152612d5"
+  ms-3d37e51f7703:
+    secret_hash: "sha256:da160da2fd4e7a33e4cfe9bbcd3f69fc18339419761fe20a229a5b2e1fcbc231"
