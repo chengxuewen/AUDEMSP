@@ -491,3 +491,11 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
   demuxer-only 静态 FFmpeg 抢先满足 ffmpeg-the-third 符号 → mp4 mux 失败;
   clean HEAD stash 实证; C30 规则沉淀。修复 = webrtc-sys 符号前缀化/链接序（独立任务）。
 - **I4（macOS client e2e 9/9）**: 环境阻塞（Linux 宿主），记录欠账，macOS 回填。
+
+## host 多进程计划收官 + 部署演练 + 工具链治理 (2026-08-20)
+
+- **9 阶段计划完成**（docs/superpowers/plans/2026-08-18-host-multiprocess.md，90+ commits）：OxMgr 管 8 进程（agent/capturer/streamer/recorder/controller/emergency/audio + CLI）——一车一会话（单 WS 网关）+ 崩溃隔离实证（C5）+ 监控四维 + 云端配置闭环 + SFU data 域 + 音频会议（audio-<vehicle-id> 前缀）+ 双包发布
+- **人工部署演练**（stub 彩条 VideoFrameGenerator 模拟相机）：install host → init → token → start → 7 进程全 running → server 收 RTP 关键帧实证（bytes_sent=5506/239 帧）；发现并修 3 集成缺口（host-audio --room、Pusher stats 发布权、devices 配发实操——PIT-108）
+- **安全**：PIT-103 admin 零认证修复（JWT 中间件）+ 登录页/路由守卫（用户驱动）+ 生产 compose 移除 dev 豁免（PIT-110）+ G2 设备认证（devices.yaml 配发链）
+- **工具链**：C31 任务分级（小任务父会话直做——277K 上下文派发实证）；host CLI 完善（-h 完整帮助、位置参数 + .host/ 默认、模板提为源码文件 include_str!、[signaling] server_url/psk 配置面、mediaservo-host 改名中）
+- **遗留**：macOS client e2e 9/9 回填；PIT-104/105 vendor 域；PIT-107 符号前缀化（独立任务）；mediaservo-host 改名待完成

@@ -1106,3 +1106,31 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: ① translate.rs host-audio 生成 --room（signaling_room 缺省 vehicle）② acl.rs Pusher publish += stats/*（矩阵 + 测试同步）③ 演练教训: devices 配发需 CLI 辅助（H 阶段 hash-device 预留在案）; G2-M3 畸形 fail-fast 升级建议
 - **验证**: 修复后 7 进程全 running + server 收关键帧（ssrc:1223256448）+ bytes_sent=5506/239 帧/connected=true
 - **教训**: 脚本 e2e（e2e-install-host.sh/e2e-package.sh）只验证布局/冒烟，未覆盖"生产语义"（进程真实职责/ACL 门/凭证配发）——人工端到端部署演练是集成缺口的必要验证层
+
+## PIT-103: admin API 零认证 — check_auth 死代码（G2 顺带发现，2026-08-20）
+- **症状**: admin REST 端点（rooms/stats/config/kick）无 token 直接 200；security 审计发现 check_auth 从未被调用（死代码）
+- **根因**: 早期实现写了认证函数但未挂中间件——功能"看起来有"实则零保护（PIT-54 类"静默失效"）
+- **解法**: JWT 中间件全路由挂载（Bearer header + events WS ?token=）+ admin_auth_required RED→GREEN 测试 + H3 前端登录页/路由守卫（用户驱动）
+- **验证**: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9800/api/admin/rooms` 无 token = 401
+- **教训**: 安全关键函数"存在但未接线"= 不存在；auth 类功能必须有负向测试（无凭证必须失败）
+
+## PIT-106: rtc_ice_candidate 消息名错配 — serde snake_case vs 客户端字面（2026-08-20）
+- **症状**: 浏览器 consume 视频帧不到达（status.md Web UI 🟡 根因）；ICE candidate 静默丢弃
+- **根因**: 客户端发 `"rtc_ice_candidate"`，server 的 `RTCIceCandidate` 变体 + `rename_all="snake_case"` 期望 `"r_t_c_ice_candidate"`——字面与 serde 派生名不一致，消息被静默丢（非白名单）
+- **解法**: 协议变体加 `#[serde(alias = "rtc_ice_candidate")]`（additive）+ 客户端入站双名兼容 + vite proxy `ws:true` 附带根因
+- **验证**: Playwright 19/19 + 浏览器 ONTRACK 1280x720 readyState 4（真实收帧）
+- **教训**: serde rename_all 派生名 ≠ 人类直觉名——跨语言消息名必须由 wire 测试锁定（roundtrip + 别名测试）
+
+## PIT-109: python 多块替换 assert 中途失败不写盘 — C10 规则 10 复发（2026-08-20）
+- **症状**: 两次多块 python 替换（translate.rs 访问器、host.rs 模板）assert 失败后文件未更新——后续补写时又因"已存在调用处"误判跳过（检查条件用了调用处而非定义处）
+- **根因**: 违反 C10（多块替换每块写盘或前置验证）；且"存在性检查"用模糊子串（调用处也算）导致跳过
+- **解法**: 每块 replace 后立即写盘；存在性检查用精确定义特征（`pub fn signaling_server_url` 而非任意出现）
+- **验证**: 补写后 `grep -c "pub fn signaling_server_url" translate.rs` = 1
+- **教训**: C10 复发——检查条件必须精确（定义特征），勿用模糊子串
+
+## PIT-110: 生产 compose 含 dev 凭证豁免 — I2 守卫部署语义削弱（2026-08-20）
+- **症状**: 部署语义审查发现 docker-compose.yml（生产）也设 MEDIASERVO_ALLOW_DEV_CREDENTIALS=1 + 挂载 dev 账号文件——生产开箱即带 admin123
+- **根因**: I2 fix 时"两个 compose 都设豁免"——dev 豁免逻辑被复制到生产（未区分环境语义）
+- **解法**: 生产 compose 移除豁免 + 挂载 accounts.production.yaml（空模板）；带 dev 账号启动 = fail-fast 拒绝（强制真实账号）
+- **验证**: `grep -c "ALLOW_DEV" docker-compose.yml` = 0；生产启动带 dev 账号 = panic
+- **教训**: 安全豁免 env 必须按环境严格区分——dev 便利逻辑复制到生产 = 漏洞；compose 审查清单含"豁免 env 只应在 dev 文件"
