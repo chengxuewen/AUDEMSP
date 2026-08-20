@@ -28,7 +28,7 @@ use pkcs8::LineEnding;
 /// `host init` 生成的配置模板（host.toml 初版 schema，A1）。
 const HOST_TOML_TEMPLATE: &str = include_str!("../host.toml.template");
 
-const USAGE: &str = "用法: mediaservo-host <init|start|apply|restart|stop|status|doctor|token|monit|ps|logs|version> [<dir>]（目录为位置参数，默认 .host/）
+const USAGE: &str = "用法: mediaservo-host <init|start|apply|restart|stop|status|doctor|token|service|monit|ps|logs|version> [<dir>]（目录为位置参数，默认 .host/）
 子命令:
   init [<dir>]       生成实例：host.toml 模板 + signing.pem(0600) + identity.json + 标准令牌集
   start [<dir>]      读 host.toml → 校验 → 翻译 oxfile → oxmgr apply 拉起全部进程
@@ -39,6 +39,7 @@ const USAGE: &str = "用法: mediaservo-host <init|start|apply|restart|stop|stat
   doctor [<dir>]     环境诊断（oxmgr/配置/翻译三检查，退出码=失败数）
   token issue --role R --node N [--topic T] --out O [<dir>]   签发链路令牌
   token --all [<dir>]  签发标准令牌集（相机/流/recorder/agent）
+  service install/uninstall/status [<dir>]  开机自启（OxMgr 三端: systemd/launchd/Task Scheduler）
   monit               打开 oxmgr TUI（进程监控/日志/重启——需 oxmgr 在 PATH）
   ps                  进程列表（oxmgr list——含 CPU/RAM/uptime 列）
   logs [<proc>]       oxmgr 日志查看（logs all = 全部进程）
@@ -69,6 +70,7 @@ fn main() {
         "doctor" => cmd_doctor(&mut args),
         "token" => cmd_token(&mut args),
         // oxmgr 代理（方式 D: host 目录内统一入口）— oxmgr 需在 PATH（install 打包于 bin/）
+        "service" => cmd_service(&mut args),
         "monit" => cmd_oxmgr(&mut args, &["ui"]),
         "ps" => cmd_oxmgr(&mut args, &["list"]),
         "logs" => cmd_oxmgr(&mut args, &["logs"]),
@@ -277,7 +279,7 @@ fn cmd_restart(args: &mut impl Iterator<Item = String>) -> i32 {
         eprintln!("restart: 无 {} — 先 host start/apply", oxfile.display());
         return 1;
     }
-    let code = run_oxmgr(&["stop", oxfile.to_str().expect("oxfile path utf8")]);
+    let code = run_oxmgr_in(Some(&dir), &["stop", oxfile.to_str().expect("oxfile path utf8")]);
     if code != 0 {
         return code;
     }
@@ -309,10 +311,10 @@ fn cmd_stop(args: &mut impl Iterator<Item = String>) -> i32 {
     let oxfile = dir.join("run").join("oxfile.toml");
     if oxfile.exists() {
         let oxfile = oxfile.to_str().expect("oxfile path utf8");
-        if run_oxmgr(&["stop", oxfile]) != 0 {
+        if run_oxmgr_in(Some(&dir), &["stop", oxfile]) != 0 {
             failed = 1;
         }
-        if run_oxmgr(&["delete", oxfile]) != 0 {
+        if run_oxmgr_in(Some(&dir), &["delete", oxfile]) != 0 {
             failed = 1;
         }
     } else {
@@ -323,7 +325,7 @@ fn cmd_stop(args: &mut impl Iterator<Item = String>) -> i32 {
         Ok(leftovers) => {
             for name in leftovers {
                 eprintln!("stop: 清理残留 app {name}");
-                if run_oxmgr(&["delete", &name]) != 0 {
+                if run_oxmgr_in(Some(&dir), &["delete", &name]) != 0 {
                     failed = 1;
                 }
             }
@@ -867,8 +869,23 @@ fn cmd_doctor(args: &mut impl Iterator<Item = String>) -> i32 {
 
 
 /// 代理 oxmgr CLI；oxmgr 不在 PATH 时报清晰错误并提示安装。
+/// 注入实例化的 oxmgr 数据目录（<dir>/run/oxmgr）——多实例/多 PATH 的 daemon 状态隔离
+fn oxmgr_env(dir: &std::path::Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new("oxmgr");
+    cmd.env("OXMGR_DATA_DIR", dir.join("run").join("oxmgr"));
+    cmd
+}
+
 fn run_oxmgr(args: &[&str]) -> i32 {
-    match Command::new("oxmgr").args(args).status() {
+    run_oxmgr_in(None, args)
+}
+
+fn run_oxmgr_in(dir: Option<&std::path::Path>, args: &[&str]) -> i32 {
+    let mut cmd = match dir {
+        Some(d) => oxmgr_env(d),
+        None => std::process::Command::new("oxmgr"),
+    };
+    match cmd.args(args).status() {
         Ok(status) => status.code().unwrap_or(1),
         Err(e) => {
             eprintln!("oxmgr 执行失败: {e} — 请先安装 OxMgr 并加入 PATH（npm install -g oxmgr，见 https://github.com/Vladimir-Urik/OxMgr#install）");
@@ -942,4 +959,27 @@ fn dirs_log_dir() -> std::path::PathBuf {
     std::env::var("HOME")
         .map(|h| std::path::PathBuf::from(h).join(".local/share/oxmgr/logs"))
         .unwrap_or_else(|_| std::path::PathBuf::from(".oxmgr/logs"))
+}
+
+/// 开机自启服务（三端: Linux systemd / macOS launchd / Windows Task Scheduler）。
+/// 封装 OxMgr 原生 `service install/uninstall/status` + `startup`——OXMGR_DATA_DIR 注入
+/// 使 daemon 状态在实例内（与 host start 同 env，服务自启后一致性）。
+fn cmd_service(args: &mut impl Iterator<Item = String>) -> i32 {
+    let sub = args.next().unwrap_or_default();
+    if !matches!(sub.as_str(), "install" | "uninstall" | "status") {
+        eprintln!("用法: mediaservo-host service <install|uninstall|status> [<dir>]");
+        return 2;
+    }
+    let dir = match parse_dir(args) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
+        }
+    };
+    if sub == "install" {
+        // startup: 注册系统服务管理集成（auto 检测三端）；失败不阻断（开发环境无服务管理器）
+        let _ = run_oxmgr_in(Some(&dir), &["startup"]);
+    }
+    run_oxmgr_in(Some(&dir), &["service", sub.as_str()])
 }
