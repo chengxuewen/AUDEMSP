@@ -507,3 +507,13 @@ Host (macOS) → WS :9800 → Docker Server → WS :9800 → Client (macOS)
 - **竞争防护**: start 端口检测 + 交互接管；install 自动 stop（host+daemon，PIT-115）；SystemInFlux 复发防护（start 清 SHM + streamer 订阅重试）
 - **web play 修复链**: SDP 广播污染（PIT-114 sfuMode 全程忽略）→ Playwright 实测 1280x720 真实帧（vehicle-live/vehicle-content spec）；画面增强（方块移动+时间戳水印）
 - **遗留**: server 重启后媒体面自愈（PIT-111 长期修复待实现）；macOS/Windows startup 自管 unit；真实终端交互验证（接管路径）
+
+## app-branding-customization 完成 (2026-08-21, D252/C33 + PIT-118~121)
+
+- **Brand 机制**: `common::brand`（env MEDIASERVO_BRAND > 编译期 > 默认）——默认品牌 legacy 串硬映射（app `host-*`/unit `oxmgr-host-`/device `ms-`/namespace `mediaservo-host`——勿按 `<product>-` 直推）；product/display/id 三语义分离
+- **固化边界**: bindings/*（C ABI mediaservo_* D247 + cxx/py/node）+ wire 协议 + crate 名——零 diff（固化门）; 可定制 = host（app 名/namespace/unit/device/help/install --brand）+ client（标题/路径）+ server（admin __APP_TITLE__ vite define, C24 编译期）
+- **回归门三件套全绿**: e2e-install-host.sh（start roundtrip 硬化）+ e2e-package.sh（PIT-119 strip: 1.2GB→60MB）+ e2e-brand.sh（品牌化全链断言）; live: e2e_sfu 4/4 + field push_e2e 6/6（含 MEDIASERVO_BRAND=cp 模式——wire 无回归）
+- **测试**: common 89 + host lib 50 全绿; workspace check 0 error; install --brand cp 布局（cp/cp-host 快捷 + bin/cp-* + identity cp-<12hex>）
+- **PIT-118~121**: ① translate namespace {ns} 占位符残留→oxmgr 拒收→apply 挂(regression 测试已加) ② package 打包 strip/压缩超时 ③ pkill set -e 自杀（清理 pkill 必须 || true）④ cmd_oxmgr ps/monit/logs 按 cwd 推断 dir（status 才吃参数）
+- **计划**: docs/superpowers/plans/2026-08-21-app-branding-customization.md（Momus APPROVE-WITH-CONDITIONS 3 HIGH 全采纳）
+- **遗留**: e2e-package staging 残留（dist 手动清）; 品牌化 macOS/Windows startup 待三端; PIT-111（server 重启媒体面自愈——大债务待立计划）
