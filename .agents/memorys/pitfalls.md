@@ -1198,3 +1198,17 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: `strip_package_binaries(staging)`（strip --strip-unneeded，失败仅 warn）+ `compresslevel=6`——1.2GB→60MB（-90%+），压缩 <30s
 - **验证**: `gzip -t` ✓ + e2e-package PASS + `du -sh dist`
 - **教训**: 打包/发布物默认 strip（debug 构建体积巨大）；tarfile w:gz 用 compresslevel=6；"卡住"先查是否慢（看产物时间戳/gzip -t）而非死锁
+
+## PIT-120: pkill 无匹配 → exit 1 → set -e 脚本自杀 — 看似"卡死"实为秒退（2026-08-21）
+- **症状**: e2e-brand.sh start/smoke 段"卡住"（timeout 外层 225s+ 无推进）；tail 时间戳停在段头——实为 `pkill -x oxmgr` 无进程返回 1 → `set -euo pipefail` 秒退 + trap 清理吞掉现场
+- **根因**: pkill 无匹配进程时 exit 1（bash set -e 视为命令失败）——清理型 pkill 是"尽力而为"不该触发退出
+- **解法**: 所有清理 pkill 加 `|| true`；诊断用 `bash -x` 追踪（trace 显示最后执行命令 = 自杀点——本类问题第一诊断工具）
+- **验证**: `bash -x scripts/e2e-brand.sh` 尾行显示 `+ pkill` 后直接 trap 清理（无 start）→ 修复后 PASS
+- **教训**: ① `set -euo pipefail` 下清理 pkill/pkill 类命令必须 `|| true`（脚本终止信号类反模式）②"卡住"先看 bash -x trace 尾行（秒退 vs 真卡）③ 静态观察（tail 停在段头）可能误导——trace/时间戳双查
+
+## PIT-121: cmd_oxmgr（ps/monit/logs）按 cwd 推断实例目录 — 不吃目录参数（2026-08-21）
+- **症状**: e2e-brand.sh 在项目根跑 `ps "$TMP"` → "No managed processes"（实例实际有 cp-agent running）
+- **根因**: cmd_oxmgr 的 dir = `parse_dir(&mut std::iter::empty())`（cwd 推断）——`ps <dir>` 参数被忽略；status 才消费目录参数
+- **解法**: 脚本断言用 `status "$TMP"`（dir-aware）；ps/monit/logs 语义 = "当前实例"（cwd）
+- **验证**: e2e-brand PASS
+- **教训**: host CLI 子命令目录语义二分——status/start/apply/stop 吃参数，ps/monit/logs 按 cwd——调用前查清（README/help 注明）
