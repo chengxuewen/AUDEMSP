@@ -620,3 +620,10 @@ P2P 流量服务端不可见；底盘/云台常规控制仍走 P2P DC（协商�
 AuthorizationDenied（有界 256 环形缓冲 recent() 可查）; 车端 host-agent 需处理
 EmergencyCommand 转发（H 阶段 host-emergency）; 状态/告警的 operator 消费端点归 H
 （当前 status_registry 仅 admin API 读）。
+
+## D252: 应用层品牌化机制（Brand）+ 固化边界（2026-08-21）
+- **决策**: 引入 `mediaservo-common::brand`（env `MEDIASERVO_BRAND` > 编译期 option_env > 默认 "mediaservo"）；host/client/server 全部用户可见串（app 名/namespace/unit/device 前缀/帮助/面板标题）走 Brand；install/package `--brand` 参数化。默认品牌映射 **legacy 串硬映射**（host-*/oxmgr-host-/ms-/mediaservo-host）——零行为变化
+- **边界**: 🔒 固化 = bindings/*（C ABI 符号 mediaservo_* D247 + cxx/py/node + soname D240）+ wire 协议（信令/SFU/FrameMeta）+ crate 名；🎨 可定制 = host/client/server 应用层
+- **原因**: 基石定位（第三平台静态链接/独立部署嵌入）——白标免 fork；"数据面固化/应用层可定制"显式化
+- **影响**: Brand 三语义分离（product=CLI 名/display=产品展示/id=路径）；identity 设备前缀品牌化仅新 key（G2 配发需重注）；crate 名/bindings 不动——独立发布仍走 fork+D209
+- **参考**: 计划 docs/superpowers/plans/2026-08-21-app-branding-customization.md；Momus 审核（HIGH-1 默认映射表/HIGH-2 23→24/HIGH-3 admin dist 编译期机制）

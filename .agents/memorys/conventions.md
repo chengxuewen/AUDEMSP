@@ -493,3 +493,11 @@ ff_.*_muxer` 应为 0（demuxer-only 实证）。
 **检查**: `grep -rn "OXMGR_HOME\|OXMGR_DAEMON_ADDR" crates/mediaservo-host/src/` — 应见三处注入（oxmgr_env/oxmgr_apply/startup unit）；`host startup on` 二次实例应被拒。
 
 **来源**: 2026-08-20 多实例部署实操（PIT-111/112/113/115 系列）
+
+## C33: 应用层品牌化（Brand）边界 — bindings/wire 固化 vs host/client/server 可定制（2026-08-21）
+
+**约束**: MediaServo 作为基石被第三方依赖时可白标：① **SDK bindings 固化**（C ABI 符号 `mediaservo_*`（D247）、include/mediaservo/、cxx/py/node、soname/ABI（D240））——品牌改造 `git diff bindings/` 必须为空（固化门）；② **wire 协议固化**（信令 SignalingMessage/SFU/RTP/FrameMeta）——server 同时服务多品牌 host；③ **应用层可定制**: host/client/server 的用户可见面走 `mediaservo_common::brand`（env `MEDIASERVO_BRAND` > 编译期 > 默认）——默认品牌**legacy 串硬映射**（app 前缀 `host-`、unit `oxmgr-host-`、设备 `ms-`、namespace `mediaservo-host`——与 `product` 不同源，勿按 `<product>-` 直推）；④ install/package `--brand`（快捷名 + `bin/<brand>-<app>` 符号链接 + init env 注入）；⑤ 设备前缀仅新 key（存量不迁移，G2 需重注）。
+
+**检查**: `MEDIASERVO_BRAND=cp ./target/debug/mediaservo-host version` → 应输出 `cp 0.1.0`；`git diff --stat bindings/` → 应为空；`grep -n '{ns}' crates/mediaservo-host/src/translate.rs` → 应为 0（PIT-118 禁）。**禁止**: 品牌化进 bindings/wire/crate 名；模板字符串用 replace 自指（PIT-118）。
+
+**来源**: D252 (2026-08-21)，Momus 计划审核后实施

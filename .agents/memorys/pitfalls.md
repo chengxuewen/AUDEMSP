@@ -1184,3 +1184,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **验证**: oxmgr.service 停用后 daemon 不再复活；功能链（推流+面板）正常
 - **遗留**: apply 自动拉起的 daemon 二进制仍取 PATH 全局（~/.local/bin）——ensure_daemon_running 的 current_exe 语义待查（env 生效但二进制来源未解——功能不受阻）
 - **教训**: "数据目录隔离"≠"daemon 实例化"——互斥机制（端口/锁）也要隔离；service install 装的全局 unit 是永久复活源（卸载服务要 disable+stop 双清）
+
+## PIT-118: translate namespace 占位符残留 {ns} → oxmgr 拒收 → apply 挂 30s×重试（2026-08-21）
+- **症状**: e2e-install-host.sh start roundtrip 卡死（apply 无限重试）；手动 start 间歇成功——run/oxmgr/state.json 里 `"namespace":"{ns}"` 字面残留
+- **根因**: 品牌化 translate.rs 替换时 `'namespace = "{ns}"'.replace("{ns}", "{ns}")`——**replace 目标即自身** → 永远输出字面 `{ns}`（不是 format! 注入品牌值）——oxmgr validate 拒收非法 namespace → apply 挂起。**默认品牌也中招**（不依赖 env）——lib 测试无 `[defaults]` 行断言（测试缺口）
+- **解法**: 改为 `format!("...namespace = \"{}\"...", media_brand().namespace)` + 回归测试 `defaults_namespace_is_concrete_not_placeholder`（断言具体值 + 禁 `{ns}`）
+- **验证**: 测试全绿 + e2e-install-host PASS
+- **教训**: 字符串 local 替换用 replace 时——**replacement 不得与模式同串**；模板字符串一律 format! 而非 replace 自指；测试需断言生成物的关键行（namespace 属 validate/oxmgr 硬校验面）
