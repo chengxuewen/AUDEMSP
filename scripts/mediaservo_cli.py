@@ -183,7 +183,7 @@ def _copy_with_kill(src, dst: Path) -> None:
             _kill_using(dst)
     raise OSError(f"复制 {dst} 失败（多次重试仍 busy）")
 
-def _cmd_install_host(prefix: str, release: bool = False) -> None:
+def _cmd_install_host(prefix: str, release: bool = False, brand: str = "") -> None:
     """安装 host 包（D-H13 /opt/mediaservo-host 布局）: bin 8 + oxmgr 打包（版本锁定）
     + host init 生成 etc/{host.toml,link/*} + identity.json（幂等——重装保留凭据）
     + run/logs + recordings。生产部署: --prefix /opt/mediaservo-host。"""
@@ -207,10 +207,18 @@ def _cmd_install_host(prefix: str, release: bool = False) -> None:
         # systemctl 不接受 glob——枚举 unit 文件逐个停（self-startup unit 是 daemon 复活源）
         units_dir = Path.home() / ".config" / "systemd" / "user"
         if shutil.which("systemctl") and units_dir.is_dir():
-            for u in sorted(units_dir.glob("oxmgr-host-*.service")):
-                unit = u.name
-                subprocess.run(["systemctl", "--user", "stop", unit], check=False)
-                subprocess.run(["systemctl", "--user", "reset-failed", unit], check=False)
+            # 双前缀枚举: legacy oxmgr-host-* + 品牌化 oxmgr-<brand>-*（install 传 --brand）
+            patterns = ["oxmgr-host-*.service"]
+            if brand:
+                patterns.append(f"oxmgr-{brand}-*.service")
+            seen = set()
+            for pat in patterns:
+                for u in sorted(units_dir.glob(pat)):
+                    if u.name in seen:
+                        continue
+                    seen.add(u.name)
+                    subprocess.run(["systemctl", "--user", "stop", u.name], check=False)
+                    subprocess.run(["systemctl", "--user", "reset-failed", u.name], check=False)
         _kill_using(bin_dir / "oxmgr")
         for name in ("host-agent", "host-streamer", "host-capturer", "host-recorder",
                      "host-controller", "host-emergency", "host-audio"):
@@ -235,10 +243,15 @@ def _cmd_install_host(prefix: str, release: bool = False) -> None:
         print("错误: PATH 未找到 oxmgr — 未打包（运行时需它拉起进程）。安装: npm install -g oxmgr（https://github.com/Vladimir-Urik/OxMgr#install），或构建 oxmgr-src 后放 ~/.local/bin，再重跑 install host", file=sys.stderr)
 
     # host init: 生成 etc/ + identity.json + 令牌（幂等——已存在跳过, 重装保留凭据）
-    _run_or_exit([str(bin_dir / _exe_name("mediaservo-host")), "init", str(Path(prefix))])
+    # brand: env 注入（init 是独立进程——device 前缀需与布局品牌一致）
+    init_env = dict(os.environ)
+    if brand:
+        init_env["MEDIASERVO_BRAND"] = brand
+    _run_or_exit([str(bin_dir / _exe_name("mediaservo-host")), "init", str(Path(prefix))], env=init_env)
 
-    # 创建 <prefix>/host → bin/mediaservo-host 和 <prefix>/mediaservo-host → bin/mediaservo-host 快捷方式
-    for link_name in ("host", "mediaservo-host"):
+    # 创建 <prefix>/{host,mediaservo-host} → bin/mediaservo-host 快捷方式（品牌化: cp + cp-host）
+    shortcut_names = ("host", "mediaservo-host") if not brand else (brand, f"{brand}-host")
+    for link_name in shortcut_names:
         link = Path(prefix) / link_name
         if link.exists():
             link.unlink()
@@ -248,6 +261,24 @@ def _cmd_install_host(prefix: str, release: bool = False) -> None:
         except OSError:
             shutil.copy2(bin_dir / "mediaservo-host", link)
             print(f"  已复制 mediaservo-host 到 {link}（符号链接失败，回退到拷贝）")
+
+    # 品牌 app 名符号链接: oxmgr 执行 cp-agent 等（translate 生成 <brand>-<app> 命令）
+    # 默认品牌 app 名 == host-*（二进制本身），无需链接；品牌化需 bin/<brand>-<app> → bin/host-<app>
+    if brand:
+        app_bases = ("agent", "recorder", "controller", "emergency", "audio", "capturer", "streamer", "legacy")
+        for base in app_bases:
+            src = bin_dir / _exe_name(f"host-{base}")
+            if not src.exists():
+                continue
+            dst = bin_dir / _exe_name(f"{brand}-{base}")
+            if dst.exists() and dst.is_symlink():
+                dst.unlink()
+            try:
+                dst.symlink_to(src.name)
+                print(f"  bin/{brand}-{base} → host-{base}")
+            except OSError:
+                shutil.copy2(src, dst)
+                print(f"  bin/{brand}-{base} ← 复制（符号链接失败）")
 
     for d in ("run/logs", "recordings"):
         (Path(prefix) / d).mkdir(parents=True, exist_ok=True)
@@ -438,11 +469,12 @@ def _cmd_package(args: argparse.Namespace) -> None:
     staging = Path(tempfile.mkdtemp(prefix=f"ms-{args.target}-pkg-", dir=str(dist)))
     try:
         if args.target == "host":
-            _cmd_install_host(str(staging), args.release)
+            _cmd_install_host(str(staging), args.release, args.brand)
         else:
             _cmd_install_bindings(str(staging), "all", args.release)
         _write_version_file(staging, pkg_name)
-        out = dist / f"mediaservo-{pkg_name}-{ver}.tar.gz"
+        prefix_name = args.brand if args.brand else "mediaservo"
+        out = dist / f"{prefix_name}-{pkg_name}-{ver}.tar.gz"
         with tarfile.open(out, "w:gz") as tar:
             for entry in sorted(staging.iterdir()):
                 tar.add(entry, arcname=entry.name)  # 解包到前缀目录即为 D-H13 布局
@@ -751,7 +783,7 @@ def _cmd_install(args: argparse.Namespace) -> None:
         if args.build:
             _check("cargo", "pixi 环境未激活? 先运行: source bootstrap.sh / pixi.bat")
             _run_or_exit(["cargo", "build"] + (["--release"] if args.release else []) + ["-p", "mediaservo-host"])
-        _cmd_install_host(args.prefix or str(ROOT / "install" / "host"), args.release)
+        _cmd_install_host(args.prefix or str(ROOT / "install" / "host"), args.release, args.brand)
 
 
 def _cmd_clean(args: argparse.Namespace) -> None:
@@ -862,6 +894,7 @@ def main() -> None:
     install_p = sub.add_parser("install", help="安装 <target>: bindings（lib 三件套 D241 + include/mediaservo 头 D248）| host（D-H13 /opt/mediaservo-host 车端布局）")
     install_p.add_argument("target", choices=["bindings", "host"])
     install_p.add_argument("--prefix", default=None, help="安装前缀（默认 bindings: <项目根>/install；host: <项目根>/install/host）")
+    install_p.add_argument("--brand", default="", help="品牌前缀（如 --brand cp → bin/cp-agent 符号链接 + 快捷名 cp/cp-host；缺省 = 官方 mediaservo 命名）")
     install_p.add_argument("--build", action="store_true", help="先构建再安装（等价 build && install）")
     install_p.add_argument("--components", default="all",
                            help="按需分发: field|link|deck|all|逗号组合（如 link,deck；默认 all；仅 bindings）")
@@ -869,6 +902,7 @@ def main() -> None:
     install_p.set_defaults(func=_cmd_install)
     package_p = sub.add_parser("package", help="打包 <target>: host（车端包）| bindings（SDK 包）→ dist/mediaservo-<target>-<ver>.tar.gz（D-H13 双包发布, 含版本契约文件）")
     package_p.add_argument("target", choices=["host", "bindings"])
+    package_p.add_argument("--brand", default="", help="品牌包名（dist/<brand>-host-<ver>.tar.gz；缺省 mediaservo-host-<ver>）")
     package_p.add_argument("--release", action="store_true", help="打包 release 产物（target/release, 配合 build --release）")
     package_p.set_defaults(func=_cmd_package)
     clean_p = sub.add_parser("clean", help="清理 <target>: all|server|host|client（默认 all）")

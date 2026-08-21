@@ -305,6 +305,9 @@ mod tests {
                 frame_width: 640,
                 frame_height: 360,
                 connected: true,
+                codec: "vp8".into(),
+                avg_encode_ms: Some(4.2),
+                encoder_implementation: Some("libvpx".into()),
             }],
         }
     }

@@ -24,7 +24,7 @@ python3 scripts/mediaservo_cli.py install host --prefix "$TMP"
 BIN="$TMP/bin"
 
 # ── 1. bin/: 8 进程二进制可执行 + oxmgr 打包 ───────────────
-for b in host host-agent host-capturer host-streamer host-recorder \
+for b in mediaservo-host host-agent host-capturer host-streamer host-recorder \
          host-controller host-emergency host-audio; do
     [ -x "$BIN/$b" ] || { echo "FAIL: bin/$b 缺失或不可执行"; FAIL=1; }
 done
@@ -59,15 +59,15 @@ fi
 
 
 # ── 4. file/ldd 检查 ───────────────────────────────────────
-file "$BIN/host" | grep -q ELF || { echo "FAIL: file 非 ELF"; FAIL=1; }
-if ldd "$BIN/host" 2>/dev/null | grep -q "not found"; then
+file "$BIN/mediaservo-host" | grep -q ELF || { echo "FAIL: file 非 ELF"; FAIL=1; }
+if ldd "$BIN/mediaservo-host" 2>/dev/null | grep -q "not found"; then
     echo "FAIL: ldd 有 not found"; FAIL=1
 fi
 echo "OK: file/ldd 检查通过"
 
 # ── 5. host doctor（PATH 含 bin → 打包版 oxmgr 生效）────────
 note "host doctor"
-out=$(env PATH="$BIN:$PATH" "$BIN/host" doctor "$TMP" 2>&1 || true)
+out=$(env PATH="$BIN:$PATH" "$BIN/mediaservo-host" doctor "$TMP" 2>&1 || true)
 echo "$out"
 echo "$out" | grep -q "全部通过" || { echo "FAIL: doctor 未全过"; FAIL=1; }
 
@@ -82,15 +82,19 @@ else
     echo "FAIL: 重装破坏凭据（哈希变化）"; FAIL=1
 fi
 
-# ── 7. start/status/stop 冒烟（C25: 先清 iceoryx2 残留）────
+# ── 7. start/status/stop 冒烟（C25: 先清 iceoryx2 + 残留进程——上次运行的
+# app 占 17980 会让本次 start 因 C32 竞争防护正确拒绝）────
 note "start/status/stop roundtrip"
 rm -rf /tmp/iceoryx2 /dev/shm/iox2_*
-env PATH="$BIN:$PATH" "$BIN/host" start "$TMP" >/dev/null 2>&1 || { echo "FAIL: host start"; FAIL=1; }
-sleep 4
-out=$(env PATH="$BIN:$PATH" "$BIN/host" status "$TMP" 2>&1 || true)
+env PATH="$BIN:$PATH" "$BIN/mediaservo-host" stop "$TMP" >/dev/null 2>&1
+pkill -x host-agent 2>/dev/null; pkill -x host-capturer 2>/dev/null; pkill -x oxmgr 2>/dev/null
+sleep 1
+env PATH="$BIN:$PATH" "$BIN/mediaservo-host" start "$TMP" >/dev/null 2>&1 || { echo "FAIL: host start"; FAIL=1; }
+sleep 8   # daemon cold-start 窗口（oxmgr 30s ready 探测 + 进程拉起）
+out=$(env PATH="$BIN:$PATH" "$BIN/mediaservo-host" status "$TMP" 2>&1 || true)
 echo "$out" | grep -q "host-agent" || { echo "FAIL: status 无 host-agent: $out"; FAIL=1; }
-env PATH="$BIN:$PATH" "$BIN/host" stop "$TMP" >/dev/null 2>&1 || { echo "FAIL: host stop"; FAIL=1; }
-out=$(env PATH="$BIN:$PATH" "$BIN/host" status "$TMP" 2>&1 || true)
+env PATH="$BIN:$PATH" "$BIN/mediaservo-host" stop "$TMP" >/dev/null 2>&1 || { echo "FAIL: host stop"; FAIL=1; }
+out=$(env PATH="$BIN:$PATH" "$BIN/mediaservo-host" status "$TMP" 2>&1 || true)
 echo "$out" | grep -q "无已管理进程" || { echo "FAIL: stop 后仍有进程: $out"; FAIL=1; }
 echo "OK: start → status(host-agent 在列) → stop 冒烟通过"
 

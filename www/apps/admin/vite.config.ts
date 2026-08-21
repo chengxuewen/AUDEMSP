@@ -1,8 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// 品牌化: VITE_APP_TITLE env 注入 admin 标题（缺省 "MediaServo Admin" 保持现状）。
+const APP_TITLE = process.env.VITE_APP_TITLE || 'MediaServo Admin';
+
 export default defineConfig({
   plugins: [react()],
+  define: { __APP_TITLE__: JSON.stringify(APP_TITLE) },
   server: {
     host: '0.0.0.0',  // allow external access
     port: 5173,

@@ -17,12 +17,10 @@ use mediaservo_link::DeviceCredential;
 /// identity.json 文件名（实例根目录，D-H13）。
 pub const IDENTITY_FILE: &str = "identity.json";
 
-/// device_id 前缀 + 12 hex 字符（6 随机字节）。
-const DEVICE_ID_PREFIX: &str = "ms-";
 /// device_secret 随机字节数（hex = 64 字符）。
 const SECRET_BYTES: usize = 32;
 
-/// 生成新设备身份（OsRng；device_id `ms-<12 hex>`，device_secret 64 hex）。
+/// 生成新设备身份（OsRng）；device_id `<brand>-<12 hex>`（默认 "ms-"，legacy 映射见 brand.rs）。
 pub fn generate_identity() -> DeviceCredential {
     use rand_core::RngCore;
     let mut id_bytes = [0u8; 6];
@@ -30,7 +28,7 @@ pub fn generate_identity() -> DeviceCredential {
     let mut secret = [0u8; SECRET_BYTES];
     rand_core::OsRng.fill_bytes(&mut secret);
     DeviceCredential {
-        device_id: format!("{DEVICE_ID_PREFIX}{}", hex(&id_bytes)),
+        device_id: format!("{}{}", mediaservo_common::brand::media_brand().device_prefix, hex(&id_bytes)),
         device_secret: hex(&secret),
     }
 }

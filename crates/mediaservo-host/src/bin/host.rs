@@ -49,15 +49,26 @@ const USAGE: &str = "用法: mediaservo-host <init|start|apply|restart|stop|stat
   mediaservo-host start /opt/mediaservo-host    启动部署实例
   mediaservo-host -h                            本帮助";
 
+fn print_usage() {
+    let b = mediaservo_common::brand::media_brand();
+    // 默认品牌 product == "mediaservo-host"——replace 为 no-op（零行为变化门禁）
+    println!("{}", USAGE.replace("mediaservo-host", b.product));
+}
+
+fn eprint_usage() {
+    let b = mediaservo_common::brand::media_brand();
+    eprintln!("{}", USAGE.replace("mediaservo-host", b.product));
+}
+
 fn main() {
     let mut args = std::env::args();
     let _prog = args.next();
     let Some(cmd) = args.next() else {
-        println!("{USAGE}");
+        print_usage();
         return;
     };
     if cmd == "-h" || cmd == "--help" {
-        println!("{USAGE}");
+        print_usage();
         return;
     }
     let code = match cmd.as_str() {
@@ -75,12 +86,12 @@ fn main() {
         "ps" => cmd_oxmgr(&mut args, &["list"]),
         "logs" => cmd_oxmgr(&mut args, &["logs"]),
         "version" => {
-            println!("mediaservo-host {}", env!("CARGO_PKG_VERSION"));
+            println!("{} {}", mediaservo_common::brand::media_brand().product, env!("CARGO_PKG_VERSION"));
             0
         }
         _ => {
             eprintln!("未知子命令: {cmd}");
-            eprintln!("{USAGE}");
+            eprint_usage();
             2
         }
     };
@@ -405,7 +416,7 @@ fn cmd_status(args: &mut impl Iterator<Item = String>) -> i32 {
     };
     let host_procs: Vec<&serde_json::Value> = rows
         .iter()
-        .filter(|p| p.get("namespace").and_then(|n| n.as_str()) == Some("mediaservo-host"))
+        .filter(|p| p.get("namespace").and_then(|n| n.as_str()) == Some(mediaservo_common::brand::media_brand().namespace))
         .collect();
     if host_procs.is_empty() {
         println!("host 命名空间无已管理进程（先 host start [<dir>]）");
@@ -1036,7 +1047,8 @@ fn cmd_startup(args: &mut impl Iterator<Item = String>) -> i32 {
 fn startup_unit_name(dir: &std::path::Path) -> String {
     let raw = dir.to_string_lossy().replace(['/', '\\', ' '], "-");
     let raw = raw.trim_start_matches('-');
-    format!("oxmgr-host-{raw}.service")
+    // 默认品牌保持 legacy "oxmgr-host-*"（brand.rs 映射）；品牌化 "oxmgr-<brand>-*"
+    format!("{}{raw}.service", mediaservo_common::brand::media_brand().unit_prefix)
 }
 
 /// 实例 daemon 的 oxmgr 二进制路径（host CLI 同目录）
@@ -1059,7 +1071,9 @@ fn other_startup_units(dir: &std::path::Path) -> Vec<(std::path::PathBuf, std::p
     for e in entries.flatten() {
         let name = e.file_name();
         let Some(name) = name.to_str() else { continue };
-        if !name.starts_with("oxmgr-host-") || !name.ends_with(".service") || name == my_name {
+        let is_ours = name.starts_with("oxmgr-host-")
+            || name.starts_with(mediaservo_common::brand::media_brand().unit_prefix);
+        if !is_ours || !name.ends_with(".service") || name == my_name {
             continue;
         }
         let path = e.path();
@@ -1202,7 +1216,7 @@ fn startup_status(dir: &std::path::Path) -> i32 {
         }
         0
     } else {
-        println!("startup: 未启用（{} 无自启 unit——用 `mediaservo-host startup on` 启用）", dir.display());
+        println!("startup: 未启用（{} 无自启 unit——用 `{} startup on` 启用）", dir.display(), mediaservo_common::brand::media_brand().product);
         1
     }
 }

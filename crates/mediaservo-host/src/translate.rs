@@ -102,14 +102,13 @@ pub fn signaling_gateway_url(cfg: &str) -> Result<String, String> {
     Ok(format!("ws://127.0.0.1:{port}/ws"))
 }
 
-/// 固定 5 类进程（无参数实例）。
-const FIXED_APPS: [&str; 5] = [
-    "host-agent",
-    "host-recorder",
-    "host-controller",
-    "host-emergency",
-    "host-audio",
-];
+/// 固定 5 类进程 base 名（无品牌前缀——默认品牌映射 legacy "host-*"，见 brand.rs）。
+const FIXED_APP_BASES: [&str; 5] = ["agent", "recorder", "controller", "emergency", "audio"];
+
+/// app 名 = 品牌前缀 + base（默认 "host-" → "host-agent"；品牌化 "cp-agent"）。
+fn app_name(base: &str) -> String {
+    format!("{}{}", mediaservo_common::brand::media_brand().app_prefix, base)
+}
 
 /// host.toml → oxfile.toml 文本。
 ///
@@ -293,7 +292,7 @@ pub fn live_host_apps() -> Result<Vec<String>, String> {
         .as_array()
         .map(|arr| {
             arr.iter()
-                .filter(|p| p.get("namespace").and_then(|n| n.as_str()) == Some("mediaservo-host"))
+                .filter(|p| p.get("namespace").and_then(|n| n.as_str()) == Some(mediaservo_common::brand::media_brand().namespace))
                 .filter_map(|p| p.get("name").and_then(|n| n.as_str()).map(String::from))
                 .collect()
         })
@@ -360,7 +359,10 @@ pub fn handle_config_push(
 fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Result<String, String> {
     let (cameras, streams) = camera_and_stream_ids(cfg)?;
 
-    let mut out = String::from("version = 1\n\n[defaults]\nnamespace = \"mediaservo-host\"\nrestart_policy = \"always\"\n");
+    let mut out = format!(
+        "version = 1\n\n[defaults]\nnamespace = \"{}\"\nrestart_policy = \"always\"\n",
+        mediaservo_common::brand::media_brand().namespace
+    );
 
     // E4 热生效: [defaults] watch = host.toml（内容指纹）— agent/CLI 写入新配置后
     // oxmgr file-watch 重启受影响进程（进程启动时重读 host.toml 生效）；
@@ -375,11 +377,12 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
     }
     out.push('\n');
 
-    for name in FIXED_APPS {
-        let mut cmd = exe_cmd(name);
+    for base in FIXED_APP_BASES {
+        let name = app_name(base);
+        let mut cmd = exe_cmd(&name);
         // C3: recorder 固定 app 与 capturer/streamer 同形追加 --config/--token
         // （订阅 camera/* 录制; 令牌文件 recorder.token）。
-        if name == "host-recorder" && !config_path.as_os_str().is_empty() {
+        if name == app_name("recorder") && !config_path.as_os_str().is_empty() {
             cmd.push_str(&format!(
                 " --config {} --token {}/recorder.token",
                 config_path.display(),
@@ -389,7 +392,7 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
         // D1: agent 网关本地端口（[signaling] local_port 配置；缺省 agent 内置 17980）
         // E1: agent 追加 --config（拓扑监控期望态数据源，与 recorder 同形）。
         // G1: agent 追加 --token agent.token（Monitor ACL）——数据流监控不再 tokenless。
-        if name == "host-agent" {
+        if name == app_name("agent") {
             if let Some(port) = signaling_local_port(cfg)? {
                 cmd.push_str(&format!(" --port {port}"));
             }
@@ -411,17 +414,17 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
         }
         // C4: recorder [record] enabled=false 时按设计 exit 0 — 在 oxmgr
         // restart_policy=always 下会重启风暴; 改 on_failure（崩溃重启，干净退出不重启）。
-        let policy = if name == "host-recorder" { "on_failure" } else { "always" };
+        let policy = if name == app_name("recorder") { "on_failure" } else { "always" };
         // H2: host-audio 必须带 --room audio-<room>（[signaling] room 或缺省 vehicle）。
-        if name == "host-audio" {
+        if name == app_name("audio") {
             let room = signaling_room(cfg)?.unwrap_or_else(|| "vehicle".to_string());
             cmd.push_str(&format!(" --room audio-{room}"));
         }
-        push_app(&mut out, name, &cmd, policy);
+        push_app(&mut out, &name, &cmd, policy);
     }
     for cam in &cameras {
-        let name = instance_name("host-capturer", cam);
-        let mut cmd = format!("{} --camera {}", exe_cmd("host-capturer"), cam);
+        let name = instance_name(&app_name("capturer"), cam);
+        let mut cmd = format!("{} --camera {}", exe_cmd(&app_name("capturer")), cam);
         if !config_path.as_os_str().is_empty() {
             cmd.push_str(&format!(
                 " --config {} --token {}/{}.token",
@@ -433,7 +436,7 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
         push_app(&mut out, &name, &cmd, "always");
     }
     for stream in &streams {
-        let name = instance_name("host-streamer", stream);
+        let name = instance_name(&app_name("streamer"), stream);
         let mut cmd = format!("{} --stream {}", exe_cmd("host-streamer"), stream);
         // D2: 子进程 WS 目标 = 本地网关（[signaling] local_port 或缺省 17980）
         cmd.push_str(&format!(" --gateway {}", signaling_gateway_url(cfg)?));
@@ -454,7 +457,7 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
 /// 期望进程名列表（E1 拓扑监控期望态；与 oxfile 生成同一实例命名来源，DRY）。
 pub fn expected_process_names(cfg: &str) -> Result<Vec<String>, String> {
     let (cameras, streams) = camera_and_stream_ids(cfg)?;
-    let mut out: Vec<String> = FIXED_APPS.iter().map(|s| s.to_string()).collect();
+    let mut out: Vec<String> = FIXED_APP_BASES.iter().map(|b| app_name(b)).collect();
     // [record] enabled=false（缺省）→ host-recorder 按设计 exit 0（host-recorder.rs）
     // 且 oxmgr on_failure 不重启 → 不列入期望，否则默认配置永久 ProcessMissing 误报。
     if !record_config(cfg)?.enabled {
@@ -639,6 +642,14 @@ camera = "cam0"
     #[test]
     fn validate_accepts_wellformed_config() {
         validate(CFG_V0).expect("合法配置应通过");
+    }
+
+    #[test]
+    fn defaults_namespace_is_concrete_not_placeholder() {
+        // PIT-118 回归门: namespace 曾残留 "{ns}" 字面——oxmgr 拒收 → apply 挂起
+        let ox = to_oxfile(CFG_V0).unwrap();
+        assert!(ox.contains("namespace = \"mediaservo-host\""), "默认品牌 namespace 应为 mediaservo-host: {ox}");
+        assert!(!ox.contains("{ns}"), "禁止占位符残留: {ox}");
     }
 
     #[test]

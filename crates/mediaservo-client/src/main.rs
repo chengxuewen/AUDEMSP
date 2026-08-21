@@ -24,7 +24,7 @@ async fn main() {
         )
         .init();
 
-    tracing::info!("MediaServo Remote v{} starting", env!("CARGO_PKG_VERSION"));
+    tracing::info!("{} Remote v{} starting", mediaservo_common::brand::media_brand().display, env!("CARGO_PKG_VERSION"));
 
     // Parse config — collect args once for bounds-safe access
     let config_path = {
@@ -32,7 +32,7 @@ async fn main() {
         if args.len() > 3 && args[2] == "--config" {
             args[3].clone()
         } else {
-            "/opt/mediaservo/etc/remote.conf".to_string()
+            format!("/opt/{}/etc/remote.conf", mediaservo_common::brand::media_brand().id)
         }
     };
     let config = match config::load(&config_path) {

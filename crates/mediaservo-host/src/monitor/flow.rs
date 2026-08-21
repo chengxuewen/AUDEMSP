@@ -325,6 +325,9 @@ mod tests {
             frames_encoded: 678,
             frame_width: 1280,
             frame_height: 720,
+            codec: "vp8".into(),
+            avg_encode_ms: Some(3.5),
+            encoder_implementation: Some("libvpx".into()),
         };
         let json = serde_json::to_vec(&s).expect("serialize");
         let back: StreamerStats = serde_json::from_slice(&json).expect("deserialize");

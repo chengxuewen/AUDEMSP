@@ -16,3 +16,4 @@ pub mod protocol;
 pub mod auth;
 pub mod logging;
 pub mod backup;
+pub mod brand;
