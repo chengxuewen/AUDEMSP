@@ -627,3 +627,9 @@ EmergencyCommand 转发（H 阶段 host-emergency）; 状态/告警的 operator 
 - **原因**: 基石定位（第三平台静态链接/独立部署嵌入）——白标免 fork；"数据面固化/应用层可定制"显式化
 - **影响**: Brand 三语义分离（product=CLI 名/display=产品展示/id=路径）；identity 设备前缀品牌化仅新 key（G2 配发需重注）；crate 名/bindings 不动——独立发布仍走 fork+D209
 - **参考**: 计划 docs/superpowers/plans/2026-08-21-app-branding-customization.md；Momus 审核（HIGH-1 默认映射表/HIGH-2 23→24/HIGH-3 admin dist 编译期机制）
+
+## D253: oxmgr 同目录发现接线 — 安装即用，免 export PATH (2026-08-21)
+
+- **决策**: oxmgr 查找顺序统一为「host 二进制同目录（current_exe().parent()/oxmgr，D-H13 打包于 bin/）优先 → PATH 回落」——接线到所有调用点：host.rs cmd_oxmgr/run_oxmgr_in(None)/doctor + translate.rs oxmgr_apply/delete/list。install 打包 oxmgr 进 bin/ 使安装目录**零配置即用**（无需 export PATH）
+- **原因**: ① oxmgr_path()/oxmgr_cmd() helper 早已存在（current_exe() 模式）但 6 个调用点仍 `Command::new("oxmgr")` 纯 PATH——同目录能力"存在未接线"（触达性 bug，非设计缺失）；② 发布壳消费方（MSRTC --pure-brand 等）期望「安装即用」，PATH 是交互文档约定，不应是运行前提；③ multi-instance 下同目录绑定实例自己的 oxmgr（C32 隔离增强）
+- **影响**: host start/apply/monit/ps/doctor 全部零 PATH 可用；exe 同目录无 oxmgr 时回落 PATH（向后兼容）；D-H13 打包语义兑现

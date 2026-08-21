@@ -1212,3 +1212,20 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: 脚本断言用 `status "$TMP"`（dir-aware）；ps/monit/logs 语义 = "当前实例"（cwd）
 - **验证**: e2e-brand PASS
 - **教训**: host CLI 子命令目录语义二分——status/start/apply/stop 吃参数，ps/monit/logs 按 cwd——调用前查清（README/help 注明）
+
+
+## PIT-122: D252 品牌化遗漏 — streamer/expected_process_names 硬编码 host-*（2026-08-21）
+
+- **症状**: brand=msrtc 时 install 后 start 失败：`failed to spawn .../bin/host-streamer`——oxfile command 仍是 host-*；monitor 永久 ProcessMissing
+- **根因**: translate.rs 两处未走 app_name()：① to_oxfile streamer 实例 `exe_cmd("host-streamer")` 硬编码（capturer 已品牌化，streamer 不一致）；② expected_process_names `retain(n != "host-recorder")` + `instance_name("host-capturer"/"host-streamer")` 字面前缀——品牌模式下 monitor 期望名与 oxfile 实际名不匹配
+- **解法**: 三处改 `app_name("streamer"/"capturer"/"recorder")`（FIXED_APP_BASES 已有 5 类走 app_name，实例类补上）
+- **验证**: brand=msrtc start → oxfile name=msrtc-capturer-cam0/msrtc-streamer-cam0-stream；monit 全部 msrtc-*
+- **教训**: 品牌化改造检查清单要含**实例化进程**（capturer/streamer 按 camera/stream 参数化）——FIXED_APP_BASES 只覆盖固定 5 类，实例类的 command 生成与 expected 列表是独立路径，都需过 app_name()
+
+## PIT-123: oxmgr 同目录查找存在未接线 — cmd_oxmgr 仍纯 PATH（2026-08-21）
+
+- **症状**: 从安装目录 `./msrtc-host doctor` 报 `[fail] oxmgr 不可用: No such file`，虽 bin/oxmgr 与二进制同目录；需手动 export PATH
+- **根因**: `oxmgr_path()`（current_exe().parent().join("oxmgr")）早已存在，但 cmd_oxmgr/run_oxmgr_in(None)/doctor/translate::oxmgr_apply/list/delete 全部 `Command::new("oxmgr")` 纯 PATH 查找——同目录能力存在未接线（D-H13 打包 oxmgr 进 bin/ 的意图未落地）
+- **解法**: host.rs 3 处 + translate.rs 3 处改 `Command::new(oxmgr_path()/oxmgr_cmd())`
+- **验证**: 无 PATH `./msrtc-host doctor` → `[ok] oxmgr 可用`
+- **教训**: "同目录依赖"（current_exe().parent()）的实现要 grep 全部 Command::new 接线点——定义 helper 后必须逐个调用点替换，缺一个就出现"doctor 好但 apply/start 坏"的分裂
