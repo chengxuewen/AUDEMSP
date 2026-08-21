@@ -1238,3 +1238,12 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: parse_dir 默认增强为安装根发现（current_exe()）：① cwd → ② exe 同目录 → ③ **exe 父目录（<inst>/bin 的上级，etc/ 与 bin/ 同级）** → ④ .host 兜底
 - **验证**: out/ 下 `./host/msrtc-host doctor` → 解析到 out/host/etc/host.toml；无 .host 生成；monit TUI 正常
 - **教训**: install 布局是「二进制在 <inst>/bin/，实例数据在 <inst>/」——current_exe().parent() 是 bin/，实例根是其**上级**。同类「自身定位」逻辑都要考虑 bin/ 子目录结构，不是 exe_dir 直接就是根
+
+
+## PIT-125: sync_host_logs 匹配 host-* 品牌遗漏 + OxMgr [apps.logs] 已接线 (2026-08-21)
+
+- **症状**: brand=msrtc 时 run/logs 为空（无日志 symlink）；用户疑"mediaservo 日志功能失效"
+- **根因**: ① sync_host_logs `name.starts_with("host-")` 硬编码——D252 品牌化后进程日志是 msrtc-*，前缀不匹配（品牌遗漏系列之一）；② 另发现 OxMgr 0.5.0 的 [apps.logs] override **已接线**（实测直写实例 run/logs），host.rs 注释"daemon 忽略"过时
+- **解法**: ① sync_host_logs 改 `starts_with(brand::media_brand().app_prefix)`（默认 host-，品牌 msrtc-）；② 注释更正（[apps.logs] 已接线，本函数降为老版本兜底）
+- **验证**: brand=msrtc start → run/logs/msrtc-agent.out.log（21KB JSON tracing，持续写入）；之前"空"= 未 start 无进程
+- **教训**: 品牌化遗漏检查清单要覆盖**日志/监控类 helper 的命名前缀匹配**（sync/expected/process 名等字符串 starts_with）——不只 command 生成；且测试"功能失效"前先确认进程真在跑（空日志 ≠ 日志坏了，可能是没 start）

@@ -985,9 +985,10 @@ fn cmd_oxmgr(args: &mut impl Iterator<Item = String>, fixed: &[&str]) -> i32 {
     }
 }
 
-/// 把 oxmgr 日志目录中本实例的 host-* 进程日志 symlink 到 <dir>/run/logs/（D-H13 布局）。
-/// OxMgr 0.5.0 的 [apps.logs] 路径 override 未接线（daemon 忽略）——日志实际在
-/// oxmgr log_dir（默认 ~/.local/share/oxmgr/logs）；symlink 让实例目录可读、轮转自动反映。
+/// 把 oxmgr 日志目录中本实例的进程日志 symlink 到 <dir>/run/logs/（D-H13 布局）。
+/// 匹配品牌前缀（默认 host-*，品牌化 msrtc-*）——D252 品牌化遗漏修复。
+/// 注: OxMgr 0.5.0 [apps.logs] 已接线（实测直写实例 run/logs），本函数为
+/// oxmgr log_dir 兜底路径（如 daemon 忽略 override 的老版本）。
 fn sync_host_logs(dir: &std::path::Path) {
     let log_dir = dirs_log_dir();
     let run_logs = dir.join("run").join("logs");
@@ -995,11 +996,12 @@ fn sync_host_logs(dir: &std::path::Path) {
     let Ok(entries) = std::fs::read_dir(&log_dir) else {
         return;
     };
+    let prefix = mediaservo_common::brand::media_brand().app_prefix;
     let mut n = 0;
     for e in entries.flatten() {
         let name = e.file_name();
         let Some(name) = name.to_str() else { continue };
-        if !name.starts_with("host-") {
+        if !name.starts_with(prefix) {
             continue;
         }
         let link = run_logs.join(name);
