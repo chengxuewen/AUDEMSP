@@ -1229,3 +1229,12 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: host.rs 3 处 + translate.rs 3 处改 `Command::new(oxmgr_path()/oxmgr_cmd())`
 - **验证**: 无 PATH `./msrtc-host doctor` → `[ok] oxmgr 可用`
 - **教训**: "同目录依赖"（current_exe().parent()）的实现要 grep 全部 Command::new 接线点——定义 helper 后必须逐个调用点替换，缺一个就出现"doctor 好但 apply/start 坏"的分裂
+
+
+## PIT-124: 任意目录执行 msrtc-host 生成 .host 于 cwd — parse_dir 按 cwd 定位 (2026-08-21)
+
+- **症状**: 从 out/ 目录 `./host/msrtc-host monit/doctor` 生成 `out/.host`（实例目录错位到调用方 cwd）
+- **根因**: parse_dir 默认「cwd 有 etc/host.toml → '.'，否则 '.host'」——纯 cwd 绑定；从任意目录执行时实例目录跟随 cwd，而非 host 安装位置
+- **解法**: parse_dir 默认增强为安装根发现（current_exe()）：① cwd → ② exe 同目录 → ③ **exe 父目录（<inst>/bin 的上级，etc/ 与 bin/ 同级）** → ④ .host 兜底
+- **验证**: out/ 下 `./host/msrtc-host doctor` → 解析到 out/host/etc/host.toml；无 .host 生成；monit TUI 正常
+- **教训**: install 布局是「二进制在 <inst>/bin/，实例数据在 <inst>/」——current_exe().parent() 是 bin/，实例根是其**上级**。同类「自身定位」逻辑都要考虑 bin/ 子目录结构，不是 exe_dir 直接就是根
