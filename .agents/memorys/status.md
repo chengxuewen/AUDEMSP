@@ -1,6 +1,6 @@
 # MediaServo Status
 
-**生成**: 2026-08-20| 决策: 50 条目 (D196-D246, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP + H1 data 域 + H2 音频会议 + 整支审查 C1/I1/I2/I3 || 379 commits | 22 skills | mediasoup 0.24.1 | PIT-107 | 分支: main (C1 transport_id 注册表 + I1 room 接线 + I2 dev 守卫 + I3 StatusReport 门) || Crate | Lib Tests | Integration | 备注 |
+**生成**: 2026-08-21| 决策: 52 条目 (D196-D252, 含跳号)| Phase: 3 完成 + deck 三域 + field MVP + H1 data 域 + H2 音频会议 + 整支审查 C1/I1/I2/I3 || 379 commits | 22 skills | mediasoup 0.24.1 | PIT-107 | 分支: main (C1 transport_id 注册表 + I1 room 接线 + I2 dev 守卫 + I3 StatusReport 门) || Crate | Lib Tests | Integration | 备注 |
 |-------|:---------:|:------------:|------|
 | mediaservo-common | 82 | — | +SfuStatsRequest/SfuStats (H2) |
 | mediaservo-media | 107 | — | |
