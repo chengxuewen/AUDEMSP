@@ -105,12 +105,25 @@ fn main() {
 /// 参数不一致，目录统一位置参数后 -- 前缀必为用户笔误。）
 fn parse_dir(args: &mut impl Iterator<Item = String>) -> Result<PathBuf, String> {
     let Some(arg) = args.next() else {
-        // 智能默认: 当前目录有实例（etc/host.toml）→ "."；否则 .host/（安装于根目录的实例兼容）
-        return Ok(if PathBuf::from("etc/host.toml").exists() {
-            PathBuf::from(".")
-        } else {
-            PathBuf::from(".host")
-        });
+        // 智能默认（安装即用）: ① cwd 有实例（etc/host.toml）→ "."；
+        // ② 二进制同目录有实例（install 布局: bin/ 旁 etc/host.toml）→ 二进制目录；
+        // ③ 否则 .host/（旧式根目录实例兼容）
+        if PathBuf::from("etc/host.toml").exists() {
+            return Ok(PathBuf::from("."));
+        }
+        // ② 二进制同目录/上级有实例（install 布局: <inst>/bin/msrtc-host + <inst>/etc/host.toml）
+        //    → 定位安装根，实现「任意目录执行都指向本机实例」
+        if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
+            if exe_dir.join("etc").join("host.toml").exists() {
+                return Ok(exe_dir.clone());
+            }
+            if let Some(inst_root) = exe_dir.parent() {
+                if inst_root.join("etc").join("host.toml").exists() {
+                    return Ok(inst_root.to_path_buf());
+                }
+            }
+        }
+        return Ok(PathBuf::from(".host"));
     };
     if arg.starts_with("--") {
         return Err(format!("实例目录参数不能以 -- 开头（目录是位置参数）: {arg}"));
