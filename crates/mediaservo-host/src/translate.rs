@@ -437,7 +437,7 @@ fn to_oxfile_with_paths(cfg: &str, config_path: &Path, token_dir: &Path) -> Resu
     }
     for stream in &streams {
         let name = instance_name(&app_name("streamer"), stream);
-        let mut cmd = format!("{} --stream {}", exe_cmd("host-streamer"), stream);
+        let mut cmd = format!("{} --stream {}", exe_cmd(&app_name("streamer")), stream);
         // D2: 子进程 WS 目标 = 本地网关（[signaling] local_port 或缺省 17980）
         cmd.push_str(&format!(" --gateway {}", signaling_gateway_url(cfg)?));
         if !config_path.as_os_str().is_empty() {
@@ -461,13 +461,13 @@ pub fn expected_process_names(cfg: &str) -> Result<Vec<String>, String> {
     // [record] enabled=false（缺省）→ host-recorder 按设计 exit 0（host-recorder.rs）
     // 且 oxmgr on_failure 不重启 → 不列入期望，否则默认配置永久 ProcessMissing 误报。
     if !record_config(cfg)?.enabled {
-        out.retain(|n| n != "host-recorder");
+        out.retain(|n| n != &app_name("recorder"));
     }
     for cam in &cameras {
-        out.push(instance_name("host-capturer", cam));
+        out.push(instance_name(&app_name("capturer"), cam));
     }
     for stream in &streams {
-        out.push(instance_name("host-streamer", stream));
+        out.push(instance_name(&app_name("streamer"), stream));
     }
     Ok(out)
 }
