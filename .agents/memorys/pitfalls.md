@@ -1191,3 +1191,10 @@ encoder_status 回调缺浏览器字段 → 连接质量显示 0）。非渲染�
 - **解法**: 改为 `format!("...namespace = \"{}\"...", media_brand().namespace)` + 回归测试 `defaults_namespace_is_concrete_not_placeholder`（断言具体值 + 禁 `{ns}`）
 - **验证**: 测试全绿 + e2e-install-host PASS
 - **教训**: 字符串 local 替换用 replace 时——**replacement 不得与模式同串**；模板字符串一律 format! 而非 replace 自指；测试需断言生成物的关键行（namespace 属 validate/oxmgr 硬校验面）
+
+## PIT-119: package host 打包 1.2GB debug 二进制未 strip — tarfile w:gz 压缩超时/截断（2026-08-21）
+- **症状**: e2e-package.sh 卡在"已签发令牌"后（timeout 124/60 杀）；tar.gz gzip -t 报 unexpected end of file（半成品）；日志"identity 已存在跳过"（staging 复用假象——实为压缩慢）
+- **根因**: package 打包 target/debug 二进制未 strip（host-agent 单 135-155MB——libwebrtc 静态链接）；tarfile `w:gz` 默认最高压缩级别（9）串行压缩 1.2GB → >60s（工具/k8s 超时）——表现为"卡死"实为慢
+- **解法**: `strip_package_binaries(staging)`（strip --strip-unneeded，失败仅 warn）+ `compresslevel=6`——1.2GB→60MB（-90%+），压缩 <30s
+- **验证**: `gzip -t` ✓ + e2e-package PASS + `du -sh dist`
+- **教训**: 打包/发布物默认 strip（debug 构建体积巨大）；tarfile w:gz 用 compresslevel=6；"卡住"先查是否慢（看产物时间戳/gzip -t）而非死锁
