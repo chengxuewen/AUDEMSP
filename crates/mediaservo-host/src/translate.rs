@@ -224,6 +224,16 @@ pub fn apply_config_push(dir: &Path, config: &str, version: u64) -> Result<(), S
 }
 
 /// oxmgr apply <run/oxfile.toml>（CLI 与 agent 共享；增量: 新增 Start/变更 Recreate/未变 Noop）。
+/// oxmgr 二进制：host CLI 同目录优先（install 打包于 bin/），回落 PATH。
+fn oxmgr_cmd() -> std::process::Command {
+    let bin = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("oxmgr")))
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| std::path::PathBuf::from("oxmgr"));
+    std::process::Command::new(bin)
+}
+
 pub fn oxmgr_apply(dir: &Path) -> Result<(), String> {
     let oxfile = dir.join("run").join("oxfile.toml");
     if !oxfile.exists() {
@@ -234,7 +244,7 @@ pub fn oxmgr_apply(dir: &Path) -> Result<(), String> {
         let sum: u32 = home.to_string_lossy().bytes().map(u32::from).sum();
         18000 + (sum % 400)
     };
-    let out = std::process::Command::new("oxmgr")
+    let out = oxmgr_cmd()
         .env("OXMGR_HOME", &home)
         .env("OXMGR_DAEMON_ADDR", format!("127.0.0.1:{daemon_port}"))
         .env("OXMGR_API_ADDR", format!("127.0.0.1:{}", daemon_port + 1000))
@@ -253,7 +263,7 @@ pub fn oxmgr_apply(dir: &Path) -> Result<(), String> {
     // 增量不动缺省 app，而 --prune 是全量跨命名空间（实证会误杀其他工具 app）——
     // 故按名逐个 delete 精确同步。
     for name in removed_apps(&live_host_apps()?, &oxfile_app_names(&oxfile)?) {
-        match std::process::Command::new("oxmgr").arg("delete").arg(&name).output() {
+        match oxmgr_cmd().arg("delete").arg(&name).output() {
             Ok(out) if out.status.success() => {
                 tracing::info!(app = %name, "oxmgr delete 已移除配置外 app");
             }
@@ -275,7 +285,7 @@ fn removed_apps(live: &[String], desired: &[String]) -> Vec<String> {
 
 /// oxmgr list --json 中 host 命名空间 app 名列表（removal 清理 + host stop 兜底）。
 pub fn live_host_apps() -> Result<Vec<String>, String> {
-    let out = std::process::Command::new("oxmgr")
+    let out = oxmgr_cmd()
         .args(["list", "--json"])
         .output()
         .map_err(|e| format!("oxmgr 执行失败: {e} — 请先安装 OxMgr 并加入 PATH"))?;

@@ -872,7 +872,7 @@ fn cmd_doctor(args: &mut impl Iterator<Item = String>) -> i32 {
     };
     let mut failed = 0;
 
-    match Command::new("oxmgr").arg("--version").output() {
+    match Command::new(oxmgr_path()).arg("--version").output() {
         Ok(_) => println!("[ok] oxmgr 可用"),
         Err(e) => {
             println!("[fail] oxmgr 不可用: {e} — 请先安装并加入 PATH（npm install -g oxmgr）");
@@ -916,7 +916,7 @@ fn cmd_doctor(args: &mut impl Iterator<Item = String>) -> i32 {
 /// ① OXMGR_HOME = <dir>/run/oxmgr（数据/日志/state）② OXMGR_DAEMON_ADDR 端口从 dir 稳定派生
 /// （daemon 互斥 = TCP 端口——不隔离则全局 daemon 阻断实例 daemon 启动）
 fn oxmgr_env(dir: &std::path::Path) -> std::process::Command {
-    let mut cmd = std::process::Command::new("oxmgr");
+    let mut cmd = std::process::Command::new(oxmgr_path());
     // 绝对化（OXMGR_HOME 相对路径依赖 daemon cwd——重启/系统服务会错位）
     let home = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf()).join("run").join("oxmgr");
     cmd.env("OXMGR_HOME", &home);
@@ -939,7 +939,7 @@ fn instance_daemon_port(dir: &std::path::Path) -> u16 {
 fn run_oxmgr_in(dir: Option<&std::path::Path>, args: &[&str]) -> i32 {
     let mut cmd = match dir {
         Some(d) => oxmgr_env(d),
-        None => std::process::Command::new("oxmgr"),
+        None => std::process::Command::new(oxmgr_path()),
     };
     match cmd.args(args).status() {
         Ok(status) => status.code().unwrap_or(1),
