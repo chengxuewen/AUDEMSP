@@ -28,12 +28,8 @@ use mediaservo_webrtc::traits::PeerConnectionApi;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn ws_url() -> String {
-    std::env::var("SFU_E2E_WS_URL").unwrap_or_else(|_| {
-        panic!(
-            "SFU_E2E_WS_URL 未设置 — field e2e 需连外部 mediasoup server (C21);
-            例: SFU_E2E_WS_URL=ws://127.0.0.1:9800/ws"
-        )
-    })
+    // 缺省 dev server（docker compose 9800）——仍连外部 server（C21）; 生产/CI 用 env 覆盖
+    std::env::var("SFU_E2E_WS_URL").unwrap_or_else(|_| "ws://127.0.0.1:9800/ws".to_string())
 }
 
 fn psk() -> String {

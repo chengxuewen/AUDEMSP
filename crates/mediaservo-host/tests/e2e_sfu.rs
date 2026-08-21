@@ -32,7 +32,7 @@ use tokio_tungstenite::tungstenite::Message as WsMsg;
 
 // v2: PSK 可配置 — 外部 Docker server 模式用 SFU_E2E_PSK env 覆盖（server 用 MEDIASERVO_PSK=mediaservo-dev）
 fn psk() -> String {
-    std::env::var("SFU_E2E_PSK").unwrap_or_else(|_| "e2e-host-sfu-psk".to_string())
+    std::env::var("SFU_E2E_PSK").unwrap_or_else(|_| "mediaservo-dev".to_string()) // 对齐 dev server (MEDIASERVO_PSK)
 }
 const ROOM: &str = "host-sfu-test-room";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -132,11 +132,9 @@ struct SfuTestHarness {
 
 impl SfuTestHarness {
     async fn new() -> Self {
+        // 缺省 dev server（docker compose 9800）——仍连外部 server（C21）; 生产/CI 用 env 覆盖
         let url = std::env::var("SFU_E2E_WS_URL").unwrap_or_else(|_| {
-            panic!(
-                "SFU_E2E_WS_URL 未设置 — e2e_sfu 需连外部 mediasoup server (C21: 禁止进程内 spawn;
-                例: SFU_E2E_WS_URL=ws://127.0.0.1:9800/ws)"
-            )
+            "ws://127.0.0.1:9800/ws".to_string()
         });
         tracing::info!("SfuTestHarness: 外部 mediasoup server 模式 ({url})");
         Self { ws_url: url }
