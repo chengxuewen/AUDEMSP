@@ -195,3 +195,13 @@ grep -c "重复模式" <file>    # 期望 1；>1 = edit 重复插入
 **验证**: 重命名/批量替换后 `grep -rc "<旧模式>" <范围>` 必须为 0 + 二进制级验证（`readelf --dyn-syms` 符号名）；重做前确认 `git log` 静止 + 无 background 任务。
 
 **阻塞条件**: 有未完成子代理时执行仓级替换；批量替换后未做符号/内容双重验证即提交。
+
+### 15. bash 脚本清理 pkill/pgrep + set -e — 必须 || true；timeout 加 -k (PIT-120/121 轮)
+
+**规则**: ① `set -euo pipefail` 脚本中**清理型 `pkill`/`pgrep` 必须后缀 `|| true`**——pkill **无匹配进程时 exit 1** → set -e **秒退脚本**（trap 清理吞掉现场——外界观察像"卡死 200s+"，实为快速失败，PIT-120 实证 e2e-brand 段 4 在 start 前死）；② 包长命令的 `timeout` 用 **`timeout -k 5 <sec>`**（TERM 只发直接子进程且可能被忽略——如 oxmgr 忽略 TERM——不带 -k 打不死子进程链）；③ "卡住 vs 秒退"第一诊断 = **`bash -x scripts/x.sh` 看尾行**（`+ pkill` 后直接 trap 清理 = 秒退；尾行是目标命令 = 真卡）；④ 清理型 pkill 用 `-x` 精确名（禁止 `-f` 匹配自己命令行——见上 Process Management 规则，本会话再次踩中浪费 200s 超时轮）。
+
+**验证**: `grep -nE "pkill|pgrep" scripts/*.sh`——清理型调用逐行确认 `|| true`；`grep -rn "timeout [0-9]" scripts/` 确认带 -k 的长命令。
+
+**阻塞条件**: 脚本内 pkill/pgrep 无 `|| true`；timeout 包裹长命令不带 -k；"卡住"未用 bash -x 定位直接猜死锁。
+
+**来源**: PIT-120/121 (2026-08-21 app-branding e2e-brand 调试轮)
