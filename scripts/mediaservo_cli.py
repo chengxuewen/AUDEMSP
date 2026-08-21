@@ -183,6 +183,18 @@ def _copy_with_kill(src, dst: Path) -> None:
             _kill_using(dst)
     raise OSError(f"复制 {dst} 失败（多次重试仍 busy）")
 
+def strip_package_binaries(staging: Path) -> None:
+    """打包前 strip 二进制符号（debug 构建 135-155MB/个——gzip 1.2GB 压缩超时根因，PIT-119）。
+    保留可执行（发布物 = strip 后体积 -90%+）；strip 失败仅警告不阻断（不可缺失路径场景）。"""
+    if not shutil.which("strip"):
+        return
+    for f in sorted((staging / "bin").iterdir()) if (staging / "bin").is_dir() else []:
+        if f.is_file() and os.access(f, os.X_OK):
+            code = subprocess.run(["strip", "--strip-unneeded", str(f)], capture_output=True, check=False).returncode
+            if code != 0:
+                print(f"  warning: strip {f.name} 失败（跳过——包体积未优化）")
+
+
 def _cmd_install_host(prefix: str, release: bool = False, brand: str = "") -> None:
     """安装 host 包（D-H13 /opt/mediaservo-host 布局）: bin 8 + oxmgr 打包（版本锁定）
     + host init 生成 etc/{host.toml,link/*} + identity.json（幂等——重装保留凭据）
@@ -475,7 +487,8 @@ def _cmd_package(args: argparse.Namespace) -> None:
         _write_version_file(staging, pkg_name)
         prefix_name = args.brand if args.brand else "mediaservo"
         out = dist / f"{prefix_name}-{pkg_name}-{ver}.tar.gz"
-        with tarfile.open(out, "w:gz") as tar:
+        strip_package_binaries(staging)  # PIT-119: debug 二进制未 strip（单 135-155MB）→ gzip 1.2GB 超时
+        with tarfile.open(out, "w:gz", compresslevel=6) as tar:  # 默认 9 最慢; 6 工程折中
             for entry in sorted(staging.iterdir()):
                 tar.add(entry, arcname=entry.name)  # 解包到前缀目录即为 D-H13 布局
         print(f"✓ 打包完成: {out}（{out.stat().st_size // 1024} KiB）")

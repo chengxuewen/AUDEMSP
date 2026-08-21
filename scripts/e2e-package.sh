@@ -41,10 +41,12 @@ pixi run python3 scripts/mediaservo_cli.py package host
 note "host tar contents"
 LIST=$(tar tzf "$HOST_TGZ" || true)
 [ -n "$LIST" ] || { echo "FAIL: $HOST_TGZ 无法读取"; FAIL=1; }
-for b in host host-agent host-capturer host-streamer host-recorder \
+for b in mediaservo-host host-agent host-capturer host-streamer host-recorder \
          host-controller host-emergency host-audio; do
     echo "$LIST" | grep -q "^bin/$b$" || { echo "FAIL: 包内缺 bin/$b"; FAIL=1; }
 done
+# 根快捷（host + mediaservo-host）— bin/ 里是 mediaservo-host, 根挂快捷
+echo "$LIST" | grep -q "^host$" || { echo "FAIL: 包内缺根快捷 host"; FAIL=1; }
 # oxmgr 条件断言（I2 review 修）: 打包时 PATH 有 oxmgr → 包内必须含 bin/oxmgr;
 # 环境缺 oxmgr → install 未打包（cli 明确报错）, 跳过并说明
 if command -v oxmgr >/dev/null 2>&1; then
@@ -66,15 +68,15 @@ note "extract + smoke"
 mkdir -p "$TMP/extract"
 tar xzf "$HOST_TGZ" -C "$TMP/extract"
 BIN="$TMP/extract/bin"
-out=$(env PATH="$BIN:$PATH" "$BIN/host" doctor "$TMP/extract" 2>&1 || true)
+out=$(env PATH="$BIN:$PATH" "$BIN/mediaservo-host" doctor "$TMP/extract" 2>&1 || true)
 echo "$out" | grep -q "全部通过" || { echo "FAIL: 解包后 doctor 未全过"; echo "$out" | tail -5; FAIL=1; }
 rm -rf /tmp/iceoryx2 /dev/shm/iox2_*   # C25: 清 iceoryx2 残留
-env PATH="$BIN:$PATH" "$BIN/host" start "$TMP/extract" >/dev/null 2>&1 || { echo "FAIL: 解包后 host start"; FAIL=1; }
+env PATH="$BIN:$PATH" "$BIN/mediaservo-host" start "$TMP/extract" >/dev/null 2>&1 || { echo "FAIL: 解包后 host start"; FAIL=1; }
 sleep 4
-out=$(env PATH="$BIN:$PATH" "$BIN/host" status "$TMP/extract" 2>&1 || true)
+out=$(env PATH="$BIN:$PATH" "$BIN/mediaservo-host" status "$TMP/extract" 2>&1 || true)
 echo "$out" | grep -q "host-agent" || { echo "FAIL: status 无 host-agent"; echo "$out" | tail -5; FAIL=1; }
-env PATH="$BIN:$PATH" "$BIN/host" stop "$TMP/extract" >/dev/null 2>&1 || { echo "FAIL: host stop"; FAIL=1; }
-out=$(env PATH="$BIN:$PATH" "$BIN/host" status "$TMP/extract" 2>&1 || true)
+env PATH="$BIN:$PATH" "$BIN/mediaservo-host" stop "$TMP/extract" >/dev/null 2>&1 || { echo "FAIL: host stop"; FAIL=1; }
+out=$(env PATH="$BIN:$PATH" "$BIN/mediaservo-host" status "$TMP/extract" 2>&1 || true)
 echo "$out" | grep -q "无已管理进程" || { echo "FAIL: stop 后仍有进程"; echo "$out" | tail -5; FAIL=1; }
 echo "OK: 解包后 doctor → start(host-agent) → stop 冒烟通过"
 
